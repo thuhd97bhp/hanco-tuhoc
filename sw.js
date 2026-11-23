@@ -1,5 +1,5 @@
 /* Hán cổ tự học — service worker: cho app mở và chạy được khi không có mạng */
-var VERSION = "hanco-v20261123181009";
+var VERSION = "hanco-v20261123193305";
 var SHELL = ["./", "./index.html", "./app.js", "./games.js", "./app-data.json", "./app-strokes.json"];
 var CDN = [
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",

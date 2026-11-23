@@ -72,7 +72,7 @@
   // ---------- state + storage ----------
   var LS = "hanco-tuhoc-v1";
   var S, remote = { db: null, ref: null, status: "local", writing: false, pending: false };
-  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0 }; }
+  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {} }; }
   function loadLocal() { try { var t = localStorage.getItem(LS); if (t) return JSON.parse(t); } catch (e) { } return null; }
   function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) { } }
   var saveTimer = null;
@@ -139,9 +139,16 @@
       var x = m.it[id], y = b.it[id];
       if (!x) { m.it[id] = y.slice(); return; }
       var sx = x[1] + Math.max(x[3], 0), sy = y[1] + Math.max(y[3], 0), lap = Math.max(x[4], y[4]);
-      if (sy > sx || (sy === sx && y[0] + y[2] > x[0] + x[2])) m.it[id] = y.slice();
+      // ưu tiên bản được chấm gần nhất (itT = giờ chấm từng mục); không phân định được thì giữ bản có hạn ôn xa hơn như cũ
+      var tx = (a.itT || {})[id] || 0, ty = (b.itT || {})[id] || 0, pick = 0;
+      if (tx && ty) pick = ty > tx ? 1 : tx > ty ? -1 : 0;
+      else if (tx) pick = tx > (b.upd || 0) ? -1 : 0;
+      else if (ty) pick = ty > (a.upd || 0) ? 1 : 0;
+      if (pick === 1 || (pick === 0 && (sy > sx || (sy === sx && y[0] + y[2] > x[0] + x[2])))) m.it[id] = y.slice();
       m.it[id][4] = lap;
     });
+    m.itT = Object.assign({}, a.itT || {});
+    Object.keys(b.itT || {}).forEach(function (id) { if (!(m.itT[id] >= b.itT[id])) m.itT[id] = b.itT[id]; });
     m.xp = Math.max(a.xp || 0, b.xp || 0);
     var sa = a.streak || { d: 0, c: 0 }, sb = b.streak || { d: 0, c: 0 };
     m.streak = sb.d > sa.d || (sb.d === sa.d && sb.c > sa.c) ? { d: sb.d, c: sb.c } : { d: sa.d, c: sa.c };
@@ -253,16 +260,19 @@
   function rec(id) { return S.it[id]; }
   function introduced(id) { return !!S.it[id]; }
   function hasWrite(it) { return it.type === "c" || it.type === "w"; }
+  function stamp(id) { (S.itT || (S.itT = {}))[id] = Date.now(); } // giờ chấm gần nhất của mục — dùng khi gộp đồng bộ
   function introduce(id, firstTryOk) {
     var it = ITEM[id], t = today();
     if (S.it[id]) return;
     S.it[id] = [firstTryOk ? 1 : 0, firstTryOk ? t + 1 : t, hasWrite(it) ? 0 : -1, t, 0, t];
+    stamp(id);
     addLog("n", 1); addXP(3);
   }
   function grade(id, card, g) { // card 'r' | 'w'; g 0 quên, 1 mờ, 2 rõ
     var r = S.it[id]; if (!r) return;
     var bi = card === "w" ? 2 : 0, t = today();
     if (r[bi] < 0) return;
+    stamp(id);
     if (g === 0) { r[bi] = 1; r[bi + 1] = t + 1; r[4]++; }
     else if (g === 1) { r[bi] = Math.max(1, r[bi]); r[bi + 1] = t + 1; }
     else { r[bi] = Math.min(INT.length - 1, r[bi] + 1); r[bi + 1] = t + INT[r[bi]]; }
@@ -1024,16 +1034,18 @@
   // ---------- WRITE (tập viết) ----------
   function vWrite(v, args) {
     var tab = args[0] || "due";
-    var tabs = '<div class="row" style="margin-bottom:12px"><h1 style="margin:0">Tập viết</h1><span class="spacer"></span><a class="btn sm' + (tab === "due" ? " primary" : "") + '" href="#viet">Viết theo lịch</a><a class="btn sm' + (tab === "phieu" ? " primary" : "") + '" href="#viet-phieu">Phiếu in</a><a class="btn sm' + (tab === "net" ? " primary" : "") + '" href="#viet-net">Nét &amp; bút thuận</a>' + (samples().length || tab === "mau" ? '<a class="btn sm' + (tab === "mau" ? " primary" : "") + '" href="#viet-mau">Mẫu chấm nhầm</a>' : "") + "</div>";
+    var tabs = '<div class="row" style="margin-bottom:12px"><h1 style="margin:0">Tập viết</h1><span class="spacer"></span><a class="btn sm' + (tab === "due" ? " primary" : "") + '" href="#viet">Viết theo lịch</a><a class="btn sm' + (tab === "dahoc" ? " primary" : "") + '" href="#viet-dahoc">Chữ đã học</a><a class="btn sm' + (tab === "phieu" ? " primary" : "") + '" href="#viet-phieu">Phiếu in</a><a class="btn sm' + (tab === "net" ? " primary" : "") + '" href="#viet-net">Nét &amp; bút thuận</a>' + (samples().length || tab === "mau" ? '<a class="btn sm' + (tab === "mau" ? " primary" : "") + '" href="#viet-mau">Mẫu chấm nhầm</a>' : "") + "</div>";
     if (tab === "net") { v.innerHTML = tabs + strokeLesson(); return; }
     if (tab === "mau") return sampleTab(v, tabs);
     if (tab === "phieu") return sheet(v, tabs);
+    if (tab === "dahoc") return learnedTab(v, tabs);
     var ids = due("w").slice(0, 30);
-    if (!ids.length) { v.innerHTML = tabs + '<div class="card"><p class="sub">Không có chữ cần viết hôm nay. Học thêm chữ mới, hoặc luyện tự do với trò "Viết trên màn hình".</p><div class="row"><a class="btn primary" href="#choi-write">Viết tự do</a><a class="btn" href="#hoc">Học mới</a></div></div>'; return; }
+    if (!ids.length) { v.innerHTML = tabs + '<div class="card"><p class="sub">Không có chữ cần viết hôm nay. Học thêm chữ mới, hoặc luyện tự do với trò "Viết trên màn hình".</p><div class="row"><a class="btn primary" href="#viet-dahoc">Luyện chữ đã học</a><a class="btn" href="#choi-write">Viết tự do</a><a class="btn" href="#hoc">Học mới</a></div></div>'; return; }
     return writeSession(v, tabs, ids.map(function (id) { return ITEM[id]; }), true);
   }
-  function writeSession(v, tabs, items, srs, onEnd) {
-    var i = 0, ok = 0, pad = null, again = {}, queue = items.slice();
+  // opt (chỉ thẻ "Chữ đã học" dùng): { gap: viết sai thì hỏi lại sau ngần này câu, need: số lần đúng liên tiếp để qua, markWrong: lần sai đầu ghi vào lịch viết }
+  function writeSession(v, tabs, items, srs, onEnd, opt) {
+    var i = 0, ok = 0, pad = null, again = {}, queue = items.slice(), run = {}, marked = {};
     function render() {
       var it = queue[i], scored = false, verdict = null, firstRes = null;
       v.innerHTML = tabs + '<div class="stage"><div class="row" style="width:min(560px,100%)"><span class="chip num">' + (i + 1) + " / " + queue.length + '</span><span class="muted" style="font-size:0.85rem">Viết chữ Hán theo âm và nghĩa, rồi bấm Chấm điểm</span></div><div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(it.am) + "</div>" + meanHTML(it) + '<div class="extra">' + chars(it.key).length + " chữ" + (it.type === "c" && it.net ? " · " + it.net + " nét" : "") + (it.type === "c" && it.rad ? ' · <button class="btn sm ghost" id="hint">Gợi ý bộ</button>' : "") + '</div></div></div><div class="padwrap" id="padbox"></div><div class="row" style="justify-content:center"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn primary" id="chk">Chấm điểm</button></div><div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="idk">Không nhớ — xem chữ mẫu</button></div><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="self" style="justify-content:center"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft" style="justify-content:center"><button class="btn" id="redo">Viết lại để luyện</button><button class="btn primary" id="nx">Tiếp →</button></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div></div>';
@@ -1046,6 +1058,14 @@
       function finish(el) {
         if (verdict === null) return;
         if (srs && !again[it.id]) grade(it.id, "w", verdict ? 2 : 0);
+        if (opt) {
+          if (!verdict && opt.markWrong && !marked[it.id]) { marked[it.id] = 1; grade(it.id, "w", 0); }
+          run[it.id] = verdict ? (run[it.id] || 0) + 1 : 0;
+          if (verdict) { ok++; S.best.writeOk = (S.best.writeOk || 0) + 1; flyXP(2, el); if (!again[it.id]) PRAC[it.id] = 1; }
+          else again[it.id] = 1;
+          if (again[it.id] && run[it.id] < (opt.need || 2)) queue.splice(Math.min(queue.length, i + 1 + (opt.gap || 3)), 0, it);
+          HC.after(); return;
+        }
         if (verdict) { ok++; S.best.writeOk = (S.best.writeOk || 0) + 1; flyXP(2, el); } else { again[it.id] = 1; queue.push(it); }
         HC.after();
       }
@@ -1086,6 +1106,44 @@
     render();
   }
   HC.writeSession = writeSession;
+  // ---------- luyện chữ / từ đã học: mục yếu đưa vào hết, mục đã thuộc chỉ thỉnh thoảng ----------
+  var PRAC = {}; // mục đã viết đúng ngay lần đầu trong lần mở app này → lượt sau nhường chỗ cho mục khác
+  function wLevel(id) { // 0 cần luyện · 1 đang nhớ · 2 đã thuộc (theo mức viết, mức nhớ nghĩa, số lần quên)
+    var r = S.it[id];
+    if (r[2] <= 2 || r[0] <= 2 || r[4] >= 2) return 0;
+    return r[2] >= 4 && r[0] >= 3 ? 2 : 1;
+  }
+  function wScore(id) { var r = S.it[id]; return r[2] * 2 + r[0] - r[4] * 2 + Math.random() * 2; } // nhỏ = yếu
+  function learnedTab(v, tabs) {
+    var all = learnedOf("c").concat(learnedOf("w")).filter(function (x) { return S.it[x.id][2] >= 0; });
+    var g = [[], [], []]; all.forEach(function (x) { g[wLevel(x.id)].push(x); });
+    function byWeak(a) { var sc = {}; a.forEach(function (x) { sc[x.id] = wScore(x.id); }); return a.sort(function (x, y) { return sc[x.id] - sc[y.id]; }); }
+    function smart() {
+      var pick = g[0].concat(g[1].filter(function () { return Math.random() < 0.5; }), g[2].filter(function () { return Math.random() < 0.25; }));
+      var fresh = pick.filter(function (x) { return !PRAC[x.id]; });
+      if (!fresh.length) { PRAC = {}; fresh = pick; }
+      return byWeak(fresh).slice(0, 30);
+    }
+    function start(items) {
+      if (!items.length) { toast("Chưa có chữ nào để luyện"); return; }
+      writeSession(v, tabs, items, false, function (ok, n) {
+        v.innerHTML = tabs + '<div class="card result"><div class="score-big">' + ok + '</div><h2>Xong lượt luyện ' + n + ' mục</h2><p class="sub">Chữ viết sai đã được hỏi lại đến khi đúng 2 lần liên tiếp, và sẽ có lại trong "Viết theo lịch" ngày mai.</p><div class="row" style="justify-content:center"><button class="btn primary" id="more">Luyện tiếp</button><a class="btn" href="#viet-dahoc">Danh sách chữ đã học</a><a class="btn" href="#home">Trang chính</a></div></div>';
+        $("#more", v).onclick = function () { learnedTab(v, tabs); var b = $("#smart", v); if (b) b.click(); };
+      }, { gap: 3, need: 2, markWrong: true });
+    }
+    if (!all.length) { v.innerHTML = tabs + '<div class="card"><p class="sub">Bạn chưa học chữ nào. Vào Học mới để học chữ đầu tiên, rồi quay lại đây luyện viết.</p><div class="row"><a class="btn primary" href="#hoc">Học mới</a></div></div>'; return; }
+    var nc = all.filter(function (x) { return x.type === "c"; }).length;
+    var T = [["Cần luyện", "viết sai gần đây, mới học hoặc hay quên — luôn được đưa vào lượt luyện"], ["Đang nhớ", "khoảng một nửa được đưa vào mỗi lượt"], ["Đã thuộc", "chỉ thỉnh thoảng đưa lại để giữ trí nhớ"]];
+    var h = tabs + '<div class="card"><h2>Luyện chữ đã học</h2><p class="sub">Bạn đã học ' + nc + " chữ và " + (all.length - nc) + ' từ. <b>Luyện thông minh</b> đưa vào mọi mục cần luyện và một phần mục đã nhớ (tối đa 30 mục mỗi lượt, mục yếu hỏi trước). Viết sai thì mục đó quay lại sau 3 câu cho tới khi đúng 2 lần liên tiếp, và có lại trong "Viết theo lịch" ngày mai.</p><div class="row"><button class="btn primary" id="smart">Luyện thông minh</button><button class="btn" id="allp">Luyện tất cả (' + all.length + ')</button></div></div>';
+    g.forEach(function (a, k) {
+      if (!a.length) return;
+      h += '<div class="card"><h2>' + T[k][0] + " · " + a.length + '</h2><p class="sub">' + T[k][1] + '. Bấm một chữ để luyện riêng chữ đó.</p><div class="minis">' + byWeak(a.slice()).map(function (x) { return '<button class="mini" style="font:inherit;color:inherit" data-pr="' + x.id + '"><span class="han">' + esc(x.key) + "</span>" + esc(firstAm(x.am)) + "</button>"; }).join("") + "</div></div>";
+    });
+    v.innerHTML = h;
+    $("#smart", v).onclick = function () { start(smart()); };
+    $("#allp", v).onclick = function () { start(byWeak(all.slice())); };
+    Array.prototype.forEach.call(v.querySelectorAll("[data-pr]"), function (b) { b.onclick = function () { start([ITEM[b.getAttribute("data-pr")]]); }; });
+  }
   function strokeLesson() {
     var N = [["Ngang (hoành)", "横", "viết từ trái sang phải", "一 二 三 十 大 干 天 夫 王"], ["Sổ (thụ)", "豎", "viết từ trên xuống dưới", "中 川 十"], ["Phẩy (phiết)", "撇", "từ trên phải xuống trái dưới", "人 八 入 大 才 千 午 又 水"], ["Mác (nại)", "捺", "từ trên-trái xuống phải-dưới", "人 八 入 又 木"], ["Chấm (điểm)", "點", "từ trên xuống dưới phải hoặc trái", "主 玉 六 之 不 文 太 犬"], ["Hất (thiêu)", "挑", "từ dưới-trái lên trên-phải", "扌 地 汗 計"], ["Móc (câu)", "勾", "sổ câu, hoành câu, tà câu, loan câu, bình câu", "小 字 戈 我 狗 家 心"], ["Gập (chiết)", "折", "ngang gập, ngang gập móc, sổ gập…", "口 囗 己 已 巳 門 月 母 風"]];
     var R = [["Ngang trước sổ sau", "十 干 豐 共 土 士"], ["Phẩy trước mác sau", "人 入 八 父 交 天"], ["Trái trước phải sau", "佛 法 僧 明 行 仁"], ["Trên trước dưới sau", "二 三 六 旦 青 立 言 念"], ["Ngang trước phẩy sau", "左 右 不 大 夫 友"], ["Giữa trước hai bên sau", "小 塵 水 木 尖 永"], ["Ngoài trước trong sau", "周 風 問 同 月 用 閒"], ["Vào trước đóng sau", "田 日 曰 目 因 四"], ["Nét ngang đáy", "全 工 王 土 士 壬"], ["Bộ quai xước", "道 邊 達 進 遠 返 近 建"], ["Các chữ ngoại lệ", "學 覺 刀 力 忄 火"]];
