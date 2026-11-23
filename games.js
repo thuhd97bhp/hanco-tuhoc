@@ -152,24 +152,30 @@
     } });
 
   // 5. Năm rổ loại từ
-  function ltQuestion(groups) {
-    var LT = HC.LT, keys = Object.keys(LT).filter(function (x) { return groups.indexOf(LT[x]) >= 0; });
+  // set: "hk12" (từ loại HK1, kỳ 2 — như bản cũ) | "gk3" (38 từ ngữ pháp giữa kỳ 3) | bỏ trống = mọi kỳ.
+  // Câu ví dụ lấy sẵn trong app-data.json → ltq[set][từ] (đã bỏ câu mà chữ đó mang nghĩa / loại khác)
+  function ltQuestion(groups, set) {
+    var LT = HC.LT, Q = HC.D.ltq || {}, pool = set ? (Q[set] || {}) : null;
+    var keys = Object.keys(LT).filter(function (x) { return groups.indexOf(LT[x]) >= 0 && (!pool || pool[x]); });
     var x = keys[Math.floor(Math.random() * keys.length)];
-    var ss = HC.D.sents.filter(function (s) { return s.han.indexOf(x) >= 0; });
-    var ctx;
-    if (ss.length) { var s = ss[Math.floor(Math.random() * ss.length)]; var at = s.han.indexOf(x); ctx = esc(s.han.slice(0, at)) + '<span class="hl">' + esc(x) + "</span>" + esc(s.han.slice(at + x.length)); }
-    else { var ws = HC.D.words.filter(function (w) { return w.w.indexOf(x) >= 0; }); if (ws.length) { var w = ws[Math.floor(Math.random() * Math.min(ws.length, 8))]; var a2 = w.w.indexOf(x); ctx = esc(w.w.slice(0, a2)) + '<span class="hl">' + esc(x) + "</span>" + esc(w.w.slice(a2 + x.length)); } else ctx = '<span class="hl">' + esc(x) + "</span>"; }
+    var ss = pool ? pool[x] : [].concat((Q.hk12 || {})[x] || [], (Q.gk3 || {})[x] || []);
+    var ctx = '<span class="hl">' + esc(x) + "</span>";
+    if (ss.length) { var s = ss[Math.floor(Math.random() * ss.length)]; var at = s.indexOf(x); ctx = esc(s.slice(0, at)) + '<span class="hl">' + esc(x) + "</span>" + esc(s.slice(at + x.length)); }
     var it = U().chars(x).length > 1 ? HC.WORD[x] : HC.CHAR[x];
     return { x: x, ans: LT[x], ctx: ctx, it: it };
   }
   HC.ltQuestion = ltQuestion;
   var G5 = ["Số từ", "Phương vị từ", "Phó từ", "Lượng từ", "Liên từ"];
+  var G7 = ["Trợ từ kết cấu", "Trợ động từ", "Lượng từ", "Phương vị từ", "Liên từ", "Phó từ", "Số từ"];
   reg({ id: "basket", icon: "類", name: "Năm rổ loại từ", desc: "Chữ được gạch chân thuộc loại từ nào? Thả vào đúng rổ: Số từ, Phương vị từ, Phó từ, Lượng từ, Liên từ.",
-    run: function (v) {
-      var g = this, i = 0, score = 0, N = 20;
+    run: function (v) { basketRun(this, v, G5); } });
+  reg({ id: "basket7", icon: "類", name: "Bảy rổ loại từ (giữa kỳ 3)", desc: "38 từ ngữ pháp của đề cương giữa kỳ 3, trong câu đề cương và câu đề thi K10: chọn đúng 1 trong 7 loại.",
+    run: function (v) { basketRun(this, v, G7, "gk3"); } });
+  function basketRun(g, v, GG, set) {
+      var i = 0, score = 0, N = 20;
       function round() {
-        var q = ltQuestion(G5);
-        v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card" style="width:min(640px,100%)"><div class="sent">' + q.ctx + '</div><p class="sub" style="text-align:center">Chữ gạch chân thuộc loại từ nào?</p></div><div class="baskets">' + G5.map(function (n) { return '<button class="btn" data-g="' + esc(n) + '">' + esc(n) + "</button>"; }).join("") + '</div><div class="feedback" id="fb"></div></div>';
+        var q = ltQuestion(GG, set);
+        v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card" style="width:min(640px,100%)"><div class="sent">' + q.ctx + '</div><p class="sub" style="text-align:center">Chữ gạch chân thuộc loại từ nào?</p></div><div class="baskets">' + GG.map(function (n) { return '<button class="btn" data-g="' + esc(n) + '">' + esc(n) + "</button>"; }).join("") + '</div><div class="feedback" id="fb"></div></div>';
         setScore(v, score);
         U().$$(".baskets .btn", v).forEach(function (b) {
           b.onclick = function () {
@@ -183,7 +189,7 @@
         });
       }
       round();
-    } });
+  }
 
   // 6. Truy tìm bộ thủ
   reg({ id: "hunt", icon: "部", name: "Truy tìm bộ thủ", desc: "Cho một bộ thủ: chọn hết các chữ thuộc bộ đó trong lưới 12 chữ.",
@@ -290,7 +296,8 @@
       var g = this, Pw = HC.pool("w", 8), Pc = HC.pool("c", 6), qs = [];
       U().pick(Pw.items, 8).forEach(function (w) { qs.push({ kind: "type", it: w, pts: 5, part: "Phiên âm" }); });
       U().pick(Pc.items, 6).forEach(function (c) { qs.push({ kind: "mean", it: c, pts: 5, part: "Nghĩa của chữ" }); });
-      for (var k = 0; k < 6; k++) qs.push({ kind: "lt", q: ltQuestion(G5), pts: 5, part: "Loại từ" });
+      var pl = HC.plan(), inPlan = pl.di < pl.weeks * 7; // trong lộ trình giữa kỳ 3: loại từ theo 7 loại của đề cương giữa kỳ 3
+      for (var k = 0; k < 6; k++) qs.push({ kind: "lt", q: inPlan ? ltQuestion(G7, "gk3") : ltQuestion(G5), groups: inPlan ? G7 : G5, pts: 5, part: "Loại từ" });
       runQuiz(v, head(g, Pw.preview), qs, function (score, max, parts) { finish(v, g, Math.round(score), { label: Math.round(score) + " / 100", msg: parts, bonus: Math.round(score / 4) }); });
     } });
 
@@ -377,19 +384,35 @@
   HC.exam = function (v, args) {
     var D = HC.D, S = HC.state();
     var which = args[0];
+    // đề khai trong app-data.json → exams (vd giữa kỳ 3): cấu trúc theo đề K10 của kỳ đó
+    var EX = D.exams || [], ex = EX.filter(function (e) { return e.key === which; })[0];
     if (!which) {
       v.innerHTML = '<h1>Thi thử</h1><p class="sub">Đề ngẫu nhiên lấy từ đúng nội dung đề cương, theo cấu trúc đề K10. Phần tự luận (dịch câu, viết chữ Hán) bạn xem đáp án rồi tự chấm.</p><div class="cols2">' +
+        EX.map(function (e) {
+          var tot = e.parts.reduce(function (s, p) { return s + p.n * p.pts; }, 0);
+          return '<div class="card"><h2>' + esc(e.name) + " · " + e.parts.length + " phần · " + tot + ' điểm</h2><table class="t"><tbody>' + e.parts.map(function (p) { return "<tr><td>" + esc(p.part) + '</td><td class="num">' + p.n * p.pts + "đ</td></tr>"; }).join("") + '</tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best[e.best] != null ? S.best[e.best] : "—") + '</p><a class="btn primary" href="#thi-' + e.key + '">Bắt đầu ' + esc(e.name.charAt(0).toLowerCase() + e.name.slice(1)) + "</a></div>";
+        }).join("") +
         '<div class="card"><h2>Đề HK1 · 6 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 từ đôi</td><td class="num">20đ</td></tr><tr><td>II. Nhận diện 10 chữ</td><td class="num">20đ</td></tr><tr><td>III. Nhận diện loại từ 20 câu</td><td class="num">20đ</td></tr><tr><td>IV. Phiên âm và dịch 10 câu</td><td class="num">20đ</td></tr><tr><td>V. Cụm thông tin cá nhân</td><td class="num">4đ</td></tr><tr><td>VI. Dịch và viết chữ Hán 4 câu</td><td class="num">16đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK1 != null ? S.best.examHK1 : "—") + '</p><a class="btn primary" href="#thi-hk1">Bắt đầu đề HK1</a></div>' +
         '<div class="card"><h2>Đề cuối kỳ 2 · 4 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 cụm</td><td class="num">20đ</td></tr><tr><td>II. Loại từ 20 câu (5 loại)</td><td class="num">20đ</td></tr><tr><td>III. Phiên âm và dịch 10 câu</td><td class="num">30đ</td></tr><tr><td>IV. Viết chữ Hán 5 câu</td><td class="num">30đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK2 != null ? S.best.examHK2 : "—") + '</p><a class="btn primary" href="#thi-hk2">Bắt đầu đề kỳ 2</a></div></div>';
       return;
     }
     var qs = [], U2 = U();
-    if (which === "hk1") {
+    if (ex) {
+      ex.parts.forEach(function (p) {
+        var bySet = function (s) { return s.set === p.sset; };
+        if (p.kind === "type") U2.pick(D.words.filter(function (w) { return (w.src || []).some(function (s) { return s.indexOf(p.src) === 0; }); }), p.n).forEach(function (w) { qs.push({ kind: "type", it: w, pts: p.pts, part: p.part }); });
+        else if (p.kind === "lt") {
+          var tm = (D.ltq || {})[p.set] || {}, gs = Object.keys(D.loaitu).filter(function (g) { return Object.keys(tm).some(function (t) { return HC.LT[t] === g; }); });
+          for (var j = 0; j < p.n; j++) qs.push({ kind: "lt", q: HC.ltQuestion(gs, p.set), groups: gs, pts: p.pts, part: p.part });
+        } else if (p.kind === "self") U2.pick(D.sents.filter(bySet), p.n).forEach(function (s) { qs.push({ kind: "self", s: s, a: p.a, b: p.b, pts: p.pts, part: p.part }); });
+        else if (p.kind === "write") U2.pick(D.sents.filter(bySet), p.n).forEach(function (s) { qs.push({ kind: "write", s: s, pts: p.pts, part: p.part }); });
+      });
+    } else if (which === "hk1") {
       var w1 = D.words.filter(function (w) { return (w.src || []).some(function (s) { return s.indexOf("Đề cương HK1 – Phần I") === 0; }); });
       U2.pick(w1, 20).forEach(function (w) { qs.push({ kind: "type", it: w, pts: 1, part: "I. Phiên âm" }); });
       var c2 = D.chars.filter(function (c) { return c.net; });
       U2.pick(c2, 10).forEach(function (c) { qs.push({ kind: "mean", it: c, pts: 2, part: "II. Nhận diện chữ" }); });
-      for (var k = 0; k < 20; k++) { var q3 = HC.ltQuestion(["Số từ", "Phương vị từ", "Phó từ"]); qs.push({ kind: "lt", q: q3, groups: ["Số từ", "Phương vị từ", "Phó từ"], pts: 1, part: "III. Loại từ" }); }
+      for (var k = 0; k < 20; k++) { var q3 = HC.ltQuestion(["Số từ", "Phương vị từ", "Phó từ"], "hk12"); qs.push({ kind: "lt", q: q3, groups: ["Số từ", "Phương vị từ", "Phó từ"], pts: 1, part: "III. Loại từ" }); }
       U2.pick(D.sents.filter(function (s) { return s.set === "ĐC HK1 · Phần IV"; }), 10).forEach(function (s) { qs.push({ kind: "self", s: s, a: 1, b: 1, pts: 2, part: "IV. Phiên âm và dịch" }); });
       var V = [["我姓名是", "Họ tên tôi là…"], ["法名 / 法號", "Pháp danh / pháp hiệu…"], ["年 月 日生", "Sinh năm – tháng – ngày."], ["今年是…歲", "Năm nay… tuổi."], ["第…届…年級第…學期", "Khóa…, năm thứ…, học kỳ…"]];
       V.forEach(function (p, j) { var opts = U2.shuffle(V.map(function (x) { return x[1]; })); qs.push({ kind: "phrase", han: p[0], opts: opts, ans: opts.indexOf(p[1]), pts: 0.8, part: "V. Thông tin cá nhân" }); });
@@ -397,13 +420,13 @@
     } else {
       var w2 = D.words.filter(function (w) { return (w.src || []).some(function (s) { return s.indexOf("Đề cương HK2 – Phần I") === 0; }); });
       U2.pick(w2, 20).forEach(function (w) { qs.push({ kind: "type", it: w, pts: 1, part: "I. Phiên âm" }); });
-      for (var k2 = 0; k2 < 20; k2++) qs.push({ kind: "lt", q: HC.ltQuestion(G5), pts: 1, part: "II. Loại từ" });
+      for (var k2 = 0; k2 < 20; k2++) qs.push({ kind: "lt", q: HC.ltQuestion(G5, "hk12"), pts: 1, part: "II. Loại từ" });
       U2.pick(D.sents.filter(function (s) { return s.set === "ĐC HK2 · Phần III"; }), 10).forEach(function (s) { qs.push({ kind: "self", s: s, a: 1.5, b: 1.5, pts: 3, part: "III. Phiên âm và dịch" }); });
       U2.pick(D.sents.filter(function (s) { return s.set === "ĐC HK2 · Phần IV"; }), 5).forEach(function (s) { qs.push({ kind: "write", s: s, pts: 6, part: "IV. Viết chữ Hán" }); });
     }
-    var hd = '<div class="ghead"><a class="btn sm ghost" href="#thi">← Thi thử</a><h1 style="margin:0;font-size:1.25rem">' + (which === "hk1" ? "Đề thi thử HK1" : "Đề thi thử cuối kỳ 2") + "</h1></div>";
+    var hd = '<div class="ghead"><a class="btn sm ghost" href="#thi">← Thi thử</a><h1 style="margin:0;font-size:1.25rem">' + (ex ? "Đề thi thử " + esc(ex.name.replace(/^Đề\s*/, "")) : which === "hk1" ? "Đề thi thử HK1" : "Đề thi thử cuối kỳ 2") + "</h1></div>";
     runQuiz(v, hd, qs, function (score, max, parts, byPart) {
-      var sc = Math.round(score * 10) / 10, key = which === "hk1" ? "examHK1" : "examHK2";
+      var sc = Math.round(score * 10) / 10, key = ex ? ex.best : which === "hk1" ? "examHK1" : "examHK2";
       var best = HC.setBest(key, sc, true); HC.addXP(Math.round(sc / 3)); HC.after();
       v.innerHTML = hd + '<div class="card result pop"><div class="score-big">' + sc + '</div><div class="muted">/ 100 điểm</div>' + (best ? '<span class="chip ok">Điểm cao nhất mới!</span>' : "") + '<div class="tablebox" style="width:min(480px,100%)"><table class="t"><tbody>' + Object.keys(byPart).map(function (p) { return "<tr><td>" + esc(p) + '</td><td class="num">' + (Math.round(byPart[p].got * 10) / 10) + " / " + byPart[p].max + "</td></tr>"; }).join("") + '</tbody></table></div><div class="row" style="justify-content:center"><button class="btn primary" id="again">Làm đề khác</button><a class="btn" href="#thi">Chọn đề</a></div></div>';
       v.querySelector("#again").onclick = function () { HC.route(); };
