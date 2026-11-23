@@ -79,6 +79,7 @@
   function save() {
     S.upd = Date.now(); saveLocal();
     clearTimeout(saveTimer); saveTimer = setTimeout(pushRemote, 1500);
+    scheduleFb();
   }
   HC.save = save;
   function pushRemote() {
@@ -117,6 +118,130 @@
       renderStats();
     }).catch(function () { remote.status = "error"; renderStats(); });
   }
+  // ---------- đồng bộ giữa các máy qua Firebase (dự án hanco-tuhoc) ----------
+  // Mỗi người: hanco_progress/{uid} = { data: <chuỗi JSON tiến độ>, upd, ver }
+  //            hanco_progress/{uid}/backups/{YYYY-MM-DD} = bản sao lưu mỗi ngày (giữ 14 bản)
+  var FB_CONFIG = {
+    apiKey: "AIzaSyAPUZemJVnb6Pn96s7TXNGpcQ5fILpqURY",
+    authDomain: "hanco-tuhoc.firebaseapp.com",
+    projectId: "hanco-tuhoc",
+    storageBucket: "hanco-tuhoc.firebasestorage.app",
+    messagingSenderId: "487484756352",
+    appId: "1:487484756352:web:b85b86841630919ea8b165"
+  };
+  var fb = { on: false, auth: null, db: null, user: null, ref: null, status: "off", last: 0, busy: false, again: false, timer: null, unsub: null, lastSeen: 0 };
+  HC.fb = fb;
+  function dayKey(n) { var d = new Date(n * 864e5); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0"); }
+  // gộp tiến độ hai máy: không mất chữ nào đã học ở bất kỳ máy nào
+  function merge(a, b) {
+    var m = JSON.parse(JSON.stringify(a)), newer = (b.upd || 0) > (a.upd || 0) ? b : a;
+    Object.keys(b.it || {}).forEach(function (id) {
+      var x = m.it[id], y = b.it[id];
+      if (!x) { m.it[id] = y.slice(); return; }
+      var sx = x[1] + Math.max(x[3], 0), sy = y[1] + Math.max(y[3], 0), lap = Math.max(x[4], y[4]);
+      if (sy > sx || (sy === sx && y[0] + y[2] > x[0] + x[2])) m.it[id] = y.slice();
+      m.it[id][4] = lap;
+    });
+    m.xp = Math.max(a.xp || 0, b.xp || 0);
+    var sa = a.streak || { d: 0, c: 0 }, sb = b.streak || { d: 0, c: 0 };
+    m.streak = sb.d > sa.d || (sb.d === sa.d && sb.c > sa.c) ? { d: sb.d, c: sb.c } : { d: sa.d, c: sa.c };
+    m.best = Object.assign({}, a.best);
+    Object.keys(b.best || {}).forEach(function (k) { var x = m.best[k], y = b.best[k]; m.best[k] = x == null ? y : k === "memo" ? Math.min(x, y) : Math.max(x, y); });
+    m.badges = Object.assign({}, b.badges, a.badges);
+    m.log = JSON.parse(JSON.stringify(a.log || {}));
+    Object.keys(b.log || {}).forEach(function (d) { var x = m.log[d] || (m.log[d] = { n: 0, r: 0, x: 0 }), y = b.log[d]; ["n", "r", "x"].forEach(function (k) { x[k] = Math.max(x[k] || 0, y[k] || 0); }); });
+    m.start = newer.start; m.set = JSON.parse(JSON.stringify(newer.set));
+    m.upd = Math.max(a.upd || 0, b.upd || 0);
+    return m;
+  }
+  HC.merge = merge;
+  function softRefresh() {
+    var c = cur || "home", name = c.split("-")[0];
+    if (c.indexOf("-") < 0 && ["home", "caidat", "tra", "bo", "loaitu", "cau", "choi", "thi", "on", "viet"].indexOf(name) >= 0 && !document.querySelector(".fc, canvas.pad, .modal")) route();
+    else { renderStats(); renderMenu(name); }
+  }
+  function applyRemote(data, silent) {
+    try {
+      var rem = typeof data === "string" ? JSON.parse(data) : data;
+      if (!rem || !rem.it) return false;
+      var before = JSON.stringify(S.it) + "|" + S.xp + "|" + S.start;
+      S = normalize(merge(S, normalize(rem))); saveLocal();
+      var changed = before !== JSON.stringify(S.it) + "|" + S.xp + "|" + S.start;
+      if (changed) { if (!silent) toast("Đã cập nhật tiến độ từ máy khác"); softRefresh(); }
+      return changed;
+    } catch (e) { return false; }
+  }
+  function fbSync() {
+    if (!fb.ref) return Promise.resolve();
+    if (fb.busy) { fb.again = true; return Promise.resolve(); }
+    fb.busy = true; fb.status = "syncing"; renderStats();
+    return fb.ref.get().then(function (snap) {
+      if (snap.exists && snap.data().data) applyRemote(snap.data().data, true);
+      var body = JSON.stringify(S);
+      return fb.ref.set({ data: body, upd: S.upd || Date.now(), ver: 1 }).then(function () { fb.lastSeen = S.upd || 0; return backup(body); });
+    }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
+      .catch(function (e) { fb.status = "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
+      .then(function () { fb.busy = false; renderStats(); if (fb.again) { fb.again = false; fbSync(); } });
+  }
+  HC.fbSync = fbSync;
+  function backup(body) {
+    var k = dayKey(today()), LK = "hanco-fb-backup";
+    var done = null; try { done = localStorage.getItem(LK); } catch (e) { }
+    if (done === fb.user.uid + k) return Promise.resolve();
+    var col = fb.ref.collection("backups");
+    return col.doc(k).set({ data: body, upd: Date.now() }).then(function () {
+      try { localStorage.setItem(LK, fb.user.uid + k); } catch (e) { }
+      return col.get().then(function (qs) {
+        var ids = qs.docs.map(function (d) { return d.id; }).sort();
+        var old = ids.slice(0, Math.max(0, ids.length - 14));
+        return Promise.all(old.map(function (id) { return col.doc(id).delete(); }));
+      });
+    });
+  }
+  HC.fbBackups = function () {
+    if (!fb.ref) return Promise.resolve([]);
+    return fb.ref.collection("backups").get().then(function (qs) { return qs.docs.map(function (d) { return { id: d.id, data: d.data().data }; }).sort(function (a, b) { return a.id < b.id ? 1 : -1; }); });
+  };
+  HC.fbRestore = function (data) { S = normalize(JSON.parse(data)); S.upd = Date.now(); saveLocal(); return fbSync(); };
+  function scheduleFb() { if (!fb.ref) return; clearTimeout(fb.timer); fb.timer = setTimeout(fbSync, 4000); }
+  HC.fbSignIn = function () {
+    if (!fb.on) return;
+    var p = new firebase.auth.GoogleAuthProvider();
+    fb.auth.signInWithPopup(p).catch(function (e) {
+      if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-environment" || e.code === "auth/cancelled-popup-request")) fb.auth.signInWithRedirect(p);
+      else if (e && e.code !== "auth/popup-closed-by-user") toast("Chưa đăng nhập được (" + (e.code || "lỗi") + ")");
+    });
+  };
+  HC.fbSignOut = function () { if (fb.auth) fb.auth.signOut(); };
+  function fbInit() {
+    if (!window.firebase || !firebase.initializeApp) return;
+    try {
+      var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_CONFIG);
+      fb.auth = firebase.auth(); fb.db = firebase.firestore(); fb.on = true;
+    } catch (e) { return; }
+    fb.status = "signedout";
+    fb.auth.getRedirectResult().catch(function () { });
+    fb.auth.onAuthStateChanged(function (u) {
+      if (fb.unsub) { fb.unsub(); fb.unsub = null; }
+      fb.user = u; fb.ref = u ? fb.db.collection("hanco_progress").doc(u.uid) : null;
+      if (!u) { fb.status = "signedout"; renderStats(); softRefresh(); return; }
+      fbSync().then(function () {
+        // nghe thay đổi từ máy khác theo thời gian thực
+        fb.unsub = fb.ref.onSnapshot(function (snap) {
+          if (!snap.exists || snap.metadata.hasPendingWrites) return;
+          var d = snap.data(); if (!d || !d.data || (d.upd || 0) <= fb.lastSeen) return;
+          fb.lastSeen = d.upd; applyRemote(d.data, false); fb.last = Date.now(); renderStats();
+        }, function () { });
+        softRefresh();
+      });
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (!fb.ref) return;
+      if (document.visibilityState === "hidden") { clearTimeout(fb.timer); fbSync(); }
+    });
+    window.addEventListener("pagehide", function () { if (fb.ref) { clearTimeout(fb.timer); fbSync(); } });
+  }
+
   function normalize(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); return s; }
 
   // ---------- SRS ----------
@@ -411,8 +536,14 @@
   function renderStats() {
     if (!S) return;
     var L = lvl();
-    var sync = remote.status === "synced" ? "Đã lưu vào tài khoản" : remote.status === "error" ? "Chưa đồng bộ được, đang lưu trên máy này" : remote.status === "full" ? "Bộ nhớ tài khoản đầy" : "Lưu trên trình duyệt này";
-    $("#stats").innerHTML = '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>";
+    var sync = fb.on ? (fb.user ? "Đã đăng nhập Google (" + esc(fb.user.email || "") + "). Tiến độ tự lưu lên Firebase và tự đồng bộ với mọi máy bạn đăng nhập cùng tài khoản. Mỗi ngày tự sao lưu 1 bản, giữ 14 ngày." : "Chưa đăng nhập. Bấm Đăng nhập bằng Google (chỉ 1 lần trên máy này) để tự đồng bộ giữa các máy.") : remote.status === "synced" ? "Đã lưu vào tài khoản" : remote.status === "error" ? "Chưa đồng bộ được, đang lưu trên máy này" : remote.status === "full" ? "Bộ nhớ tài khoản đầy" : "Lưu trên trình duyệt này";
+    var cloud = "";
+    if (fb.on) {
+      if (!fb.user) cloud = '<button class="pill" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ Đăng nhập</button>';
+      else cloud = '<span class="pill" title="' + esc(fb.user.email || "") + '" style="color:' + (fb.status === "error" ? "var(--seal)" : "var(--good)") + '">☁ ' + (fb.status === "syncing" ? "Đang lưu…" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ") + "</span>";
+    }
+    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>";
+    var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
   }
   HC.renderStats = renderStats;
   var cur = null;
@@ -459,6 +590,7 @@
     var p = plan(), q = p.quota, dr = due("r").length, dw = due("w").length, L = lvl();
     var wk = Math.min(p.week, 5), inPlan = p.di < 35;
     var h = '<div class="grid">';
+    if (fb.on && !fb.user) h += '<div class="card" style="border-color:var(--seal)"><div class="row"><div style="flex:1;min-width:220px"><h2 style="margin:0">Đăng nhập Google để tự đồng bộ</h2><p class="sub" style="margin:0">Chỉ cần làm 1 lần trên máy này. Sau đó tiến độ tự lưu và tự đồng bộ với mọi máy khác của bạn.</p></div><button class="btn primary" id="fbin2">Đăng nhập bằng Google</button></div></div>';
     h += '<div class="card hero"><div class="row"><div><h1>' + (inPlan ? "Tuần " + (wk + 1) + "/5 · ngày " + (p.di % 7 + 1) + "/7" : "Sau lộ trình 5 tuần: học tiếp phần còn lại") + '</h1><p class="sub">' + (inPlan ? esc(WEEKS[wk].t) + " — " + esc(WEEKS[wk].d) : "Mỗi ngày " + S.set.newC + " chữ và " + S.set.newW + " từ mới cho tới khi học hết 1.222 chữ và 733 từ.") + "</p></div></div>";
     h += '<div class="weeks">' + WEEKS.map(function (w, i) { return '<div class="' + (i === wk && inPlan ? "now" : i < wk ? "done" : "") + '"><b>Tuần ' + (i + 1) + "</b>" + esc(w.t) + "</div>"; }).join("") + "</div>";
     if (p.behind > 0) h += '<p class="chip warn">Bạn đang chậm khoảng ' + p.behind + " chữ so với kế hoạch. App đã dồn phần còn thiếu vào hôm nay.</p>";
@@ -484,6 +616,7 @@
     h += '<h3>Chữ khó của tôi</h3>' + (hard.length ? '<div class="minis">' + hard.map(miniHTML).join("") + '</div><p style="margin-top:8px"><a class="btn sm" href="#on-kho">Ôn riêng chữ khó</a></p>' : '<p class="sub">Chưa có. Chữ nào bạn quên từ 2 lần trở lên sẽ tự vào đây.</p>');
     h += "</div></div></div>";
     v.innerHTML = h;
+    var b2 = $("#fbin2", v); if (b2) b2.onclick = HC.fbSignIn;
   }
   function task(ic, cls, title, sub, btn) { return '<div class="task"><div class="ic ' + cls + '" aria-hidden="true">' + ic + "</div><div><b>" + esc(title) + "</b><small>" + esc(sub) + "</small></div><div>" + btn + "</div></div>"; }
 
@@ -730,10 +863,26 @@
     var p = plan();
     var sync = remote.status === "synced" ? "Tiến độ đang được lưu vào tài khoản Claude của bạn, nên mở app trên máy tính hay điện thoại (cùng tài khoản) đều thấy cùng tiến độ." : remote.status === "error" ? "Chưa lưu được lên tài khoản lúc này; tiến độ vẫn được giữ trên trình duyệt này và sẽ thử lưu lại." : "Tiến độ đang lưu trên trình duyệt này. Hãy sao lưu thường xuyên bằng mã bên dưới.";
     var last = Object.keys(S.log).map(Number).sort(function (a, b) { return b - a; }).slice(0, 14);
-    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p><h3>Sao lưu / chuyển máy</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
+    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div><div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Bắt đầu ngày ' + dateOf(S.start) + " · hôm nay là ngày " + (p.di + 1) + " · ngày học thứ " + p.k + ' (tính 6 ngày học + 1 ngày ôn mỗi tuần).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày sau 5 tuần</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày sau 5 tuần</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh khi trả lời đúng / sai</label><div class="row" style="margin-top:12px"><button class="btn" id="restart">Tính lại lịch từ hôm nay</button></div><p class="sub" style="margin-top:6px">Tính lại lịch giữ nguyên chữ đã học, chỉ dời ngày bắt đầu của lộ trình 5 tuần về hôm nay.</p></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div></div>';
+    var e1 = $("#fbin3", v); if (e1) e1.onclick = HC.fbSignIn;
+    var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbSync().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
+    var e3 = $("#fbout", v); if (e3) e3.onclick = function () { HC.fbSignOut(); toast("Đã đăng xuất trên máy này"); };
+    var e4 = $("#fbbk", v); if (e4) e4.onclick = function () {
+      $("#bklist", v).innerHTML = '<p class="sub">Đang tải…</p>';
+      HC.fbBackups().then(function (list) {
+        if (!list.length) { $("#bklist", v).innerHTML = '<p class="sub">Chưa có bản sao lưu.</p>'; return; }
+        $("#bklist", v).innerHTML = '<table class="t"><tbody>' + list.map(function (b, i) { var n = 0; try { n = Object.keys(JSON.parse(b.data).it).length; } catch (e) { } return "<tr><td>" + esc(b.id) + '</td><td class="num">' + n + ' mục đã học</td><td><button class="btn sm" data-rs="' + i + '">Khôi phục</button></td></tr>'; }).join("") + "</tbody></table>";
+        $$("[data-rs]", v).forEach(function (btn) { btn.onclick = function () {
+          var b = list[+btn.getAttribute("data-rs")];
+          btn.parentNode.innerHTML = '<span>Thay tiến độ hiện tại bằng bản ' + esc(b.id) + '?</span> <button class="btn sm bad" data-yes>Khôi phục</button> <button class="btn sm" data-no>Thôi</button>';
+          $("[data-yes]", v).onclick = function () { HC.fbRestore(b.data).then(function () { toast("Đã khôi phục bản " + b.id); route(); }); };
+          $("[data-no]", v).onclick = function () { route(); };
+        }; });
+      }).catch(function () { $("#bklist", v).innerHTML = '<p class="sub">Không tải được bản sao lưu.</p>'; });
+    };
     $("#cp", v).onclick = function () { var t = JSON.stringify(S); $("#bk", v).value = t; var ta = $("#bk", v); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast("Đã sao chép mã tiến độ"); }, function () { ta.select(); toast("Hãy bấm Ctrl+C để sao chép"); }); else { ta.select(); toast("Hãy bấm Ctrl+C để sao chép"); } };
     $("#im", v).onclick = function () { try { var o = JSON.parse($("#bk", v).value); if (!o || !o.it) throw 0; S = normalize(o); S.upd = Date.now(); save(); toast("Đã khôi phục tiến độ"); route(); } catch (e) { toast("Mã không hợp lệ. Hãy dán đúng toàn bộ mã đã sao chép."); } };
     $("#nc", v).onchange = function () { S.set.newC = Math.max(5, Math.min(60, +this.value || 20)); save(); };
@@ -761,6 +910,7 @@
     window.addEventListener("hashchange", function () { var h = (location.hash || "#home").slice(1); if (h !== cur) { cur = h; route(); } });
     route();
     initRemote();
+    fbInit();
   }
   function boot() {
     if (window.__HANCO_APP__) return start(window.__HANCO_APP__);
