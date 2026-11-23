@@ -174,13 +174,14 @@
   function fbSync() {
     if (!fb.ref) return Promise.resolve();
     if (fb.busy) { fb.again = true; return Promise.resolve(); }
+    if (navigator.onLine === false) { fb.status = "offline"; renderStats(); return Promise.resolve(); }
     fb.busy = true; fb.status = "syncing"; renderStats();
     return fb.ref.get().then(function (snap) {
       if (snap.exists && snap.data().data) applyRemote(snap.data().data, true);
       var body = JSON.stringify(S);
       return fb.ref.set({ data: body, upd: S.upd || Date.now(), ver: 1 }).then(function () { fb.lastSeen = S.upd || 0; return backup(body); });
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
-      .catch(function (e) { fb.status = "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
+      .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () { fb.busy = false; renderStats(); if (fb.again) { fb.again = false; fbSync(); } });
   }
   HC.fbSync = fbSync;
@@ -240,6 +241,8 @@
       if (document.visibilityState === "hidden") { clearTimeout(fb.timer); fbSync(); }
     });
     window.addEventListener("pagehide", function () { if (fb.ref) { clearTimeout(fb.timer); fbSync(); } });
+    window.addEventListener("online", function () { if (fb.ref) { fbSync().then(function () { if (fb.status === "ok") toast("Có mạng trở lại: đã đồng bộ phần học lúc ngoại tuyến"); }); } else renderStats(); });
+    window.addEventListener("offline", function () { if (fb.ref) { fb.status = "offline"; } renderStats(); });
   }
 
   function normalize(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); return s; }
@@ -540,7 +543,7 @@
     var cloud = "";
     if (fb.on) {
       if (!fb.user) cloud = '<button class="pill" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ Đăng nhập</button>';
-      else cloud = '<span class="pill" title="' + esc(fb.user.email || "") + '" style="color:' + (fb.status === "error" ? "var(--seal)" : "var(--good)") + '">☁ ' + (fb.status === "syncing" ? "Đang lưu…" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ") + "</span>";
+      else cloud = '<span class="pill" title="' + esc(fb.user.email || "") + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '">☁ ' + (fb.status === "syncing" ? "Đang lưu…" : fb.status === "offline" ? "Ngoại tuyến · đã lưu trên máy" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ") + "</span>";
     }
     $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>";
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
@@ -911,6 +914,9 @@
     route();
     initRemote();
     fbInit();
+    if ("serviceWorker" in navigator && location.protocol === "https:" && !(window.claude && typeof window.claude.use === "function")) {
+      navigator.serviceWorker.register("sw.js").catch(function () { });
+    }
   }
   function boot() {
     if (window.__HANCO_APP__) return start(window.__HANCO_APP__);
