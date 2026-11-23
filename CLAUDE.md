@@ -67,11 +67,22 @@
   Trả lời trước bằng 4 mục rồi DỪNG, chờ người dùng đồng ý:
   1. Ý hiểu: nhắc lại yêu cầu bằng lời của mình (nêu rõ chỗ còn mơ hồ và cách mình định hiểu).
   2. Sẽ sửa: những file/phần nào, làm gì; những gì KHÔNG đụng tới.
-  3. Rủi ro: ảnh hưởng tới tiến độ người học (S, localStorage, Firestore), tới nội dung đề cương,
-     tới link đang dùng, tới máy khác/điện thoại; nêu cách giảm rủi ro.
+  3. Rủi ro và cách khắc phục: với MỖI rủi ro (tiến độ người học S/localStorage/Firestore,
+     nội dung đề cương, link đang dùng, máy khác/điện thoại) ghi rõ:
+     (a) rủi ro gì; (b) cách khắc phục cụ thể sẽ LÀM; (c) cách chứng minh đã khắc phục.
+     Khắc phục là một phần của việc sửa: phải làm thật, không chỉ nêu. Không khắc phục được
+     → nói rõ và để người dùng quyết.
+     Biện pháp luôn làm:
+     - Trước khi sửa: chép bản hiện tại của các file sẽ sửa vào tools/backup/<ngày-giờ>/
+       để quay lại được.
+     - Đụng tới S/blank/normalize/merge/đồng bộ: thử với bản sao dữ liệu tiến độ cũ,
+       chứng minh đọc được và không mất mục nào.
+     - Trước deploy: node --check + chạy thử bằng http.server.
+     - Sau deploy: mở https://hanco-tuhoc.web.app kiểm tra thật.
   4. Cách kiểm tra: sẽ thử gì sau khi sửa, cái gì không tự thử được.
 - Chỉ bắt đầu sửa khi người dùng xác nhận (vd "đồng ý", "làm đi"). Câu hỏi thuần, đọc/tra cứu thì không cần.
 - Đang làm mà phát hiện cần sửa thêm ngoài phạm vi đã duyệt → dừng, hỏi lại.
 - Việc không hoàn tác được (deploy, đẩy GitHub, đổi luật Firestore, xóa dữ liệu) phải được nêu rõ
   trong bước 2 và chỉ làm sau khi được duyệt.
-- Làm xong: báo đã sửa gì, đã kiểm tra gì (kết quả thật), còn gì chưa kiểm tra được.
+- Làm xong: báo đã sửa gì; theo từng rủi ro → đã khắc phục bằng gì → kết quả kiểm tra thật;
+  còn gì chưa kiểm tra được.
