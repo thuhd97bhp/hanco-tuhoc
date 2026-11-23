@@ -498,7 +498,7 @@
   // Chấm theo HÌNH chữ (không xét số nét / thứ tự nét): rải điểm đều trên các nét người viết và trên nét mẫu,
   // đưa về cùng khung, đo độ lệch hai chiều (vị trí + hướng nét). Đúng = trong ~1.200 chữ có dữ liệu,
   // chữ giống nhất với hình bạn viết chính là chữ cần viết (hoặc gần như ngang bằng), và độ lệch không quá lớn.
-  var G_P = 72, G_LAM = 0.12, G_ABS = 0.11, G_TIE = 1.06, G_OFF = 0.12, G_LAM2 = 0.25, G_RUN = 0.2, G_LRUN = 0.2, TPL = {};
+  var G_P = 72, G_LAM = 0.12, G_ABS = 0.13, G_TIE = 1.2, G_OFF = 0.12, G_LAM2 = 0.25, G_RUN = 0.2, G_LRUN = 0.22, G_SHIFT = 0.12, TPL = {};
   // nét thừa / phần thiếu: một ĐOẠN LIỀN dài hơn G_RUN (thừa) / G_LRUN (thiếu) — tính theo khung chữ = 1 — mà mọi điểm đều cách nét kia quá G_OFF
   function gCloud(ss, n) { // điểm rải đều theo chiều dài + hướng nét tại điểm đó (không phân biệt chiều viết)
     var L = 0, out = []; ss.forEach(function (s) { L += gLen(s); });
@@ -587,18 +587,32 @@
     r.recog = g.d <= G_ABS && (g.rank === 0 || g.d <= g.bestD * G_TIE);
     // nhìn ra chữ chưa đủ: không được có nét thừa (kể cả đường nối giữa các nét) và không được thiếu phần nào của chữ
     if (!T.D) T.D = gDense(T.E, T.t);
-    var Ud = gDense(U, g.full), ex = gRuns(Ud, gFlat(T.D)), lk = gRuns(T.D, gFlat(Ud));
+    var Tf = gFlat(T.D), Ud0 = gDense(U, g.full), sh = Ud0.map(function (s) { return gShift(s, Tf); });
+    var Ud = Ud0.map(function (s, i) { return gMove(s, sh[i]); }), Uf = gFlat(Ud), ex = gRuns(Ud, Tf);
+    var lk = gRuns(T.D.map(function (s) { return gMove(s, gShift(s, Uf)); }), Uf);
     r.extra = ex.max; r.lack = lk.max;
     r.ok = r.recog && r.extra <= G_RUN && r.lack <= G_LRUN;
     if (r.ok) { r.uOk = U.map(function () { return true; }); return r; }
     // tô màu: đoạn thừa (đổi về toạ độ ô viết) tô đỏ; nét mẫu có đoạn thiếu dài → vẽ nét đứt đỏ
     var f = g.full;
     r.uOk = ex.runs.map(function (rs) { return !rs.length; });
-    r.badSegs = ex.runs.map(function (rs) { return rs.map(function (seg) { return seg.map(function (q) { return [(q[0] - f.bx) / f.ax, (q[1] - f.by) / f.ay]; }); }); });
+    r.badSegs = ex.runs.map(function (rs, i) { return rs.map(function (seg) { return seg.map(function (q) { return [(q[0] - sh[i][0] - f.bx) / f.ax, (q[1] - sh[i][1] - f.by) / f.ay]; }); }); });
     lk.runs.forEach(function (rs, j) { if (rs.length) r.miss.push(j); });
     return r;
   }
   HC.gradeShape = gradeShape;
+  // cho từng nét người viết xê dịch một chút (tối đa G_SHIFT) cho khớp chỗ của nó trong chữ mẫu: chữ viết tay hay lệch từng bộ phận
+  function gShift(s, Y) {
+    var v = [0, 0];
+    for (var it = 0; it < 2; it++) {
+      var sx = 0, sy = 0;
+      s.forEach(function (q) { var m = [q[0] + v[0], q[1] + v[1], q[2], q[3], q[4]], t = Y[gNN(m, Y, G_LAM2)[1]]; sx += t[0] - m[0]; sy += t[1] - m[1]; });
+      v = [v[0] + sx / s.length, v[1] + sy / s.length];
+      var L = Math.sqrt(v[0] * v[0] + v[1] * v[1]); if (L > G_SHIFT) v = [v[0] * G_SHIFT / L, v[1] * G_SHIFT / L];
+    }
+    return v;
+  }
+  function gMove(s, v) { return s.map(function (q) { return [q[0] + v[0], q[1] + v[1], q[2], q[3], q[4]]; }); }
   function gFlat(A) { var o = []; A.forEach(function (a) { o = o.concat(a); }); return o; }
   function gDense(ss, t) { // từng nét đổi sang khung chuẩn rồi rải điểm dày (cách ~0.02) kèm hướng
     return ss.map(function (s) { var p = s.map(function (q) { return [t.ax * q[0] + t.bx, t.ay * q[1] + t.by]; }); return gDirs(gRes(p, Math.max(2, Math.ceil(gLen(p) / 0.02) + 1))); });
@@ -699,7 +713,7 @@
     cv.setAttribute("aria-label", "Ô tập viết");
     box.innerHTML = ""; box.appendChild(cv);
     var ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
-    var strokes = [], cur = null, showModel = false, res = null, song = {};
+    var strokes = [], cur = null, showModel = false, res = null, song = {}, graded = null;
     var css = getComputedStyle(document.documentElement);
     function col(v) { return css.getPropertyValue(v).trim() || "#000"; }
     function line(s) { ctx.beginPath(); s.forEach(function (p, j) { if (j) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); if (s.length === 1) ctx.lineTo(s[0][0] + 0.1, s[0][1]); ctx.stroke(); }
@@ -757,6 +771,7 @@
           r.ids = per[i]; r.E = skOf(ch); r.msg = gradeMsg(r);
           return r;
         });
+        graded = { s: strokes.map(function (st) { return st.map(function (q) { return [Math.round(q[0]), Math.round(q[1])]; }); }), res: res };
         showModel = true; draw();
         return res;
       });
@@ -766,7 +781,9 @@
       undo: function () { strokes.pop(); res = null; draw(); },
       model: function (v) { showModel = v == null ? !showModel : v; draw(); return showModel; },
       empty: function () { return !strokes.length; },
-      grade: grade
+      grade: grade,
+      graded: function () { return graded; },
+      size: { cell: cell, cols: cols }
     };
   }
   HC.makePad = makePad;
@@ -985,11 +1002,31 @@
   }
   HC.extraLine = extraLine;
 
+  // ---------- mẫu chữ bị chấm nhầm (người học bấm "Tôi viết đúng mà") — lưu ở máy để gửi người làm app chỉnh bộ chấm ----------
+  var SAMPLE_KEY = "hanco-mau-cham-nham";
+  function samples() { try { return JSON.parse(localStorage.getItem(SAMPLE_KEY) || "[]"); } catch (e) { return []; } }
+  function saveSample(text, g, size) {
+    if (!g) return;
+    try {
+      var a = samples();
+      a.push({ t: new Date().toISOString(), ch: text, cell: size.cell, cols: size.cols, s: g.s, r: g.res.map(function (r) { return { ch: r.ch, ok: r.ok, d: r.d, rank: r.rank, best: r.best, extra: r.extra, lack: r.lack, ids: r.ids }; }) });
+      while (a.length > 80) a.shift();
+      localStorage.setItem(SAMPLE_KEY, JSON.stringify(a));
+    } catch (e) { }
+  }
+  function sampleTab(v, tabs) {
+    var a = samples();
+    v.innerHTML = tabs + '<div class="card"><h2>Mẫu chữ bị chấm nhầm</h2><p class="sub">Mỗi lần bạn bấm "Tôi viết đúng mà", chữ bạn viết được lưu ở máy này. Tải tệp về rồi gửi cho người làm app để chỉnh cách chấm cho đúng với chữ viết tay của bạn.</p>' + (a.length ? '<div class="minis">' + a.map(function (x) { return '<span class="mini"><span class="han">' + esc(x.ch) + "</span></span>"; }).join("") + '</div><div class="row" style="margin-top:12px"><button class="btn primary" id="dls">Tải ' + a.length + ' mẫu (.json)</button><button class="btn" id="clrs">Xóa các mẫu đã gửi</button></div>' : '<p class="sub">Chưa có mẫu nào.</p>') + "</div>";
+    var d = $("#dls", v); if (d) d.onclick = function () { HC.download("mau-cham-nham-" + dateOf(today()).replace(/\//g, "-") + ".json", JSON.stringify(a)); };
+    var c = $("#clrs", v); if (c) c.onclick = function () { if (!confirm("Xóa " + a.length + " mẫu đã lưu?")) return; try { localStorage.removeItem(SAMPLE_KEY); } catch (e) { } sampleTab(v, tabs); };
+  }
+
   // ---------- WRITE (tập viết) ----------
   function vWrite(v, args) {
     var tab = args[0] || "due";
-    var tabs = '<div class="row" style="margin-bottom:12px"><h1 style="margin:0">Tập viết</h1><span class="spacer"></span><a class="btn sm' + (tab === "due" ? " primary" : "") + '" href="#viet">Viết theo lịch</a><a class="btn sm' + (tab === "phieu" ? " primary" : "") + '" href="#viet-phieu">Phiếu in</a><a class="btn sm' + (tab === "net" ? " primary" : "") + '" href="#viet-net">Nét &amp; bút thuận</a></div>';
+    var tabs = '<div class="row" style="margin-bottom:12px"><h1 style="margin:0">Tập viết</h1><span class="spacer"></span><a class="btn sm' + (tab === "due" ? " primary" : "") + '" href="#viet">Viết theo lịch</a><a class="btn sm' + (tab === "phieu" ? " primary" : "") + '" href="#viet-phieu">Phiếu in</a><a class="btn sm' + (tab === "net" ? " primary" : "") + '" href="#viet-net">Nét &amp; bút thuận</a>' + (samples().length || tab === "mau" ? '<a class="btn sm' + (tab === "mau" ? " primary" : "") + '" href="#viet-mau">Mẫu chấm nhầm</a>' : "") + "</div>";
     if (tab === "net") { v.innerHTML = tabs + strokeLesson(); return; }
+    if (tab === "mau") return sampleTab(v, tabs);
     if (tab === "phieu") return sheet(v, tabs);
     var ids = due("w").slice(0, 30);
     if (!ids.length) { v.innerHTML = tabs + '<div class="card"><p class="sub">Không có chữ cần viết hôm nay. Học thêm chữ mới, hoặc luyện tự do với trò "Viết trên màn hình".</p><div class="row"><a class="btn primary" href="#choi-write">Viết tự do</a><a class="btn" href="#hoc">Học mới</a></div></div>'; return; }
@@ -998,16 +1035,18 @@
   function writeSession(v, tabs, items, srs, onEnd) {
     var i = 0, ok = 0, pad = null, again = {}, queue = items.slice();
     function render() {
-      var it = queue[i], scored = false;
-      v.innerHTML = tabs + '<div class="stage"><div class="row" style="width:min(560px,100%)"><span class="chip num">' + (i + 1) + " / " + queue.length + '</span><span class="muted" style="font-size:0.85rem">Viết chữ Hán theo âm và nghĩa, rồi bấm Chấm điểm</span></div><div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(it.am) + "</div>" + meanHTML(it) + '<div class="extra">' + chars(it.key).length + " chữ" + (it.type === "c" && it.net ? " · " + it.net + " nét" : "") + (it.type === "c" && it.rad ? ' · <button class="btn sm ghost" id="hint">Gợi ý bộ</button>' : "") + '</div></div></div><div class="padwrap" id="padbox"></div><div class="row" style="justify-content:center"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn primary" id="chk">Chấm điểm</button></div><div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="idk">Không nhớ — xem chữ mẫu</button></div><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="self" style="justify-content:center"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft" style="justify-content:center"><button class="btn" id="redo">Viết lại để luyện</button><button class="btn primary" id="nx">Tiếp →</button></div></div>';
+      var it = queue[i], scored = false, verdict = null, firstRes = null;
+      v.innerHTML = tabs + '<div class="stage"><div class="row" style="width:min(560px,100%)"><span class="chip num">' + (i + 1) + " / " + queue.length + '</span><span class="muted" style="font-size:0.85rem">Viết chữ Hán theo âm và nghĩa, rồi bấm Chấm điểm</span></div><div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(it.am) + "</div>" + meanHTML(it) + '<div class="extra">' + chars(it.key).length + " chữ" + (it.type === "c" && it.net ? " · " + it.net + " nét" : "") + (it.type === "c" && it.rad ? ' · <button class="btn sm ghost" id="hint">Gợi ý bộ</button>' : "") + '</div></div></div><div class="padwrap" id="padbox"></div><div class="row" style="justify-content:center"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn primary" id="chk">Chấm điểm</button></div><div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="idk">Không nhớ — xem chữ mẫu</button></div><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="self" style="justify-content:center"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft" style="justify-content:center"><button class="btn" id="redo">Viết lại để luyện</button><button class="btn primary" id="nx">Tiếp →</button></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div></div>';
       pad = makePad($("#padbox", v), it.key, { onEdit: function () { $("#fb", v).classList.add("hide"); } });
       var fb = $("#fb", v), chk = $("#chk", v);
       function showRow(id) { ["self", "aft"].forEach(function (x) { $("#" + x, v).classList.toggle("hide", x !== id); }); $("#giveup", v).classList.add("hide"); }
       function say(html) { fb.innerHTML = html; fb.classList.remove("hide"); }
-      function record(good, el) {
-        if (scored) return; scored = true;
-        if (srs && !again[it.id]) grade(it.id, "w", good ? 2 : 0);
-        if (good) { ok++; S.best.writeOk = (S.best.writeOk || 0) + 1; flyXP(2, el); beep(true); } else { again[it.id] = 1; queue.push(it); beep(false); }
+      // lần chấm đầu quyết định kết quả; chỉ ghi vào lịch khi bấm Tiếp (để còn sửa được nếu app chấm nhầm)
+      function record(good) { if (scored) return; scored = true; verdict = good; beep(good); }
+      function finish(el) {
+        if (verdict === null) return;
+        if (srs && !again[it.id]) grade(it.id, "w", verdict ? 2 : 0);
+        if (verdict) { ok++; S.best.writeOk = (S.best.writeOk || 0) + 1; flyXP(2, el); } else { again[it.id] = 1; queue.push(it); }
         HC.after();
       }
       $("#undo", v).onclick = pad.undo; $("#clr", v).onclick = pad.clear;
@@ -1019,7 +1058,7 @@
           var nod = res.some(function (r) { return r.nodata; }), good = res.every(function (r) { return r.ok || r.nodata; });
           var lines = res.map(function (r) { return '<div class="' + (r.nodata ? "" : r.ok ? "ok" : "no") + '"><span class="han">' + esc(r.ch) + "</span> " + esc(r.msg) + "</div>"; }).join("");
           if (nod && first) { say(lines + '<div class="verdict">Bạn tự so với chữ mẫu rồi chọn bên dưới</div>'); showRow("self"); return; }
-          if (first) record(good, chk);
+          if (first) { record(good); firstRes = pad.graded(); $("#apl", v).classList.toggle("hide", good); }
           say('<div class="verdict ' + (good ? "ok" : "no") + '">' + (good ? "Đúng ✓" : "Chưa đúng ✗") + (first ? "" : ' <small class="muted">(luyện thêm, không tính điểm)</small>') + "</div>" + lines + (good ? "" : '<div class="muted">Chữ mẫu hiện mờ phía sau. Chữ này sẽ được hỏi lại cuối lượt.</div>'));
           showRow("aft");
         }, function () {
@@ -1028,11 +1067,16 @@
           showRow(scored ? "aft" : "self");
         });
       };
-      $("#idk", v).onclick = function () { record(false, this); pad.model(true); say('<div class="verdict no">Đã tính là chưa nhớ</div><div class="muted">Tô theo chữ mẫu rồi bấm Chấm lại để luyện. Chữ này sẽ được hỏi lại cuối lượt.</div>'); showRow("aft"); };
+      $("#idk", v).onclick = function () { record(false); pad.model(true); say('<div class="verdict no">Đã tính là chưa nhớ</div><div class="muted">Tô theo chữ mẫu rồi bấm Chấm lại để luyện. Chữ này sẽ được hỏi lại cuối lượt.</div>'); showRow("aft"); };
       $("#redo", v).onclick = function () { pad.clear(); pad.model(false); fb.classList.add("hide"); };
-      $("#nx", v).onclick = next;
+      $("#nx", v).onclick = function () { finish(this); next(); };
+      $("#appeal", v).onclick = function () {
+        verdict = true; $("#apl", v).classList.add("hide");
+        saveSample(it.key, firstRes, pad.size);
+        say('<div class="verdict ok">Đã tính là Đúng ✓</div><div class="muted">Cảm ơn bạn! Chữ này đã được lưu để chỉnh lại cách chấm (mục Tập viết → Mẫu chấm nhầm).</div>');
+      };
       var hb = $("#hint", v); if (hb) hb.onclick = function () { var r = RAD[it.rad]; hb.outerHTML = 'Bộ <span class="han">' + esc(r.r) + "</span> " + esc(r.am); };
-      $("#bad", v).onclick = function () { record(false, this); showRow("aft"); }; $("#good", v).onclick = function () { record(true, this); showRow("aft"); };
+      $("#bad", v).onclick = function () { record(false); showRow("aft"); }; $("#good", v).onclick = function () { record(true); showRow("aft"); };
     }
     function next() { i++; if (i < queue.length) render(); else end(); }
     function end() {

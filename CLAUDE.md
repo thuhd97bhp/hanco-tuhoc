@@ -15,7 +15,11 @@
 - `app-strokes.json` = đường giữa từng nét (Make Me a Hanzi, giấy phép Arphic: `strokes-LICENSE.txt`) để app TỰ CHẤM
   tập viết (`gradeShape` trong app.js): chấm theo HÌNH chữ, KHÔNG xét số nét / thứ tự nét (người dùng yêu cầu) — so chữ viết với
   ~1.200 chữ mẫu, đúng khi chữ cần viết là chữ giống nhất (hoặc ngang ngửa, G_TIE), độ lệch ≤ G_ABS, VÀ không có đoạn nét
-  thừa (kể cả đường nối giữa các nét) hay đoạn thiếu dài quá G_RUN / G_LRUN. Ngưỡng hiệu chỉnh bằng chữ viết mô phỏng.
+  thừa (kể cả đường nối giữa các nét) hay đoạn thiếu dài quá G_RUN / G_LRUN; từng nét được xê dịch ≤ G_SHIFT (chữ tay lệch
+  theo bộ phận). Ngưỡng hiệu chỉnh bằng chữ viết mô phỏng (`.claude/harness.js`, chạy trong trình duyệt ở trang app).
+  Chấm nhầm → người học bấm "Tôi viết đúng mà" (tính Đúng, lưu mẫu ở localStorage `hanco-mau-cham-nham`, tải ở #viet-mau dạng
+  JSON: `ch` chữ/từ, `cell`/`cols` ô viết, `s` các nét toạ độ canvas, `r` kết quả chấm). Có tệp mẫu → chấm lại bằng
+  `HC.gradeShape(nét thuộc ô, chữ)` để chỉnh ngưỡng; điểm tập viết chỉ ghi vào lịch khi bấm Tiếp.
   Sinh bằng `cd tools && python build_strokes.py` (dữ liệu gốc ở `tools/ref/hanzi-writer-data/`). 26 chữ hiếm chưa có dữ liệu → tự so.
 - `han/<mã hex>.webp` = ảnh từng chữ vẽ bằng MS Song (320x320, chữ 256px ở giữa), dùng cho chữ mẫu ở ô tập viết và chữ to `.big`
   trên máy KHÔNG cài MS Song (điện thoại). Sinh bằng `python tools/render_han.py` rồi mở http://127.0.0.1:8770/render_han.html
