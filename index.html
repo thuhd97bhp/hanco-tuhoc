@@ -153,6 +153,22 @@ p { margin: 0 0 8px; }
 .learn .top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; }
 .learn .top .big:not(.l2):not(.l3):not(.l4):not(.l6) { font-size: clamp(72px, 20vw, 112px); }
 .learn .top.nobig { grid-template-columns: minmax(0, 1fr); }
+/* hoạt hình thứ tự nét (thay chữ to): nền ô có đường kẻ, nét đang viết đỏ, nét đã viết màu chữ Hán */
+.ani { --c: clamp(150px, 44vw, 200px); display: grid; justify-items: center; gap: 4px; }
+.ani.n2 { --c: clamp(104px, 30vw, 132px); } .ani.n4 { --c: clamp(60px, 17vw, 84px); } .ani.n6 { --c: clamp(46px, 12vw, 62px); }
+.acells { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: calc(var(--c) * 4 + 18px); cursor: pointer; }
+.acell { width: var(--c); height: var(--c); border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; }
+.acell svg { width: 100%; height: 100%; display: block; }
+.acell .agrid { fill: none; stroke: var(--line); stroke-width: 5; stroke-dasharray: 22 18; }
+.acell .ao { fill: var(--line); }
+.acell .as { fill: none; stroke: var(--han); stroke-width: 200; stroke-linecap: round; stroke-linejoin: round; visibility: hidden; }
+.acell .as.on { stroke: var(--seal); visibility: visible; }
+.acell .as.dn { visibility: visible; }
+.acell.nodata .big { font-size: calc(var(--c) * 0.72); line-height: 1; }
+.areplay { position: absolute; right: 6px; bottom: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.ani.n4 .areplay, .ani.n6 .areplay { width: 24px; height: 24px; font-size: 14px; right: -4px; bottom: -4px; }
+.anote { font-size: 0.75rem; color: var(--muted); max-width: calc(var(--c) * 4); text-align: center; }
+.anote:empty { display: none; }
 .learn .sent ruby { margin: 0 0.12em; }
 .facts { display: grid; gap: 6px; font-size: 0.92rem; }
 .facts .k { color: var(--muted); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }

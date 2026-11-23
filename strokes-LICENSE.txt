@@ -1,4 +1,4 @@
-Dữ liệu nét chữ trong app-strokes.json dẫn xuất từ Make Me a Hanzi
+Dữ liệu nét chữ trong app-strokes.json và thư mục net/ dẫn xuất từ Make Me a Hanzi
 (https://github.com/skishore/makemeahanzi) qua hanzi-writer-data, theo giấy phép dưới đây.
 
 ARPHIC PUBLIC LICENSE

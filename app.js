@@ -413,7 +413,8 @@
   // ---------- detail sheet ----------
   function detailHTML(it) {
     // câu: không hiện chữ to ở đầu (câu đã hiện đầy đủ kèm âm ở dưới)
-    var big = it.type === "s" ? "" : '<div class="big ' + lenCls(it.key) + '" lang="zh-Hant">' + esc(it.key) + "</div>";
+    // chữ / từ / bộ thủ: hoạt hình thứ tự nét (aniHTML), chữ không có dữ liệu nét thì hiện chữ MS Song như cũ
+    var big = it.type === "s" ? "" : aniHTML(it.key);
     var h = '<div class="learn"><div class="top' + (big ? "" : " nobig") + '">' + big + '<div class="facts">';
     h += '<div class="row"><span class="chip">' + kindLabel(it) + "</span>" + (it.k10 ? '<span class="chip k10">Đề K10</span>' : "") + (it.tag || []).map(function (t) { return '<span class="chip warn">' + esc(t) + "</span>"; }).join("") + (it.n ? '<span class="chip ok num">' + it.n + " lần</span>" : "") + "</div>";
     h += '<div style="font-size:1.4rem;font-weight:700">' + esc(it.am) + "</div>" + meanHTML(it);
@@ -706,6 +707,85 @@
         var b = t && t.closest ? t.closest(".big") : null; if (b) songify(b);
       });
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    scan(document.body);
+  }
+
+  // ---------- hoạt hình thứ tự nét (thay chữ to ở thẻ học / khung chi tiết) ----------
+  // net/<mã hex>.json sinh bằng tools/build_order.py (Make Me a Hanzi qua hanzi-writer-data, giấy phép Arphic — cùng dữ liệu
+  // trang hanzii.net dùng): s = viền từng nét (path SVG), m = đường giữa từng nét [x,y,x,y…] theo hướng đưa bút;
+  // khung 1024, trục y hướng lên, đường chân y = 900. Chữ không có dữ liệu hoặc mất mạng chưa tải được: hiện chữ MS Song (.big).
+  var ODATA = {}, OSEQ = 0, AGRID = '<path class="agrid" d="M0 0L1024 1024M1024 0L0 1024M512 0V1024M0 512H1024"/>';
+  function orderData(ch) {
+    var k = hanKey(ch);
+    if (!ODATA[k]) ODATA[k] = fetch("net/" + k + ".json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(null, function (e) { delete ODATA[k]; throw e; });
+    return ODATA[k];
+  }
+  HC.orderData = orderData;
+  function aniHTML(text) {
+    var cs = chars(text), n = cs.length;
+    if (!n || !cs.every(isHan)) return '<div class="big ' + lenCls(text) + '" lang="zh-Hant">' + esc(text) + "</div>";
+    return '<div class="ani n' + (n === 1 ? 1 : n === 2 ? 2 : n <= 5 ? 4 : 6) + '" lang="zh-Hant" role="img" aria-label="' + esc(text) + ' (hoạt hình thứ tự nét)"><div class="acells" title="Bấm để xem viết lại">' +
+      cs.map(function (ch) { return '<span class="acell" data-ch="' + esc(ch) + '"><svg viewBox="0 0 1024 1024" aria-hidden="true">' + AGRID + "</svg></span>"; }).join("") +
+      '<button type="button" class="areplay hide" aria-label="Viết lại">↻</button></div><div class="anote"></div></div>';
+  }
+  HC.aniHTML = aniHTML;
+  function aniBuild(cell, d) {
+    var id = "an" + (++OSEQ), defs = "", bg = "", fg = "", lens = [];
+    d.s.forEach(function (outline, i) {
+      var m = d.m[i] || [], pts = [], j, len = 0;
+      for (j = 0; j + 1 < m.length; j += 2) pts.push([m[j], m[j + 1]]);
+      if (pts.length > 1) { // kéo dài đầu nét lùi thêm 100 để nét bút phủ kín đầu nét (như hanzi-writer)
+        var a = pts[0], b = pts[1], dx = a[0] - b[0], dy = a[1] - b[1], l = Math.sqrt(dx * dx + dy * dy) || 1;
+        pts.unshift([a[0] + dx / l * 100, a[1] + dy / l * 100]);
+      }
+      for (j = 1; j < pts.length; j++) len += Math.sqrt(Math.pow(pts[j][0] - pts[j - 1][0], 2) + Math.pow(pts[j][1] - pts[j - 1][1], 2));
+      len = Math.max(1, Math.ceil(len)); lens.push(len);
+      defs += '<clipPath id="' + id + "-" + i + '"><path d="' + outline + '"/></clipPath>';
+      bg += '<path class="ao" d="' + outline + '"/>';
+      fg += '<path class="as" clip-path="url(#' + id + "-" + i + ')" d="M' + pts.map(function (q) { return Math.round(q[0]) + " " + Math.round(q[1]); }).join("L") + '" stroke-dasharray="' + len + " " + (len + 400) + '" stroke-dashoffset="' + len + '"/>';
+    });
+    cell.innerHTML = '<svg viewBox="0 0 1024 1024" aria-hidden="true">' + AGRID + "<defs>" + defs + '</defs><g transform="translate(0 900) scale(1 -1)">' + bg + fg + "</g></svg>";
+    return { ps: $$(".as", cell), lens: lens };
+  }
+  function aniStart(el) {
+    if (el.getAttribute("data-on")) return;
+    el.setAttribute("data-on", "1");
+    var cells = $$(".acell", el), btn = $(".areplay", el), note = $(".anote", el), run = 0, boxes = [];
+    Promise.all(cells.map(function (c) {
+      var ch = c.getAttribute("data-ch");
+      return orderData(ch).then(function (d) {
+        var it = CHAR[ch];
+        if (it && it.net && +it.net !== d.s.length) note.textContent += (note.textContent ? " " : "") + ch + ": hoạt hình theo dữ liệu nét có " + d.s.length + " nét, đề cương ghi " + it.net + " nét.";
+        return aniBuild(c, d);
+      }, function () { c.classList.add("nodata"); c.innerHTML = '<span class="big">' + esc(ch) + "</span>"; return null; });
+    })).then(function (bs) {
+      boxes = bs.filter(Boolean);
+      if (!boxes.length) return;
+      btn.classList.remove("hide");
+      $(".acells", el).onclick = play;
+      var still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (still) show(); else play();
+    });
+    function show() { run++; boxes.forEach(function (b) { b.ps.forEach(function (p) { p.setAttribute("class", "as dn"); p.setAttribute("stroke-dashoffset", 0); }); }); }
+    function play() {
+      var my = ++run, steps = [];
+      boxes.forEach(function (b, bi) { b.ps.forEach(function (p, i) { p.setAttribute("class", "as"); p.setAttribute("stroke-dashoffset", b.lens[i]); steps.push({ p: p, len: b.lens[i], gap: i ? 200 : bi ? 600 : 350 }); }); });
+      var k = 0, t0 = null;
+      function frame(t) {
+        if (my !== run || !document.body.contains(el)) return; // đã bấm viết lại / đã rời thẻ: dừng
+        var s = steps[k];
+        if (t0 === null) t0 = t + s.gap;
+        var x = (t - t0) / ((s.len + 600) / 2.8); // thời gian một nét (ms) theo độ dài nét
+        if (x >= 0) { s.p.setAttribute("class", x >= 1 ? "as dn" : "as on"); s.p.setAttribute("stroke-dashoffset", Math.round(s.len * (1 - Math.min(1, x)))); }
+        if (x >= 1) { k++; t0 = null; if (k >= steps.length) return; }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+  }
+  function aniWatch() {
+    var scan = function (n) { if (n.nodeType !== 1) return; if (n.classList.contains("ani")) aniStart(n); $$(".ani", n).forEach(aniStart); };
+    if (window.MutationObserver) new MutationObserver(function (ms) { ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, scan); }); }).observe(document.body, { childList: true, subtree: true });
     scan(document.body);
   }
 
@@ -1316,6 +1396,6 @@
     if (window.__HANCO_APP__) return start(window.__HANCO_APP__);
     fetch("app-data.json").then(function (r) { return r.json(); }).then(start).catch(function () { $("#view").innerHTML = '<div class="card"><p>Không tải được dữ liệu bài học. Hãy tải lại trang.</p></div>'; });
   }
-  function boot0() { try { songWatch(); } catch (e) { } boot(); }
+  function boot0() { try { songWatch(); } catch (e) { } try { aniWatch(); } catch (e) { } boot(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot0); else setTimeout(boot0, 0);
 })();

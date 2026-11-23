@@ -21,6 +21,10 @@
   JSON: `ch` chữ/từ, `cell`/`cols` ô viết, `s` các nét toạ độ canvas, `r` kết quả chấm). Có tệp mẫu → chấm lại bằng
   `HC.gradeShape(nét thuộc ô, chữ)` để chỉnh ngưỡng; điểm tập viết chỉ ghi vào lịch khi bấm Tiếp.
   Sinh bằng `cd tools && python build_strokes.py` (dữ liệu gốc ở `tools/ref/hanzi-writer-data/`). 26 chữ hiếm chưa có dữ liệu → tự so.
+- `net/<mã hex>.json` = thứ tự nét từng chữ (viền nét `s` + đường giữa `m`, cùng nguồn Make Me a Hanzi/Arphic, giống dữ liệu
+  hanzii.net) cho HOẠT HÌNH VIẾT CHỮ thay chữ to ở thẻ học / khung chi tiết (`aniHTML`/`aniStart` trong app.js; người dùng
+  yêu cầu thay hẳn chữ to MS Song bằng hoạt hình). Chữ không có dữ liệu (26 chữ hiếm) → hiện chữ MS Song như cũ. Sinh bằng
+  `cd tools && python build_order.py`. Thêm chữ mới vào dữ liệu → chạy lại lệnh này.
 - `han/<mã hex>.webp` = ảnh từng chữ vẽ bằng MS Song (320x320, chữ 256px ở giữa), dùng cho chữ mẫu ở ô tập viết và chữ to `.big`
   trên máy KHÔNG cài MS Song (điện thoại). Sinh bằng `python tools/render_han.py` rồi mở http://127.0.0.1:8770/render_han.html
   trên máy Windows có MS Song. Thêm chữ mới vào dữ liệu → PHẢI chạy lại cả 2 lệnh trên (release.py sẽ dừng nếu thiếu ảnh).
