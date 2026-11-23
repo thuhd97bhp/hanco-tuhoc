@@ -566,7 +566,7 @@
   HC.later = function (fn, ms) { var ep = HC.epoch; return setTimeout(function () { if (HC.epoch === ep) fn(); }, ms); };
   HC.go = function (h) {
     cur = h;
-    try { history.replaceState(null, "", "#" + h); } catch (e) { }
+    try { history.replaceState(null, "", h === "home" ? location.pathname + location.search : "#" + h); } catch (e) { }
     route();
   };
   document.addEventListener("click", function (e) {
