@@ -276,7 +276,7 @@
     } });
 
   // 9. Viết trên màn hình
-  reg({ id: "write", icon: "筆", name: "Viết trên màn hình", desc: "Viết chữ bằng ngón tay hoặc chuột, rồi đặt chữ mẫu đè lên để tự so. Tính vào lịch tập viết.",
+  reg({ id: "write", icon: "筆", name: "Viết trên màn hình", desc: "Viết chữ bằng ngón tay hoặc chuột, bấm Chấm điểm để app tự chấm từng nét. Tính vào lịch tập viết.",
     run: function (v) {
       var g = this, P1 = HC.pool("c", 6), P2 = HC.pool("w", 2);
       var items = U().pick(P1.items, 6).concat(U().pick(P2.items, 2));

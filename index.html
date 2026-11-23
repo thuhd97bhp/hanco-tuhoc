@@ -151,7 +151,9 @@ p { margin: 0 0 8px; }
 /* learn detail */
 .learn { width: min(640px, 100%); display: grid; gap: 12px; }
 .learn .top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; }
-.learn .top .big { font-size: clamp(72px, 20vw, 112px); }
+.learn .top .big:not(.l2):not(.l3):not(.l4):not(.l6) { font-size: clamp(72px, 20vw, 112px); }
+.learn .top.nobig { grid-template-columns: minmax(0, 1fr); }
+.learn .sent ruby { margin: 0 0.12em; }
 .facts { display: grid; gap: 6px; font-size: 0.92rem; }
 .facts .k { color: var(--muted); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .minis { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -171,6 +173,13 @@ p { margin: 0 0 8px; }
 
 /* writing pad */
 .padwrap { display: grid; gap: 8px; justify-items: center; width: 100%; }
+.songimg { display: inline-block; width: 1.25em; height: 1.25em; margin: -0.125em; vertical-align: -0.24em; background: currentColor; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.gfb { width: min(560px, 100%); display: grid; gap: 4px; font-size: 0.92rem; }
+.gfb .han { font-size: 1.3rem; margin-right: 4px; }
+.gfb .ok { color: var(--good); }
+.gfb .no { color: var(--seal); }
+.gfb .verdict { font-weight: 800; font-size: 1.15rem; text-align: center; }
+.gfb .verdict small { font-weight: 500; font-size: 0.8rem; }
 canvas.pad { touch-action: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; max-width: 100%; cursor: crosshair; }
 
 /* games */
