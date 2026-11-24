@@ -1403,12 +1403,38 @@
     var a = samples();
     var grp = [["dung", "Bạn viết đúng nhưng app chấm Sai"], ["sai", "Bạn viết sai nhưng app chấm Đúng"], ["cau", "Báo từ phần viết câu"]].map(function (g) {
       var xs = a.filter(function (x) { return (x.k || "dung") === g[0]; });
-      return xs.length ? '<h3 style="margin:14px 0 6px">' + g[1] + " (" + xs.length + ')</h3><div class="minis">' + xs.map(function (x) { return '<span class="mini"><span class="han">' + esc(x.ch) + "</span></span>"; }).join("") + "</div>" : "";
+      return xs.length ? '<h3 style="margin:14px 0 6px">' + g[1] + " (" + xs.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px">' + xs.map(function (x) {
+        var i = a.indexOf(x), tm = sampTime(x);
+        return '<div style="border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:var(--surface-2);display:flex;flex-direction:column;align-items:center;gap:4px;max-width:100%"><canvas data-th="' + i + '" aria-label="Chữ bạn đã viết" style="max-width:100%"></canvas><span class="han" style="font-size:1.05rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.ch) + '</span><span class="muted" style="font-size:0.78rem">' + tm + '</span><button class="btn sm ghost" data-del="' + i + '" aria-label="Xóa mẫu ' + esc(x.ch) + " " + tm + '">✕ Xóa</button></div>';
+      }).join("") + "</div>" : "";
     }).join("");
     v.innerHTML = tabs + '<div class="card"><h2>Mẫu chữ bị chấm nhầm</h2><p class="sub">Mỗi lần bạn bấm nút báo chấm nhầm ("Tôi viết đúng mà", "Chấm nhầm — thật ra tôi viết sai", "Báo chấm nhầm câu này"), chữ bạn viết được lưu ở máy này. Bấm Tải để lấy tệp rồi gửi cho người làm app để chỉnh cách chấm cho đúng với chữ viết tay của bạn.</p><p class="muted" style="font-size:0.88rem">Mẫu chỉ nằm trong trình duyệt của máy này (không đồng bộ sang máy khác), xóa dữ liệu trình duyệt là mất — nên tải về thường xuyên. Lưu tối đa 150 mẫu mới nhất.</p>' + (a.length ? grp + '<div class="row" style="margin-top:12px"><button class="btn primary" id="dls">Tải ' + a.length + ' mẫu (.json)</button><button class="btn" id="clrs">Xóa các mẫu đã gửi</button></div>' : '<p class="sub">Chưa có mẫu nào.</p>') + "</div>";
     var d = $("#dls", v); if (d) d.onclick = function () { HC.download("mau-cham-nham-" + dateOf(today()).replace(/\//g, "-") + ".json", JSON.stringify(a)); };
     var c = $("#clrs", v); if (c) c.onclick = function () { if (!confirm("Xóa " + a.length + " mẫu đã lưu?")) return; try { localStorage.removeItem(SAMPLE_KEY); } catch (e) { } sampleTab(v, tabs); };
+    // hình thu nhỏ chữ người học đã viết (vẽ lại từ nét đã lưu, toạ độ theo ô viết lúc đó)
+    var css = getComputedStyle(document.documentElement), ink = css.getPropertyValue("--ink").trim() || "#000", ln = css.getPropertyValue("--line").trim() || "#ccc";
+    $$("canvas[data-th]", v).forEach(function (cv) {
+      var x = a[+cv.getAttribute("data-th")], cell = x.cell || 230, cols = x.cols || 1, n = Math.max(1, chars(x.ch).filter(isHan).length), rows = Math.ceil(n / cols);
+      var W = cols * cell, H = rows * cell, k = Math.min(72 / cell, 240 / W), dpr = window.devicePixelRatio || 1;
+      cv.width = Math.round(W * k * dpr); cv.height = Math.round(H * k * dpr); cv.style.width = Math.round(W * k) + "px"; cv.style.height = Math.round(H * k) + "px";
+      var g = cv.getContext("2d"); g.scale(k * dpr, k * dpr);
+      g.strokeStyle = ln; g.lineWidth = 1 / k; for (var i = 0; i < n; i++) g.strokeRect((i % cols) * cell, Math.floor(i / cols) * cell, cell, cell);
+      g.strokeStyle = ink; g.lineWidth = Math.max(3, cell / 30); g.lineCap = "round"; g.lineJoin = "round";
+      (x.s || []).forEach(function (st) { if (!st.length) return; g.beginPath(); g.moveTo(st[0][0], st[0][1]); st.forEach(function (q) { g.lineTo(q[0], q[1]); }); if (st.length === 1) g.lineTo(st[0][0] + 0.1, st[0][1]); g.stroke(); });
+    });
+    // xóa từng mẫu: tìm theo thời điểm lưu + chữ (không theo vị trí) rồi chỉ bỏ đúng mẫu đó
+    $$("[data-del]", v).forEach(function (b) {
+      b.onclick = function () {
+        var x = a[+b.getAttribute("data-del")], tm = sampTime(x), lab = x.ch + (tm ? " (" + tm + ")" : "");
+        if (!confirm("Xóa mẫu " + lab + "? Mẫu đã xóa không lấy lại được.")) return;
+        var cur = samples(), j = -1;
+        for (var i = 0; i < cur.length; i++) if (cur[i].t === x.t && cur[i].ch === x.ch) { j = i; break; }
+        if (j >= 0) { cur.splice(j, 1); try { if (cur.length) localStorage.setItem(SAMPLE_KEY, JSON.stringify(cur)); else localStorage.removeItem(SAMPLE_KEY); } catch (e) { } }
+        sampleTab(v, tabs);
+      };
+    });
   }
+  function sampTime(x) { var d = new Date(x.t); function two(n) { return (n < 10 ? "0" : "") + n; } return x.t && !isNaN(d) ? two(d.getDate()) + "/" + two(d.getMonth() + 1) + " " + two(d.getHours()) + ":" + two(d.getMinutes()) : ""; }
 
   // ---------- WRITE (tập viết) ----------
   function vWrite(v, args) {
