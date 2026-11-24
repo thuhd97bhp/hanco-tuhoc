@@ -1,5 +1,5 @@
 /* Hán cổ tự học — service worker: cho app mở và chạy được khi không có mạng */
-var VERSION = "hanco-v20261124064054";
+var VERSION = "hanco-v20261124101327";
 var SHELL = ["./", "./index.html", "./app.js", "./games.js", "./app-data.json", "./app-strokes.json"];
 var CDN = [
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
@@ -31,6 +31,13 @@ self.addEventListener("fetch", function (e) {
   if (req.method !== "GET" || isData(req.url)) return;
   var url = new URL(req.url);
   var sameOrigin = url.origin === self.location.origin;
+  if (sameOrigin && /\/han\/[0-9a-f]+\.webp$/.test(url.pathname)) {
+    // ảnh chữ MS Song: dùng bản đã lưu (mỗi bản phát hành đổi VERSION nên ảnh vẽ lại vẫn được tải mới), không có thì tải rồi lưu
+    e.respondWith(caches.match(req, { ignoreSearch: true }).then(function (hit) {
+      return hit || fetch(req).then(function (res) { if (res && res.ok) { var copy = res.clone(); caches.open(VERSION).then(function (c) { c.put(req, copy); }); } return res; });
+    }));
+    return;
+  }
   if (sameOrigin || req.mode === "navigate") {
     // mã app: ưu tiên bản mới trên mạng (để nhận cập nhật), mất mạng thì dùng bản đã lưu
     e.respondWith(

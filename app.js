@@ -81,7 +81,7 @@
   // ---------- state + storage ----------
   var LS = "hanco-tuhoc-v1";
   var S, remote = { db: null, ref: null, status: "local", writing: false, pending: false };
-  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {} }; }
+  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {} }; }
   function loadLocal() { try { var t = localStorage.getItem(LS); if (t) return JSON.parse(t); } catch (e) { } return null; }
   function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) { } }
   var saveTimer = null;
@@ -158,6 +158,13 @@
     });
     m.itT = Object.assign({}, a.itT || {});
     Object.keys(b.itT || {}).forEach(function (id) { if (!(m.itT[id] >= b.itT[id])) m.itT[id] = b.itT[id]; });
+    // gm[id] = [số lần đúng, số lần sai, ngày chơi gần nhất] khi chơi trò chơi: lấy bản chơi gần hơn, cùng ngày thì lấy số lớn hơn
+    m.gm = JSON.parse(JSON.stringify(a.gm || {}));
+    Object.keys(b.gm || {}).forEach(function (id) {
+      var x = m.gm[id], y = b.gm[id];
+      if (!x || y[2] > x[2]) m.gm[id] = y.slice();
+      else if (y[2] === x[2]) m.gm[id] = [Math.max(x[0], y[0]), Math.max(x[1], y[1]), x[2]];
+    });
     m.xp = Math.max(a.xp || 0, b.xp || 0);
     var sa = a.streak || { d: 0, c: 0 }, sb = b.streak || { d: 0, c: 0 };
     m.streak = sb.d > sa.d || (sb.d === sa.d && sb.c > sa.c) ? { d: sb.d, c: sb.c } : { d: sa.d, c: sa.c };
@@ -297,13 +304,56 @@
   HC.level = level;
   function learnedOf(type) { return Object.keys(S.it).filter(function (id) { return ITEM[id] && ITEM[id].type === type; }).map(function (id) { return ITEM[id]; }); }
   HC.learnedOf = learnedOf;
-  // pool for games: learned items of a type; if too few, add the next ones in the plan so games work from day 1
+  // pool for games: CHỈ mục đã học (người dùng yêu cầu 24/11/2026: không lấy chữ chưa học); thiếu thì trò chơi tự khóa (need = số còn thiếu)
   HC.pool = function (type, min) {
     var l = learnedOf(type);
-    if (l.length >= min) return { items: l, preview: false };
-    var q = type === "c" ? QC : type === "w" ? QW : type === "r" ? QR : QS;
-    var extra = q.filter(function (x) { return !introduced(x.id); }).slice(0, min - l.length);
-    return { items: l.concat(extra), preview: true };
+    return { items: l, preview: false, need: Math.max(0, (min || 0) - l.length) };
+  };
+  // ---------- trò chơi: ưu tiên mục chưa thuộc + ghi nhận đúng/sai ----------
+  // chưa thuộc = ôn đúng < 3 lần (bậc < 3) hoặc khi chơi sai nhiều hơn đúng
+  function gmOf(id) { return (S.gm || {})[id] || [0, 0, 0]; }
+  function isWeak(id) { var r = S.it[id], g = gmOf(id); return !r || r[0] < 3 || g[1] > g[0]; }
+  function weakW(id) { var r = S.it[id] || [0, 0, 0, 0, 0], g = gmOf(id); return Math.max(1, 1 + (3 - Math.min(r[0], 3)) + Math.min(r[4], 4) * 0.5 + g[1] * 2 - g[0] * 0.5); }
+  function wpick(a, n) { // chọn n mục không lặp, mục có trọng số cao dễ được chọn hơn
+    var pool = a.slice(), out = [];
+    while (out.length < n && pool.length) {
+      var tot = 0, k, x = 0; pool.forEach(function (it) { tot += weakW(it.id); });
+      var rnd = Math.random() * tot;
+      for (k = 0; k < pool.length; k++) { x += weakW(pool[k].id); if (rnd < x) break; }
+      out.push(pool.splice(Math.min(k, pool.length - 1), 1)[0]);
+    }
+    return out;
+  }
+  var WEAK_SHARE = 0.7; // ~70% mục chưa thuộc, ~30% mục đã thuộc
+  HC.isWeak = isWeak;
+  HC.pickWeak = function (items, n) {
+    var weak = items.filter(function (it) { return isWeak(it.id); }), strong = items.filter(function (it) { return !isWeak(it.id); });
+    n = Math.min(n, items.length);
+    var nw = Math.min(weak.length, Math.round(n * WEAK_SHARE));
+    if (strong.length < n - nw) nw = Math.min(weak.length, n - strong.length);
+    return shuffle(wpick(weak, nw).concat(pick(strong, n - nw)));
+  };
+  HC.pickOne = function (items) {
+    var weak = items.filter(function (it) { return isWeak(it.id); }), strong = items.filter(function (it) { return !isWeak(it.id); });
+    if (weak.length && (!strong.length || Math.random() < WEAK_SHARE)) return wpick(weak, 1)[0];
+    return strong[Math.floor(Math.random() * strong.length)];
+  };
+  // ghi nhận một lượt chơi: mỗi mục tính tối đa 1 lần đúng + 1 lần sai mỗi lượt.
+  // Sai = chưa thuộc: thẻ đọc lùi 1 bậc, ôn lại muộn nhất ngày mai, +1 lần quên. Đúng: chỉ ghi nhận (không đẩy lịch ôn xa hơn).
+  HC.gameRec = function () {
+    var okSeen = {}, badSeen = {}, bad = [], good = [];
+    function g(id) { var t = today(), x = (S.gm || (S.gm = {}))[id] || (S.gm[id] = [0, 0, t]); x[2] = t; return x; }
+    return {
+      ok: function (it) { if (!it || !S.it[it.id] || okSeen[it.id]) return; okSeen[it.id] = 1; good.push(it); g(it.id)[0]++; save(); },
+      bad: function (it) {
+        if (!it || !S.it[it.id] || badSeen[it.id]) return; badSeen[it.id] = 1; bad.push(it);
+        var r = S.it[it.id], t = today();
+        g(it.id)[1]++;
+        r[0] = Math.max(Math.min(r[0], 1), r[0] - 1); r[1] = Math.min(r[1], t + 1); r[4]++;
+        stamp(it.id); save();
+      },
+      bad_: bad, good_: good
+    };
   };
   HC.hard = function () {
     return Object.keys(S.it).filter(function (id) { return ITEM[id] && S.it[id][4] >= 2; })
@@ -755,17 +805,50 @@
     var got = 0, bad = false;
     cs.forEach(function (ch) { hanImg(ch, function () { if (++got === cs.length && !bad && el.textContent === t) { el.setAttribute("aria-label", t.trim()); el.innerHTML = cs.map(function (c) { var u = "url(han/" + hanKey(c) + ".webp)"; return '<span class="songimg" aria-hidden="true" style="-webkit-mask-image:' + u + ";mask-image:" + u + '"></span>'; }).join(""); } }); var h = HIMG[hanKey(ch)]; if (h && h.bad) bad = true; });
   }
+  // Mọi chữ Hán khác trên trang (danh sách, câu, trò chơi, chữ xen trong nghĩa…): bọc từng chữ thành <span class="sg">chữ</span>.
+  // Chữ thật vẫn ở trong trang (textContent, chọn/chép, trò chơi chấm không đổi); khi ảnh tải xong thêm lớp "on": chữ trong suốt,
+  // ảnh MS Song (mặt nạ, màu theo chữ) hiện đè lên. Ảnh lỗi/chưa có → chữ vẫn hiện bằng phông dự phòng như cũ.
+  var SG_SKIP = "script,style,textarea,input,select,option,svg,canvas,.big,.sg,.songimg";
+  function sgChar(ch) {
+    var o = ch.codePointAt(0);
+    return isHan(ch) || (o >= 0x20000 && o <= 0x3FFFF) || (o >= 0x3001 && o <= 0x3003) || (o >= 0x3008 && o <= 0x3011) || o === 0xFF01 || o === 0xFF08 || o === 0xFF09 || o === 0xFF0C || o === 0xFF0E || o === 0xFF1A || o === 0xFF1B || o === 0xFF1F;
+  }
+  function sgText(tn) {
+    var t = tn.nodeValue, p = tn.parentNode;
+    if (!t || !p || p.nodeType !== 1 || !/[^\x00-⹿]/.test(t) || (p.closest && p.closest(SG_SKIP))) return;
+    var cs = chars(t); if (!cs.some(sgChar)) return;
+    var f = document.createDocumentFragment(), buf = "";
+    cs.forEach(function (ch) {
+      if (!sgChar(ch)) { buf += ch; return; }
+      var k = hanKey(ch), h = HIMG[k];
+      if (h && h.bad) { buf += ch; return; }
+      if (buf) { f.appendChild(document.createTextNode(buf)); buf = ""; }
+      var s = document.createElement("span"); s.className = h && h.ok ? "sg on" : "sg"; s.setAttribute("data-k", k);
+      s.style.setProperty("--sg", "url(han/" + k + ".webp)"); s.textContent = ch; f.appendChild(s);
+      if (!(h && h.ok)) hanImg(ch, function () { Array.prototype.forEach.call(document.querySelectorAll('.sg[data-k="' + k + '"]:not(.on)'), function (x) { x.className = "sg on"; }); });
+    });
+    if (buf) f.appendChild(document.createTextNode(buf));
+    p.replaceChild(f, tn);
+  }
+  function sgScan(n) {
+    if (n.nodeType === 3) return sgText(n);
+    if (n.nodeType !== 1 || n.closest(SG_SKIP)) return;
+    var w = document.createTreeWalker(n, NodeFilter.SHOW_TEXT, null, false), list = [], x;
+    while ((x = w.nextNode())) list.push(x);
+    list.forEach(sgText);
+  }
   function songWatch() {
     if (localSong() || !window.MutationObserver) return;
     var scan = function (n) { if (n.nodeType !== 1) return; if (n.classList.contains("big")) songify(n); Array.prototype.forEach.call(n.querySelectorAll(".big"), songify); };
     new MutationObserver(function (ms) {
       ms.forEach(function (m) {
-        Array.prototype.forEach.call(m.addedNodes, scan);
+        Array.prototype.forEach.call(m.addedNodes, function (n) { scan(n); if (n.parentNode) sgScan(n); });
         var t = m.target.nodeType === 1 ? m.target : m.target.parentNode;
         var b = t && t.closest ? t.closest(".big") : null; if (b) songify(b);
+        if (m.type === "characterData" && m.target.parentNode) sgText(m.target);
       });
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
-    scan(document.body);
+    scan(document.body); sgScan(document.body);
   }
 
   // ---------- hoạt hình thứ tự nét (thay chữ to ở thẻ học / khung chi tiết) ----------
@@ -942,10 +1025,14 @@
   HC.makePad = makePad;
 
   // ---------- multiple choice helper ----------
-  function distract(it, n, field) {
+  // đáp án nhiễu: ưu tiên mục đã học, thiếu mới lấy thêm từ từ điển; any = true → như cũ (thi thử)
+  function distract(it, n, field, any) {
     var pool = (it.type === "c" ? D.chars : it.type === "w" ? D.words : it.type === "r" ? D.rads : D.sents);
     var near = pool.filter(function (x) { return x !== it && x[field] && x[field] !== it[field] && (it.type !== "w" || chars(x.w).length === chars(it.w).length); });
-    return pick(near.slice(0, 400), n);
+    if (any) return pick(near.slice(0, 400), n);
+    var lea = near.filter(function (x) { return introduced(x.id); });
+    if (lea.length >= n) return pick(lea, n);
+    return shuffle(lea.concat(pick(near.filter(function (x) { return !introduced(x.id); }).slice(0, 400), n - lea.length)));
   }
   HC.distract = distract;
   function meaningShort(it) { var m = it.ns || it.nb || ""; return m.length > 70 ? m.slice(0, 68) + "…" : m; }
