@@ -420,6 +420,144 @@
     var parts = [n("c") && "~" + n("c") + " chữ", n("w") && "~" + n("w") + " từ", n("s") && n("s") + " câu"].filter(Boolean);
     return (parts.length ? parts.join(", ") + "; " : "") + ((WEEKS[i] || {}).d || "");
   }
+  // ---------- lịch trình chi tiết + tình trạng tiến độ (người dùng yêu cầu 24/11/2026) ----------
+  // CHỈ ĐỌC S. Dùng chung target()/owed() với lịch hằng ngày nên số liệu khớp bài app giao.
+  var TY = ["c", "w", "r", "s"], TN = { c: "chữ", w: "từ", r: "bộ thủ", s: "câu" }, schedSel = null;
+  function qOf(t) { return { c: QC, w: QW, r: QR, s: QS }[t]; }
+  function dayPlan(di) { // phần kế hoạch của ngày di (tính từ S.start): vị trí [a, b) trong hàng đợi mỗi loại
+    var k = learnDay(di), rv = isReviewDay(di), o = { di: di, day: S.start + di, k: k, review: rv, fin: !rv && k > PL.newDays && k <= planDays(), rg: {}, n: {} };
+    TY.forEach(function (t) { var a = rv ? 0 : target(t, k - 1), b = rv ? 0 : target(t, k); o.rg[t] = [a, b]; o.n[t] = b - a; });
+    return o;
+  }
+  function introMap() { // ngày → số mục học mới thật sự hôm đó (theo introDay)
+    var m = {};
+    Object.keys(S.it).forEach(function (id) { var it = ITEM[id], r = S.it[id]; if (!it || !r) return; var x = m[r[5]] || (m[r[5]] = { c: 0, w: 0, r: 0, s: 0 }); if (x[it.type] != null) x[it.type]++; });
+    return m;
+  }
+  function schedEnd() { // ngày (di) cuối cùng có bài mới
+    for (var di = 0; di < 3000; di++) { if (isReviewDay(di)) continue; var k = learnDay(di); if (TY.every(function (t) { return target(t, k) >= qOf(t).length; })) return di; }
+    return 3000;
+  }
+  function diOfLearn(k) { var w = Math.floor((k - 1) / 6); return w * 7 + (k - 1) % 6; } // ngày học thứ k → di
+  function nLearned(a) { var m = 0; a.forEach(function (x) { if (introduced(x.id)) m++; }); return m; }
+  function wdName(day) { return ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(day * 864e5).getUTCDay()]; }
+  function half(x) { var r = Math.round(x * 2) / 2; return String(r).replace(".", ","); }
+  function schedStatus() {
+    var di = dayIdx(), k = learnDay(di), rv = isReviewDay(di), kd = rv ? k : k - 1, inPlan = di < PL.weeks * 7;
+    var o = { di: di, k: k, review: rv, inPlan: inPlan, t: {}, behindD: 0, aheadD: 0 };
+    TY.forEach(function (t) {
+      var Q = qOf(t), exp = Math.min(Q.length, target(t, kd)), tod = Math.min(Q.length, target(t, k));
+      var tot = inPlan ? (t === "r" ? Q.length : FOC[t]) : Q.length;
+      var behind = owed(Q, exp), ahead = Math.max(0, nLearned(Q) - (tod - owed(Q, tod)));
+      var nx = null; for (var i = 0; i < Q.length; i++) if (!introduced(Q[i].id)) { nx = { it: Q[i], pos: i + 1 }; break; }
+      var sh = t === "c" ? (inPlan ? FOC.c / PL.newDays : S.set.newC) : t === "w" ? (inPlan ? FOC.w / PL.newDays : S.set.newW) : t === "r" ? 7 : 2;
+      o.t[t] = { tot: tot, got: nLearned(Q.slice(0, tot)), exp: Math.min(tot, exp), behind: behind, ahead: ahead, next: nx, sh: Math.max(1, sh) };
+    });
+    o.behindD = Math.max(o.t.c.behind / o.t.c.sh, o.t.w.behind / o.t.w.sh);
+    o.aheadD = Math.max(o.t.c.ahead / o.t.c.sh, o.t.w.ahead / o.t.w.sh);
+    o.minor = !o.t.c.behind && !o.t.w.behind && (o.t.r.behind || o.t.s.behind);
+    return o;
+  }
+  function forecast(st) { // dự báo theo nhịp học thật 7 ngày gần nhất
+    var t0 = today(), span = Math.min(7, st.di);
+    if (span < 3) return "Chưa đủ dữ liệu để dự báo (cần ít nhất 3 ngày học).";
+    var got = { c: 0, w: 0 }, all = { c: 0, w: 0 };
+    Object.keys(S.it).forEach(function (id) { var it = ITEM[id], d = S.it[id][5]; if (!it || d < t0 - span || d >= t0 || !got.hasOwnProperty(it.type)) return; all[it.type]++; if (it.fo) got[it.type]++; });
+    if (st.inPlan) {
+      var remC = st.t.c.tot - st.t.c.got, remW = st.t.w.tot - st.t.w.got;
+      if (!remC && !remW) return "Bạn đã học hết chữ và từ " + esc(PL.name) + ". Giờ chỉ cần ôn thẻ đều và làm đề thi thử.";
+      var dEnd = S.start + diOfLearn(PL.newDays), left = 0;
+      for (var d = st.di; d <= diOfLearn(PL.newDays); d++) if (!isReviewDay(d)) left++;
+      var pc = got.c / span, pw = got.w / span;
+      var fin = Math.max(remC ? (pc ? t0 + Math.ceil(remC / pc) - 1 : Infinity) : t0, remW ? (pw ? t0 + Math.ceil(remW / pw) - 1 : Infinity) : t0);
+      var h = "Nhịp " + span + " ngày qua: ~" + Math.round(got.c / span) + " chữ + ~" + Math.round(got.w / span) + " từ " + esc(PL.name) + " mỗi ngày. ";
+      if (fin === Infinity) h += "Với nhịp này chưa thể học xong phần " + esc(PL.name) + ".";
+      else if (fin <= dEnd) h += "Theo nhịp này bạn học xong phần " + esc(PL.name) + " ngày " + dateOf(fin) + ", <b>kịp</b> trước tuần ôn tổng (hạn " + dateOf(dEnd) + ").";
+      else h += "Theo nhịp này bạn học xong phần " + esc(PL.name) + " ngày " + dateOf(fin) + ", <b>chậm " + (fin - dEnd) + " ngày</b> so với hạn " + dateOf(dEnd) + ".";
+      if (left > 0 && (fin > dEnd || st.behindD >= 0.5)) h += " Để kịp: mỗi ngày học ~" + Math.ceil(remC / left) + " chữ + ~" + Math.ceil(remW / left) + " từ (còn " + left + " ngày học).";
+      else if (left <= 0) h += " Đã sang tuần ôn tổng: còn " + remC + " chữ, " + remW + " từ chưa học, nên học nốt sớm.";
+      return h;
+    }
+    var rc = QC.length - nLearned(QC), rw = QW.length - nLearned(QW), ac = all.c / span, aw = all.w / span;
+    if (!rc && !rw) return "Bạn đã học hết toàn bộ " + fmt(QC.length) + " chữ và " + fmt(QW.length) + " từ.";
+    var f2 = Math.max(rc ? (ac ? t0 + Math.ceil(rc / ac) - 1 : Infinity) : t0, rw ? (aw ? t0 + Math.ceil(rw / aw) - 1 : Infinity) : t0);
+    return "Nhịp " + span + " ngày qua: ~" + Math.round(ac) + " chữ + ~" + Math.round(aw) + " từ mỗi ngày. " + (f2 === Infinity ? "Với nhịp này chưa thể học hết." : "Theo nhịp này bạn học hết toàn bộ vào ngày " + dateOf(f2) + " (lịch dự kiến: " + dateOf(S.start + schedEnd()) + ").");
+  }
+  function schedHTML() {
+    var st = schedStatus(), T = st.t, h = '<div class="row"><h2 style="margin:0">Lịch trình và tiến độ của bạn</h2></div>';
+    var cls, ic, head;
+    if (st.behindD > 0) {
+      cls = st.behindD > 1 ? "bad" : "warn"; ic = "遲";
+      head = st.behindD >= 0.5 ? "Đang chậm ~" + half(st.behindD) + " ngày học" : "Chậm một chút so với kế hoạch";
+    } else if (st.aheadD >= 0.5) { cls = "good"; ic = "速"; head = "Đang nhanh ~" + half(st.aheadD) + " ngày học"; }
+    else if (st.minor) { cls = "warn"; ic = "遲"; head = "Chậm một chút so với kế hoạch"; }
+    else { cls = "good"; ic = "正"; head = "Đúng tiến độ"; }
+    var where = st.inPlan ? "Hôm nay: tuần " + (Math.floor(st.di / 7) + 1) + "/" + PL.weeks + " · " + (st.review ? "ngày ôn" : st.k > PL.newDays ? "tuần ôn tổng + thi thử" : "ngày học " + st.k + "/" + PL.newDays) + " · lộ trình " + esc(PL.name) + "."
+      : "Hôm nay: đã qua lộ trình " + PL.weeks + " tuần " + esc(PL.name) + ", đang học phần còn lại (" + esc(PL.after) + ").";
+    var late = TY.filter(function (t) { return T[t].behind; }).map(function (t) { return T[t].behind + " " + TN[t]; });
+    var learned = learnedOf("c").concat(learnedOf("w")), mem = learned.filter(function (x) { return S.it[x.id][0] >= 3; }).length;
+    h += '<div class="pace ' + cls + '"><div class="pi" aria-hidden="true">' + ic + '</div><div><b class="ph">' + head + '</b><p class="sub">' + where + (late.length ? " Còn trễ: " + late.join(", ") + " (app đã dồn vào bài hôm nay)." : st.review || st.k <= 1 ? "" : " Phần đến hôm qua đã học đủ.") + '</p><p class="sub">' + forecast(st) + '</p><p class="sub">Đã học ' + fmt(learned.length) + " chữ + từ, nhớ chắc " + fmt(mem) + " (ôn đúng ≥ 3 lần) · " + due("r").length + " thẻ đến hạn ôn hôm nay · " + HC.hard().length + " chữ hay quên.</p></div></div>";
+    // thanh tiến độ: vạch = chỗ lẽ ra phải tới (hết hôm qua)
+    h += '<div class="pbars">' + TY.map(function (t) {
+      var x = T[t], w = function (n) { return Math.min(100, Math.round(1000 * n / Math.max(1, x.tot)) / 10) + "%"; };
+      var c = !x.behind ? "good" : x.behind <= x.sh ? "warn" : "bad";
+      var tag = x.behind ? '<span class="chip ' + (c === "bad" ? "k10" : "warn") + '">Trễ ' + x.behind + "</span>" : x.ahead ? '<span class="chip ok">Vượt ' + x.ahead + "</span>" : '<span class="chip ok">Đúng hạn</span>';
+      var nx = x.next ? "Mục tiếp theo: " + (t === "s" ? "câu " + x.next.pos : '<span class="han">' + esc(x.next.it.key) + "</span> " + esc(firstAm(x.next.it.am))) + " (thứ " + x.next.pos + ")" : "Đã học hết";
+      return '<div class="pb"><div class="lab"><b>' + (t === "r" ? "Bộ thủ" : TN[t].charAt(0).toUpperCase() + TN[t].slice(1) + (st.inPlan ? " " + esc(PL.name) : "")) + '</b><span class="num muted">' + fmt(x.got) + " / " + fmt(x.tot) + " · kế hoạch đến hôm nay " + fmt(x.exp) + " " + tag + '</span></div><div class="bar2"><i class="' + c + '" style="width:' + w(x.got) + '"></i><s style="left:' + w(x.exp) + '"></s></div><small class="muted">' + nx + "</small></div>";
+    }).join("") + '</div><p class="sub" style="margin-top:4px">Vạch đen trên thanh = chỗ lẽ ra phải học tới (tính hết hôm qua). Thanh xanh: đúng hoặc vượt · vàng: trễ ít (≤ 1 ngày) · đỏ: trễ nhiều.</p>';
+    // dải lịch theo tuần
+    var end = schedEnd(), weeks = Math.floor(end / 7) + 1, im = introMap(), t0 = today();
+    function cell(di) {
+      var p = dayPlan(di), day = p.day, a = im[day] || { c: 0, w: 0, r: 0, s: 0 }, past = day < t0, lg = S.log[day] || {};
+      var c = "dc", lab, np = p.n.c + p.n.w;
+      if (di > end) return '<span class="dc end" aria-hidden="true"></span>';
+      if (p.review || p.fin || !np) { c += p.fin ? " fin" : " rv"; lab = p.fin ? "thi" : "ôn"; if (past) c += (lg.r || a.c + a.w) ? " did" : " miss"; }
+      else { lab = past ? a.c : p.n.c || "+"; if (past) c += a.c + a.w >= np * 0.9 ? " ok" : a.c + a.w > 0 ? " part" : " miss"; }
+      if (day === t0) { c += " now"; lab = "nay"; }
+      if (di === schedSel) c += " sel";
+      return '<button class="' + c + '" data-day="' + di + '" title="' + wdName(day) + " " + dateOf(day) + '">' + lab + "</button>";
+    }
+    function wrow(w) { var cs = ""; for (var d = w * 7; d < w * 7 + 7; d++) cs += cell(d); return '<div class="wkr"><span class="wl"><b>Tuần ' + (w + 1) + "</b><small>" + dateOf(S.start + w * 7) + "–" + dateOf(S.start + w * 7 + 6) + "</small></span>" + cs + "</div>"; }
+    h += '<h3>Lộ trình ' + PL.weeks + " tuần " + esc(PL.name) + '</h3><div class="wkh"><span class="wl"></span>' + [0, 1, 2, 3, 4, 5, 6].map(function (d) { return "<span>" + wdName(S.start + d) + "</span>"; }).join("") + "</div>";
+    for (var w = 0; w < Math.min(PL.weeks, weeks); w++) h += wrow(w);
+    if (weeks > PL.weeks) { h += "<h3>Sau lộ trình: " + esc(PL.after) + ' <small class="muted">(' + S.set.newC + " chữ + " + S.set.newW + " từ mỗi ngày, đổi ở mục Kế hoạch)</small></h3>"; for (w = PL.weeks; w < weeks; w++) h += wrow(w); }
+    h += '<div class="legend" style="margin-top:8px"><span style="--k:var(--good-soft)">học đủ</span><span style="--k:var(--warn-soft)">học thiếu</span><span style="--k:var(--seal-soft)">bỏ lỡ</span><span style="--k:var(--accent)">hôm nay</span><span style="--k:var(--surface-2)">ngày ôn</span><span style="--k:var(--accent-soft)">ôn tổng + thi thử</span></div><p class="sub">Số trong ô = số chữ mới (ngày đã qua: số bạn đã học thật; ngày tới: số dự kiến). Bấm vào một ngày để xem học gì.</p><div id="lday"></div>';
+    return h;
+  }
+  function dayHTML(di) {
+    var p = dayPlan(di), day = p.day, t0 = today(), past = day < t0, isT = day === t0, im = introMap()[day] || { c: 0, w: 0, r: 0, s: 0 };
+    var h = '<div class="dayd"><div class="row"><b>' + wdName(day) + " " + dateOf(day) + " · tuần " + (Math.floor(di / 7) + 1) + (p.review ? " · ngày ôn" : " · ngày học " + p.k) + (isT ? " · hôm nay" : "") + '</b><span class="spacer"></span><button class="btn sm ghost" data-close-day>Đóng</button></div>';
+    if (p.review) h += '<p class="sub">Ngày ôn của tuần: không có bài mới. Ôn thẻ đến hạn, tập viết, chơi Đấu cuối tuần.</p>';
+    if (p.fin) h += '<p class="sub">Tuần ôn tổng: không thêm chữ, từ mới. Ôn thẻ, tập viết câu Phần IV, làm đề thi thử ' + esc(PL.name) + ".</p>";
+    var any = false;
+    TY.forEach(function (t) {
+      var r = p.rg[t]; if (r[1] <= r[0]) return; any = true;
+      var list = qOf(t).slice(r[0], r[1]), ok = nLearned(list);
+      h += "<h3>" + (t === "r" ? "Bộ thủ" : TN[t].charAt(0).toUpperCase() + TN[t].slice(1)) + " mới: " + list.length + ' <small class="muted">· đã học ' + ok + "/" + list.length + '</small></h3><div class="minis">' + list.map(function (it) {
+        var k = introduced(it.id) ? " got" : "";
+        return t === "s" ? '<span class="mini' + k + '" data-open="' + it.id + '"><span class="han">' + esc(chars(it.han).slice(0, 8).join("")) + "…</span></span>" : '<span class="mini' + k + '" data-open="' + it.id + '"><span class="han">' + esc(it.key) + "</span>" + esc(firstAm(it.am)) + "</span>";
+      }).join("") + "</div>";
+    });
+    if (!any && !p.review && !p.fin) h += '<p class="sub">Không có bài mới.</p>';
+    if (past) h += '<p class="sub" style="margin-top:8px">Hôm đó bạn đã học mới: ' + im.c + " chữ, " + im.w + " từ, " + im.r + " bộ thủ, " + im.s + " câu · ôn " + ((S.log[day] || {}).r || 0) + " lượt.</p>";
+    else if (isT) { var q = plan().quota; h += '<p class="sub" style="margin-top:8px">Hôm nay app giao: ' + q.c + " chữ, " + q.w + " từ, " + q.r + " bộ thủ, " + q.s + " câu (đã gồm phần trễ dồn lại) · " + due("r").length + ' thẻ đến hạn ôn. <a href="#hoc">Học ngay</a></p>'; }
+    else { var n = 0; Object.keys(S.it).forEach(function (id) { var r = S.it[id]; if (ITEM[id] && r[1] === day) n++; }); h += '<p class="sub" style="margin-top:8px">Dự kiến ôn ~' + n + " thẻ đã học (con số sẽ đổi theo cách bạn trả lời khi ôn).</p>"; }
+    return h + "</div>";
+  }
+  function bindSched(box) {
+    function draw() {
+      box.innerHTML = schedHTML();
+      if (schedSel != null) $("#lday", box).innerHTML = dayHTML(schedSel);
+    }
+    box.onclick = function (e) {
+      var b = e.target.closest("[data-day]"), x = e.target.closest("[data-close-day]");
+      if (b) { schedSel = +b.getAttribute("data-day"); $$(".dc.sel", box).forEach(function (c) { c.classList.remove("sel"); }); b.classList.add("sel"); $("#lday", box).innerHTML = dayHTML(schedSel); }
+      else if (x) { schedSel = null; $$(".dc.sel", box).forEach(function (c) { c.classList.remove("sel"); }); $("#lday", box).innerHTML = ""; }
+    };
+    if (schedSel == null) schedSel = dayIdx();
+    draw();
+    return draw;
+  }
   function nextBatch(q, extra) {
     var p = plan(); q = q || p.quota; extra = extra || 0;
     var cs = QC.filter(function (c) { return !introduced(c.id); }).slice(0, q.c + extra);
@@ -1128,7 +1266,7 @@
     var cc = QC.slice(0, COMMON_C), ww = QW.slice(0, COMMON_W);
     var s1 = stat(cc), s2 = stat(D.chars), s3 = stat(ww), s4 = stat(D.words), s5 = stat(D.rads), s6 = stat(D.sents);
     var f1 = stat(QC.slice(0, FOC.c)), f2 = stat(QW.slice(0, FOC.w)), f3 = stat(QS.slice(0, FOC.s));
-    h += '<div class="cols2"><div class="card"><h2>Tiến độ</h2><div class="legend"><span style="--k:color-mix(in srgb, var(--accent) 35%, transparent)">đã học</span><span style="--k:var(--accent)">nhớ (ôn đúng ≥ 3 lần)</span><span style="--k:var(--good)">viết được</span></div>';
+    h += '<div class="cols2"><div class="card"><div class="row"><h2 style="margin:0">Tiến độ</h2><span class="spacer"></span><a class="btn sm" href="#caidat-lich">Xem lịch trình</a></div><div class="legend"><span style="--k:color-mix(in srgb, var(--accent) 35%, transparent)">đã học</span><span style="--k:var(--accent)">nhớ (ôn đúng ≥ 3 lần)</span><span style="--k:var(--good)">viết được</span></div>';
     h += bars("Chữ " + PL.name, FOC.c, f1[0], f1[1], f1[2]) + bars("Từ " + PL.name, FOC.w, f2[0], f2[1], f2[2]) + bars("Câu " + PL.name, FOC.s, f3[0], f3[1], -1);
     h += bars("Chữ thông dụng", COMMON_C, s1[0], s1[1], s1[2]) + bars("Từ thông dụng", COMMON_W, s3[0], s3[1], s3[2]) + bars("Toàn bộ chữ", D.chars.length, s2[0], s2[1], s2[2]) + bars("Toàn bộ từ", D.words.length, s4[0], s4[1], s4[2]) + bars("214 bộ thủ", 214, s5[0], s5[1], -1) + bars(D.sents.length + " câu đề cương", D.sents.length, s6[0], s6[1], -1);
     h += "</div>";
@@ -1530,14 +1668,16 @@
   }
 
   // ---------- SETTINGS ----------
-  function vSettings(v) {
+  function vSettings(v, args) {
     var p = plan();
     var sync = remote.status === "synced" ? "Tiến độ đang được lưu vào tài khoản Claude của bạn, nên mở app trên máy tính hay điện thoại (cùng tài khoản) đều thấy cùng tiến độ." : remote.status === "error" ? "Chưa lưu được lên tài khoản lúc này; tiến độ vẫn được giữ trên trình duyệt này và sẽ thử lưu lại." : "Tiến độ đang lưu trên trình duyệt này. Hãy sao lưu thường xuyên bằng mã bên dưới.";
     var last = Object.keys(S.log).map(Number).sort(function (a, b) { return b - a; }).slice(0, 14);
-    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div><div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
+    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="card hero" id="lich" style="margin-bottom:14px"></div><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div><div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Bắt đầu ngày ' + dateOf(S.start) + " · hôm nay là ngày " + (p.di + 1) + " · ngày học thứ " + p.k + ' (tính 6 ngày học + 1 ngày ôn mỗi tuần).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày sau 5 tuần</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày sau 5 tuần</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh khi trả lời đúng / sai</label><div class="row" style="margin-top:12px"><button class="btn" id="restart">Tính lại lịch từ hôm nay</button></div><p class="sub" style="margin-top:6px">Tính lại lịch giữ nguyên chữ đã học, chỉ dời ngày bắt đầu của lộ trình 5 tuần về hôm nay.</p></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div></div>';
+    var redraw = bindSched($("#lich", v));
+    if (args && args[0] === "lich") HC.later(function () { var el = $("#lich", v); if (el) el.scrollIntoView(); }, 0);
     var e1 = $("#fbin3", v); if (e1) e1.onclick = HC.fbSignIn;
     var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbSync().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
     var e3 = $("#fbout", v); if (e3) e3.onclick = function () { HC.fbSignOut(); toast("Đã đăng xuất trên máy này"); };
@@ -1556,8 +1696,8 @@
     };
     $("#cp", v).onclick = function () { var t = JSON.stringify(S); $("#bk", v).value = t; var ta = $("#bk", v); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast("Đã sao chép mã tiến độ"); }, function () { ta.select(); toast("Hãy bấm Ctrl+C để sao chép"); }); else { ta.select(); toast("Hãy bấm Ctrl+C để sao chép"); } };
     $("#im", v).onclick = function () { try { var o = JSON.parse($("#bk", v).value); if (!o || !o.it) throw 0; S = normalize(o); S.upd = Date.now(); save(); toast("Đã khôi phục tiến độ"); route(); } catch (e) { toast("Mã không hợp lệ. Hãy dán đúng toàn bộ mã đã sao chép."); } };
-    $("#nc", v).onchange = function () { S.set.newC = Math.max(5, Math.min(60, +this.value || 20)); save(); };
-    $("#nw", v).onchange = function () { S.set.newW = Math.max(5, Math.min(60, +this.value || 17)); save(); };
+    $("#nc", v).onchange = function () { S.set.newC = Math.max(5, Math.min(60, +this.value || 20)); save(); redraw(); };
+    $("#nw", v).onchange = function () { S.set.newW = Math.max(5, Math.min(60, +this.value || 17)); save(); redraw(); };
     $("#snd", v).onchange = function () { S.set.sound = this.checked; save(); };
     $("#restart", v).onclick = function () { S.start = today(); save(); toast("Lộ trình bắt đầu lại từ hôm nay"); route(); };
     $("#reset", v).onclick = function () { $("#rz", v).innerHTML = '<p>Xóa hết chữ đã học, XP, huy hiệu? Không hoàn tác được.</p><div class="row"><button class="btn bad" id="yes">Xóa hết</button><button class="btn" id="no">Giữ lại</button></div>'; $("#yes", v).onclick = function () { S = blank(); save(); toast("Đã xóa tiến độ"); HC.go("home"); }; $("#no", v).onclick = function () { route(); }; };
