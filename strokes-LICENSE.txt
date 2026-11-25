@@ -1,5 +1,7 @@
 Dữ liệu nét chữ trong app-strokes.json và thư mục net/ dẫn xuất từ Make Me a Hanzi
-(https://github.com/skishore/makemeahanzi) qua hanzi-writer-data, theo giấy phép dưới đây.
+(https://github.com/skishore/makemeahanzi) qua hanzi-writer-data; riêng chữ 為 lấy từ AnimCJK
+(https://github.com/parsimonhi/animCJK, cũng dẫn xuất từ Make Me a Hanzi và phông Arphic PL KaitiM).
+Tất cả theo giấy phép dưới đây.
 
 ARPHIC PUBLIC LICENSE
 

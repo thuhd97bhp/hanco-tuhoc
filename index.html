@@ -53,11 +53,15 @@ body { background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
 button, input, select, textarea { font: inherit; color: inherit; }
 .han { font-family: var(--f-han); color: var(--han); font-weight: 400; }
-.wrap { max-width: 960px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1100px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 
 /* top */
 .topbar { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
-.topbar .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px; }
+/* thanh trên: 1 khối duy nhất; hẹp → 2 hàng (tên app + điểm, rồi thanh mục); rộng hoặc máy nằm ngang thấp → 1 hàng (xem @media cuối file) */
+.topbar .tb { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; padding-top: 10px; }
+.topbar .brand { order: 1; }
+.topbar .stats { order: 2; }
+.topbar nav.menu { order: 3; flex: 1 0 100%; margin-top: 8px; min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; letter-spacing: -0.01em; }
 .brand .seal { width: 34px; height: 34px; border-radius: 7px; background: var(--seal); color: #fff; display: grid; place-items: center; font-family: var(--f-han); font-size: 22px; line-height: 1; }
 .stats { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
@@ -71,6 +75,7 @@ nav.menu a[aria-current="page"] { background: var(--accent); color: var(--accent
 nav.menu a .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--seal); color: #fff; font-size: 0.72rem; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
 
 main { padding-block: 18px 64px; }
+main:focus { outline: none; }
 h1, h2, h3 { text-wrap: balance; letter-spacing: -0.01em; }
 h1 { font-size: 1.45rem; margin: 0 0 4px; }
 h2 { font-size: 1.12rem; margin: 0 0 8px; }
@@ -147,6 +152,8 @@ p { margin: 0 0 8px; }
 .grades .btn small { font-weight: 500; opacity: 0.8; font-size: 0.72rem; }
 .kbd { font-size: 0.75rem; color: var(--muted); }
 .hide { visibility: hidden; }
+/* hàng nút / khung kết quả đang ẩn thì KHÔNG giữ chỗ (chỉ đáp án trong thẻ .fc giữ chỗ để thẻ không nhảy) */
+.row.hide, .gfb.hide, .gtwrap.hide, .acts.hide { display: none; }
 
 /* learn detail */
 .learn { width: min(640px, 100%); display: grid; gap: 12px; }
@@ -258,6 +265,23 @@ a.lk { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--mu
 .gfb .no { color: var(--seal); }
 .gfb .verdict { font-weight: 800; font-size: 1.15rem; text-align: center; }
 .gfb .verdict small { font-weight: 500; font-size: 0.8rem; }
+/* ===== BỐ CỤC CHUNG CHO 3 LOẠI MÁY (điện thoại, máy tính bảng, máy tính) =====
+   .acts  = thanh nút chính của mỗi bước (Xem đáp án, Quên/Nhớ, Chấm điểm, Tiếp…): dính đáy màn hình khi nội dung dài,
+            nên KHÔNG BAO GIỜ phải kéo xuống mới bấm được. Màn mới có nút chính → bọc trong .acts.
+   .work  = màn làm bài có ô viết: 1 cột (điện thoại, máy tính bảng dọc); 2 cột khi màn rộng/nằm ngang
+            (trái: đề + kết quả chấm; phải: ô viết + nút). Thứ tự HTML: .winfo, .wpadc, .wfb, .gtwrap. */
+.acts { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; width: 100%; padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+.card .acts { background: var(--surface); }
+.acts > .grades { margin: 0 auto; }
+.acts > .row { gap: 8px; justify-content: center; }
+.work { display: grid; gap: 12px; width: 100%; justify-items: center; }
+.work > div { width: min(560px, 100%); min-width: 0; }
+.winfo { display: grid; gap: 8px; justify-items: center; }
+.winfo .fc { width: 100%; }
+.wpadc { display: grid; gap: 8px; justify-items: center; }
+.wfb { display: grid; gap: 8px; justify-items: center; }
+.wfb:empty { display: none; }
+.work > .gtwrap { width: min(560px, 100%); }
 canvas.pad { touch-action: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; max-width: 100%; cursor: crosshair; }
 
 /* games */
@@ -271,6 +295,8 @@ canvas.pad { touch-action: none; background: var(--surface); border: 1px solid v
 .ghead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 .ghead .score { margin-left: auto; display: flex; gap: 8px; }
 .memo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: min(560px, 100%); }
+/* bàn lật thẻ 3 hàng × 4: thu nhỏ theo chiều cao màn hình để cả bàn nằm trong màn (máy nằm ngang) */
+.memo { width: min(560px, 100%, max(280px, (100dvh - 170px) * 1.3)); }
 .memo button { aspect-ratio: 1 / 1; border-radius: 10px; border: 1px solid var(--line); background: var(--accent); color: var(--accent-ink); cursor: pointer; display: grid; place-items: center; padding: 4px; font-weight: 600; font-size: 0.82rem; min-width: 0; overflow: hidden; }
 .memo button.open, .memo button.done { background: var(--surface); color: var(--ink); }
 .memo button.done { border-color: var(--good); background: var(--good-soft); }
@@ -344,6 +370,41 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
   .baskets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .learn .top { grid-template-columns: 1fr; justify-items: center; text-align: center; }
   .choices { grid-template-columns: 1fr; }
+  .acts .btn:not(.sm) { padding-inline: 11px; }
+}
+/* máy nằm ngang hoặc màn rộng: 2 cột cho màn viết, lựa chọn 2 cột */
+@media (min-width: 900px), (min-width: 640px) and (orientation: landscape) {
+  .work { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-areas: "info pad" "fb pad" "gt gt"; grid-template-rows: auto 1fr auto; align-items: start; column-gap: 20px; }
+  .work > div { width: 100%; }
+  .work > .winfo { grid-area: info; } .work > .wpadc { grid-area: pad; } .work > .wfb { grid-area: fb; } .work > .gtwrap { grid-area: gt; }
+  .wfb .gfb { width: 100%; }
+  .choices { width: min(760px, 100%); }
+  .choices.one { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* thanh trên 1 hàng: màn rộng, hoặc máy nằm ngang thấp (máy tính bảng, điện thoại ngang) */
+@media (min-width: 1000px), (min-width: 640px) and (orientation: landscape) and (max-height: 820px) {
+  .topbar .tb { flex-wrap: nowrap; padding-block: 6px; max-width: 1400px; }
+  .topbar nav.menu { order: 2; flex: 1 1 auto; margin-top: 0; padding-bottom: 0; }
+  .topbar .stats { order: 3; margin-left: 0; }
+  nav.menu a { padding: 6px 9px; }
+}
+@media (max-width: 1399px) and (min-width: 1000px), (min-width: 640px) and (max-width: 1399px) and (orientation: landscape) and (max-height: 820px) {
+  .brand span.name, .stats .pill.lv, .stats .pill.xp { display: none; }
+}
+/* màn thấp (máy tính bảng / laptop nằm ngang): bớt khoảng trống theo chiều dọc */
+@media (max-height: 820px) and (orientation: landscape) {
+  main { padding-top: 12px; }
+  .fc { min-height: 200px; padding: 16px 22px; }
+  .stage { gap: 10px; }
+}
+/* màn rất thấp (điện thoại nằm ngang): thẻ và chữ to gọn lại */
+@media (max-height: 500px) and (orientation: landscape) {
+  main { padding-top: 8px; }
+  h1 { font-size: 1.2rem; }
+  .fc { min-height: 0 !important; padding: 10px 16px; gap: 6px; }
+  .big { font-size: clamp(40px, 16vh, 120px); }
+  .big.l2 { font-size: clamp(36px, 13vh, 88px); }
+  .stage { gap: 8px; }
 }
 @media print {
   .topbar, body::before, .noprint { display: none !important; }
@@ -352,11 +413,11 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
 </style>
 
 <header class="topbar">
-  <div class="wrap">
+  <div class="wrap tb">
     <div class="brand"><div class="seal" aria-hidden="true">學</div><span class="name">Hán cổ tự học</span></div>
+    <nav class="menu" id="menu" aria-label="Các mục"></nav>
     <div class="stats" id="stats"></div>
   </div>
-  <div class="wrap"><nav class="menu" id="menu" aria-label="Các mục"></nav></div>
 </header>
 <main class="wrap" id="view" tabindex="-1"><div class="card"><p class="sub">Đang tải dữ liệu bài học…</p></div></main>
 <div id="layer"></div>

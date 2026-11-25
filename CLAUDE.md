@@ -85,6 +85,22 @@
   mỗi ngày, câu từ tuần 2, tuần 5 chỉ ôn + thi thử). Phần không thuộc kỳ đó học SAU lộ trình (thông dụng còn lại trước,
   rồi phần còn lại) theo số chữ/từ mỗi ngày trong Cài đặt. Mỗi tuần 6 ngày học + 1 ngày ôn.
 
+## Giao diện 3 loại máy — BẮT BUỘC (người dùng yêu cầu 25/11/2026)
+Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 FE để NẰM NGANG (khung ~1280×600–700), ngoài ra máy tính và
+điện thoại. Mọi màn hình, kể cả màn/tính năng thêm sau này, phải dùng được trên cả 3 loại máy, không phải kéo xuống mới bấm được nút.
+- Nút chính của mỗi bước (Xem đáp án, Quên/Nhớ, Chấm điểm, Tiếp, Trước/Sau, Kiểm tra…) bọc trong `.acts` (thường là
+  `<div class="row acts">`): thanh nút dính đáy màn hình. Không đặt 2 `.acts` liền nhau trong cùng một khung (sẽ chồng lên nhau)
+  — gộp thành 1 `.acts` chứa nhiều `.row`.
+- Màn có ô viết dùng `.work` với 4 phần theo thứ tự `.winfo` (đề) · `.wpadc` (ô viết + `.acts`) · `.wfb` (kết quả chấm) ·
+  `.gtwrap`; màn rộng / nằm ngang tự thành 2 cột. `makePad` tự tính cỡ ô theo cả chiều ngang lẫn chiều cao màn hình.
+- Hàng nút / khung kết quả đang ẩn dùng `.row.hide` / `.gfb.hide` (không giữ chỗ). Chỉ đáp án trong thẻ `.fc` mới giữ chỗ.
+- Không ghi cứng chiều cao/chiều rộng theo px cho khung lớn; dùng `min(…, 100%)`, grid `auto-fit`, và các @media có sẵn cuối
+  phần CSS trong index.html (màn rộng/nằm ngang ≥ 900px hoặc ≥ 640px nằm ngang; thanh trên 1 hàng; màn thấp ≤ 820px; rất thấp ≤ 500px).
+- Kiểm tra TRƯỚC KHI PHÁT HÀNH bằng `.claude/layout-check.js` (dán vào console / javascript_tool ở trang app chạy bằng
+  http.server; `layoutSeed()` nếu chưa có thẻ đã học, rồi `await layoutCheck()`), ở đủ các khung: điện thoại dọc 375×660 và
+  375×812, điện thoại ngang 740×360, máy tính bảng ngang 1280×650 và 1280×590, máy tính bảng dọc 800×1180, máy tính 1366×650
+  và 1920×960. Phải không còn dòng "LOI". Màn mới → thêm tên màn vào danh sách trong script nếu script chưa tự đi tới.
+
 ## Cách làm việc
 - Chỉ sửa file được yêu cầu, không refactor lan man; giữ ES5 + `HC.u` helpers, chuỗi giao diện tiếng Việt.
 - Hẹn giờ trong trò chơi dùng `HC.later` (tự hủy khi rời màn hình). Điều hướng dùng `HC.go(tên)`.
@@ -92,6 +108,20 @@
 - Phát hành: `python tools/release.py` → commit (kèm dòng Co-Authored-By) → `git push` (GitHub Pages tự cập nhật).
   Báo người dùng link https://hanco-tuhoc.web.app sau khi deploy.
 - KHÔNG quét toàn repo trừ khi được yêu cầu; `app-data.json` rất lớn — đừng đọc cả file, dùng script để tra.
+
+## Kế hoạch nhiều bước đang làm — ĐỌC TRƯỚC khi sửa phần liên quan
+- **Kho chữ/từ/câu khó + playlist + 2 trò chơi riêng · Giải thích từng chữ (Pinyin, nghĩa + từ loại, cấu tạo, mẹo nhớ) ·
+  Ghi chú cho chữ/từ/câu** (người dùng duyệt 25/11/2026): `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` (chỉ ở máy).
+  File đó ghi những gì đã thống nhất (vd gõ âm PHẢI đúng dấu; trò kho khó KHÔNG đổi lịch SRS; từ/câu không có giải thích
+  riêng mà bấm vào từng chữ), thiết kế 3 trường mới của `S` (`hard`, `pl`, `note`), các bước và nhật ký bước nào đã xong.
+  Mỗi chat làm đúng MỘT bước, cập nhật nhật ký trong file đó; không làm trái điều đã thống nhất nếu người dùng chưa đổi.
+
+## Luật "Mục mới phải đủ" (người dùng yêu cầu 25/11/2026)
+- Mỗi lần thêm tài liệu, chữ/từ/câu MỚI phải tự động có ĐỦ MỌI THỨ mục cũ cùng loại đang có, ở mọi phương diện: âm, nghĩa,
+  id, `net/` (+ `r`), `app-strokes.json`, ảnh `han/`, `gt`/`gtc`/`gts`/`dt`/`bf`, giải thích từng chữ (`giai/`, khi đã có),
+  lộ trình, tra cứu, trò chơi, thi thử, kho khó / ghi chú — kể cả các tính năng thêm sau này.
+- Tính năng nào thêm dữ liệu theo từng mục thì PHẢI thêm bước sinh dữ liệu đó vào quy trình "Khi người dùng gửi thêm tài
+  liệu" dưới đây VÀ thêm kiểm tra "mục nào còn thiếu" vào `check_update.py` hoặc `release.py`.
 
 ## Khi người dùng gửi thêm tài liệu (đề cương, đề thi, giáo trình) — TỰ ĐỘNG LÀM
 Người dùng yêu cầu (23/11/2026): gửi tài liệu mới = đồng ý cho cả quy trình dưới đây, KHÔNG cần trả lời 4 mục rồi chờ
@@ -111,9 +141,12 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
    chọn sao cho mỗi ngày ≤ ~20 chữ + ~20 từ và chừa tuần cuối để ôn + thi thử (lần này: 5 tuần). Tiến độ đã học giữ nguyên;
    thẻ đã học vẫn ôn theo lịch SRS cũ. Các con số trên giao diện lấy từ dữ liệu, không ghi cứng.
 7. Sinh lại: `build.py`, `build_app.py` (id cũ phải giữ — xem luật id), `check_update.py` (phải ĐẠT), `build_strokes.py`,
-   `build_order.py`, ảnh `han/` cho chữ mới (render_han; giữ nguyên ảnh cũ: `git checkout -- han` sau khi vẽ).
+   `build_order.py`, ảnh `han/` cho chữ mới (render_han; giữ nguyên ảnh cũ: `git checkout -- han` sau khi vẽ),
+   giải thích từng chữ cho MỌI chữ mới (khi tính năng `giai/` đã có: soạn theo đúng định dạng + yêu cầu trong
+   `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` rồi chạy script sinh `giai/`).
 8. Kiểm tra: node --check; chạy app ở máy (Học mới, Câu, Loại từ, Tra cứu chữ mới, Thi thử đề mới, bản điện thoại);
-   mô phỏng lộ trình theo ngày; thử tiến độ cũ + `merge()` (không mất mục nào).
+   mô phỏng lộ trình theo ngày; thử tiến độ cũ + `merge()` (không mất mục nào); đối chiếu luật "Mục mới phải đủ"
+   (chữ/từ/câu mới có đủ mọi thứ mục cũ có — liệt kê mục còn thiếu, không bỏ qua im lặng).
 9. Báo cáo người dùng: số chữ / từ / câu / từ ngữ pháp mới, lỗi in đã xử lý, lộ trình mới (số tuần, mỗi ngày bao nhiêu),
    kết quả kiểm tra → hỏi deploy. Được đồng ý → `release.py` → commit → push → mở link thật kiểm tra.
 
