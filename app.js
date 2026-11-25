@@ -81,9 +81,19 @@
   // ---------- state + storage ----------
   var LS = "hanco-tuhoc-v1";
   var S, remote = { db: null, ref: null, status: "local", writing: false, pending: false };
-  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {} }; }
+  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {}, hard: {}, pl: {}, note: {} }; }
+  // hard[id] = t (ms thêm vào kho khó; âm = −ms lúc bỏ) · pl[plId] = {n tên, nt ms đặt tên, x ms xóa (0 = còn), ids {id: t như hard}}
+  // note[id] = ["văn bản", ms] (văn bản rỗng = đã xóa). Gộp đồng bộ theo từng mục (mergeT) để máy nào thêm/xóa cũng không mất.
   function loadLocal() { try { var t = localStorage.getItem(LS); if (t) return JSON.parse(t); } catch (e) { } return null; }
-  function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) { } }
+  var bigWarned = false;
+  function saveLocal() {
+    try {
+      var t = JSON.stringify(S);
+      // Firestore giới hạn 1 MiB/tài liệu: báo sớm khi tiến độ quá lớn (thường do ghi chú dài)
+      if (t.length > 700000 && !bigWarned) { bigWarned = true; setTimeout(function () { toast("Tiến độ đã rất lớn (" + Math.round(t.length / 1000) + " nghìn ký tự), gần giới hạn đồng bộ. Hãy rút gọn bớt ghi chú."); }, 0); }
+      localStorage.setItem(LS, t);
+    } catch (e) { }
+  }
   var saveTimer = null;
   function save() {
     S.upd = Date.now(); saveLocal();
@@ -175,6 +185,38 @@
     Object.keys(b.log || {}).forEach(function (d) { var x = m.log[d] || (m.log[d] = { n: 0, r: 0, x: 0 }), y = b.log[d]; ["n", "r", "x"].forEach(function (k) { x[k] = Math.max(x[k] || 0, y[k] || 0); }); });
     m.start = newer.start; m.set = JSON.parse(JSON.stringify(newer.set));
     m.upd = Math.max(a.upd || 0, b.upd || 0);
+    m.hard = mergeT(a.hard, b.hard);
+    m.note = {};
+    [a.note || {}, b.note || {}].forEach(function (o) {
+      Object.keys(o).forEach(function (id) {
+        var x = m.note[id], y = o[id];
+        if (!Array.isArray(y)) return;
+        if (!x || y[1] > x[1] || (y[1] === x[1] && String(y[0]) > String(x[0]))) m.note[id] = [String(y[0] || ""), +y[1] || 0];
+      });
+    });
+    m.pl = {};
+    [a.pl || {}, b.pl || {}].forEach(function (o) {
+      Object.keys(o).forEach(function (k) {
+        var y = o[k]; if (!y || typeof y !== "object") return;
+        var x = m.pl[k];
+        if (!x) { m.pl[k] = { n: String(y.n || ""), nt: +y.nt || 0, x: +y.x || 0, ids: mergeT(y.ids, {}) }; return; }
+        if ((+y.nt || 0) > x.nt || ((+y.nt || 0) === x.nt && String(y.n || "") > x.n)) { x.n = String(y.n || ""); x.nt = +y.nt || 0; }
+        x.x = Math.max(x.x, +y.x || 0);
+        x.ids = mergeT(x.ids, y.ids);
+      });
+    });
+    return m;
+  }
+  // gộp {id: t}: t > 0 = thêm lúc t, t < 0 = bỏ lúc −t. Lấy |t| lớn hơn; bằng nhau thì "bỏ" thắng (gộp theo thứ tự nào cũng ra một kết quả)
+  function mergeT(a, b) {
+    var m = {};
+    [a || {}, b || {}].forEach(function (o) {
+      Object.keys(o).forEach(function (id) {
+        var y = +o[id]; if (!y) return;
+        var x = m[id];
+        if (x == null || Math.abs(y) > Math.abs(x) || (Math.abs(y) === Math.abs(x) && y < x)) m[id] = y;
+      });
+    });
     return m;
   }
   HC.merge = merge;
@@ -187,9 +229,10 @@
     try {
       var rem = typeof data === "string" ? JSON.parse(data) : data;
       if (!rem || !rem.it) return false;
-      var before = JSON.stringify(S.it) + "|" + S.xp + "|" + S.start;
+      function sig() { return JSON.stringify(S.it) + "|" + S.xp + "|" + S.start + "|" + JSON.stringify(S.hard) + "|" + JSON.stringify(S.pl) + "|" + JSON.stringify(S.note); }
+      var before = sig();
       S = normalize(merge(S, normalize(rem))); saveLocal();
-      var changed = before !== JSON.stringify(S.it) + "|" + S.xp + "|" + S.start;
+      var changed = before !== sig();
       if (changed) { if (!silent) toast("Đã cập nhật tiến độ từ máy khác"); softRefresh(); }
       return changed;
     } catch (e) { return false; }
@@ -248,6 +291,7 @@
     fb.auth.onAuthStateChanged(function (u) {
       if (fb.unsub) { fb.unsub(); fb.unsub = null; }
       fb.user = u; fb.ref = u ? fb.db.collection("hanco_progress").doc(u.uid) : null;
+      try { sachRefresh(); } catch (e) { }
       if (!u) { fb.status = "signedout"; renderStats(); softRefresh(); return; }
       fbSync().then(function () {
         // nghe thay đổi từ máy khác theo thời gian thực
@@ -268,7 +312,7 @@
     window.addEventListener("offline", function () { if (fb.ref) { fb.status = "offline"; } renderStats(); });
   }
 
-  function normalize(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); return s; }
+  function normalize(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); return s; }
 
   // ---------- SRS ----------
   // it[id] = [rBox, rDue, wBox, wDue, lapses, introDay]; wBox = -1 when the item has no writing card
@@ -355,10 +399,82 @@
       bad_: bad, good_: good
     };
   };
+  // trò chơi của kho khó: CHỈ ghi đúng/sai vào S.gm — KHÔNG đổi lịch ôn (S.it); ghi được cả mục chưa học (kho khó thêm từ Tra cứu)
+  HC.gmRec = function () {
+    var okSeen = {}, badSeen = {}, bad = [], good = [];
+    function g(id) { var t = today(), x = (S.gm || (S.gm = {}))[id] || (S.gm[id] = [0, 0, t]); x[2] = t; return x; }
+    var r = {
+      ok: function (it) { if (!it || !ITEM[it.id] || okSeen[it.id]) return; okSeen[it.id] = 1; good.push(it); g(it.id)[0]++; save(); },
+      bad: function (it) { if (!it || !ITEM[it.id] || badSeen[it.id]) return; badSeen[it.id] = 1; bad.push(it); g(it.id)[1]++; save(); },
+      // "Tôi viết đúng mà": đổi lần sai vừa ghi thành đúng
+      fix: function (it) {
+        if (it && badSeen[it.id]) { delete badSeen[it.id]; var k = bad.indexOf(it); if (k >= 0) bad.splice(k, 1); var x = g(it.id); x[1] = Math.max(0, x[1] - 1); }
+        r.ok(it);
+      },
+      bad_: bad, good_: good, kho: true
+    };
+    return r;
+  };
   HC.hard = function () {
     return Object.keys(S.it).filter(function (id) { return ITEM[id] && S.it[id][4] >= 2; })
       .sort(function (a, b) { return S.it[b][4] - S.it[a][4]; }).map(function (id) { return ITEM[id]; });
   };
+  // ---------- kho khó (người học tự thêm, khác HC.hard() = chữ quên ≥ 2 lần) + ghi chú ----------
+  function isHard(id) { return (S.hard[id] || 0) > 0; }
+  HC.isHard = isHard;
+  HC.toggleHard = function (id, on) {
+    if (on == null) on = !isHard(id);
+    var t = Date.now();
+    S.hard[id] = on ? t : -t;
+    // bỏ khỏi kho → bỏ luôn khỏi mọi playlist (đánh dấu "đã bỏ", để thêm lại vào kho sau này không tự hiện lại ở playlist cũ)
+    if (!on) Object.keys(S.pl).forEach(function (k) { var p = S.pl[k]; if (p.ids[id] > 0) p.ids[id] = -t; });
+    save();
+    return on;
+  };
+  HC.hardList = function () {
+    return Object.keys(S.hard).filter(function (id) { return S.hard[id] > 0 && ITEM[id]; })
+      .sort(function (a, b) { return S.hard[b] - S.hard[a]; }).map(function (id) { return ITEM[id]; });
+  };
+  // ---------- playlist của kho khó: S.pl[plId] = {n, nt, x, ids}; mục hiển thị = ids ∩ kho khó ----------
+  var PL_MAX = 40;
+  function plName(s) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, PL_MAX); }
+  function plLive(k) { var p = S.pl[k]; return p && !p.x ? p : null; }
+  function plHas(k, id) { var p = plLive(k); return !!p && p.ids[id] > 0 && isHard(id); }
+  function plIds(k) {
+    var p = plLive(k); if (!p) return [];
+    return Object.keys(p.ids).filter(function (id) { return p.ids[id] > 0 && isHard(id) && ITEM[id]; })
+      .sort(function (a, b) { return p.ids[b] - p.ids[a]; });
+  }
+  HC.plHas = plHas; HC.plIds = plIds;
+  HC.plList = function () {
+    return Object.keys(S.pl).filter(plLive).map(function (k) { return { id: k, n: S.pl[k].n, ids: plIds(k) }; })
+      .sort(function (a, b) { return a.n.localeCompare(b.n, "vi", { numeric: true }); });
+  };
+  HC.plCreate = function (name) {
+    name = plName(name); if (!name) return null;
+    var t = Date.now(), k = "p" + t.toString(36) + Math.random().toString(36).slice(2, 7);
+    S.pl[k] = { n: name, nt: t, x: 0, ids: {} }; save();
+    return k;
+  };
+  HC.plRename = function (k, name) { var p = plLive(k); name = plName(name); if (!p || !name) return false; p.n = name; p.nt = Date.now(); save(); return true; };
+  HC.plDelete = function (k) { var p = plLive(k); if (!p) return; p.x = Date.now(); save(); };
+  // thêm / bớt nhiều mục một lần; thêm vào playlist thì tự vào kho khó
+  HC.plSet = function (k, ids, on) {
+    var p = plLive(k); if (!p) return 0;
+    var t = Date.now(), n = 0;
+    ids.forEach(function (id) {
+      if (!ITEM[id] || plHas(k, id) === on) return;
+      p.ids[id] = on ? t : -t; n++;
+      if (on && !isHard(id)) S.hard[id] = t;
+    });
+    if (n) save();
+    return n;
+  };
+  HC.plToggle = function (k, id, on) { if (on == null) on = !plHas(k, id); HC.plSet(k, [id], on); return on; };
+  var NOTE_MAX = 2000;
+  function noteOf(id) { var n = S.note[id]; return n && n[0] ? String(n[0]) : ""; }
+  HC.noteOf = noteOf;
+  HC.setNote = function (id, text) { S.note[id] = [String(text || "").slice(0, NOTE_MAX).replace(/\s+$/, ""), Date.now()]; save(); };
 
   // ---------- XP, streak, log, badges ----------
   function addLog(k, n) { var t = today(); var l = S.log[t] || (S.log[t] = { n: 0, r: 0, x: 0 }); l[k] = (l[k] || 0) + n; }
@@ -658,8 +774,9 @@
     // câu: không hiện chữ to ở đầu (câu đã hiện đầy đủ kèm âm ở dưới)
     // chữ / từ / bộ thủ: hoạt hình thứ tự nét (aniHTML), chữ không có dữ liệu nét thì hiện chữ MS Song như cũ
     var big = it.type === "s" ? "" : aniHTML(it.key, { rad: it.type === "c" && !!it.bf });
-    var h = '<div class="learn"><div class="top' + (big ? "" : " nobig") + '">' + big + '<div class="facts">';
-    h += '<div class="row"><span class="chip">' + kindLabel(it) + "</span>" + (it.k10 ? '<span class="chip k10">Đề K10</span>' : "") + (it.tag || []).map(function (t) { return '<span class="chip warn">' + esc(t) + "</span>"; }).join("") + (it.n ? '<span class="chip ok num">' + it.n + " lần</span>" : "") + "</div>";
+    var own = !!it.id; // MỌI mục (chữ, từ, câu, bộ thủ — người dùng yêu cầu 25/11/2026) có ⋯ (kho khó, playlist, ghi chú)
+    var h = '<div class="learn" data-detail="' + it.id + '"><div class="top' + (big ? "" : " nobig") + '">' + big + '<div class="facts">';
+    h += '<div class="row"><span class="chip">' + kindLabel(it) + "</span>" + (it.k10 ? '<span class="chip k10">Đề K10</span>' : "") + (it.tag || []).map(function (t) { return '<span class="chip warn">' + esc(t) + "</span>"; }).join("") + (it.n ? '<span class="chip ok num">' + it.n + " lần</span>" : "") + (own ? '<span class="chip hs' + (isHard(it.id) ? "" : " hide") + '" data-hs="' + it.id + '">★ Kho khó</span><span class="spacer"></span>' + moreBtn(it.id) : "") + "</div>";
     h += '<div style="font-size:1.4rem;font-weight:700">' + esc(it.am) + "</div>" + meanHTML(it);
     if (it.type === "c") {
       var bits = [];
@@ -687,35 +804,492 @@
     if (it.type === "w") {
       var parts = chars(it.w).map(function (ch) { return CHAR[ch]; }).filter(Boolean);
       h += '<div><div class="facts"><span class="k">Từng chữ</span></div><div class="minis">' + parts.map(miniHTML).join("") + "</div></div>";
-      if (it.src) h += '<div class="muted" style="font-size:0.82rem">Nguồn: ' + esc(it.src.join("; ")) + "</div>";
     }
     if (it.type === "r" && it.members.length) {
       h += '<div><div class="facts"><span class="k">Chữ thuộc bộ này (' + it.members.length + ")</span></div><div class=\"minis\">" + it.members.slice(0, 40).map(miniHTML).join("") + "</div></div>";
     }
-    if (it.type === "s") h += '<div class="sent">' + rubyHTML(it) + '</div><div style="font-weight:600">' + esc(it.pa) + '</div><div>' + esc(it.dn) + "</div>";
-    if (it.type === "c" || it.type === "w") {
-      var fx = it.f || {};
-      h += '<div class="muted" style="font-size:0.82rem">Xuất hiện: ' + (D.srcs || []).map(function (s) { return esc(s.name) + " " + (fx[s.k] || 0); }).join(" · ") + "</div>";
+    if (it.type === "s") {
+      h += '<div class="sent">' + rubyHTML(it, false, true) + '</div><div style="font-weight:600">' + esc(it.pa) + '</div><div>' + esc(it.dn) + "</div>";
+      h += sentCharsHTML(it);
     }
+    if (it.type === "c" || it.type === "r") h += giaiHTML(it) + sachHTML(it);
+    if (own) h += noteHTML(it.id);
+    if (it.type === "c" || it.type === "w") h += occHTML(it);
     var r2 = S.it[it.id];
     h += '<div class="muted" style="font-size:0.82rem">' + (r2 ? "Đã học từ " + dateOf(r2[5]) + " · mức nhớ " + r2[0] + (r2[2] >= 0 ? " · mức viết " + r2[2] : "") + (r2[4] ? " · quên " + r2[4] + " lần" : "") : "Chưa học") + "</div>";
     return h + "</div>";
   }
+  // "Xuất hiện mấy lần, ở đâu" — CÙNG MỘT DẠNG cho mọi chữ / từ (khung chi tiết, học mới, tra cứu; bản gọn ở mặt sau thẻ ôn).
+  // Số lần: it.f theo từng tài liệu trong D.srcs. Ở đâu: it.src (vị trí trong danh sách từ vựng / bảng loại từ / từ ngữ pháp);
+  // mục không nằm trong danh sách nào vẫn có dòng "Ở đâu" ghi rõ là chỉ gặp trong bài, câu, từ ghép.
+  function occHTML(it, compact) {
+    var fx = it.f || {}, list = (D.srcs || []).filter(function (s) { return !compact || fx[s.k]; });
+    var cnt = list.map(function (s) { return esc(s.name) + " " + (fx[s.k] || 0); }).join(" · ");
+    var where = it.src && it.src.length ? esc(it.src.join("; ")) : "không nằm trong danh sách từ vựng hay bảng loại từ nào của tài liệu — chỉ gặp trong bài, câu hoặc từ ghép";
+    if (compact) return '<div class="extra">Xuất hiện ' + (it.n || 0) + " lần: " + cnt + "<br>Ở đâu: " + where + "</div>";
+    return '<div class="muted" style="font-size:0.82rem"><div><b>Xuất hiện ' + (it.n || 0) + " lần</b> trong " + list.length + " tài liệu: " + cnt + "</div><div><b>Ở đâu:</b> " + where + "</div></div>";
+  }
+  HC.occHTML = occHTML;
+  // câu: hàng "Từng chữ" (bỏ chữ trùng, bỏ dấu câu) — bấm vào chữ để mở chi tiết chữ đó
+  function sentCharsHTML(s) {
+    var seen = {}, list = chars(s.han).filter(function (ch) { if (!isHan(ch) || seen[ch]) return false; seen[ch] = 1; return true; });
+    if (!list.length) return "";
+    return '<div><div class="facts"><span class="k">Từng chữ (' + list.length + ')</span></div><div class="minis">' + list.map(function (ch) { return CHAR[ch] ? miniHTML(CHAR[ch]) : '<span class="mini nolk"><span class="han">' + esc(ch) + "</span></span>"; }).join("") + "</div></div>";
+  }
+  HC.sentCharsHTML = sentCharsHTML;
   function miniHTML(it) { return '<span class="mini" data-open="' + it.id + '"><span class="han">' + esc(it.key) + "</span>" + esc(firstAm(it.am)) + "</span>"; }
   HC.miniHTML = miniHTML;
   function openDetail(id) { var it = ITEM[id]; if (it) modal(detailHTML(it)); }
   HC.openDetail = openDetail;
   document.addEventListener("click", function (e) { var o = e.target.closest("[data-open]"); if (o) { e.preventDefault(); openDetail(o.getAttribute("data-open")); } });
 
+  // ---------- nút ⋯ của mỗi chữ / từ / câu: kho khó, ghi chú (playlist: Bước 2, giải thích: Bước 4) ----------
+  function moreBtn(id) { return '<button type="button" class="more' + (isHard(id) ? " on" : "") + '" data-more="' + id + '" aria-label="Thêm: kho khó, playlist, ghi chú" title="Kho khó, playlist, ghi chú">⋯</button>'; }
+  HC.moreBtn = moreBtn;
+  var pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; } var mm = document.getElementById("mmore"); if (mm) mm.setAttribute("aria-expanded", "false"); }
+  function inDetailOf(el, id) { var d = el.closest("[data-detail]"); return !!d && d.getAttribute("data-detail") === id; }
+  function openMore(btn) {
+    var id = btn.getAttribute("data-more"), it = ITEM[id];
+    if (!it) return;
+    if (pop && pop.getAttribute("data-for") === id) { closePop(); return; }
+    closePop();
+    var hard = isHard(id), nt = noteOf(id);
+    var h = '<div class="ph"><span class="han">' + esc(it.type === "s" ? it.han.slice(0, 14) + (it.han.length > 14 ? "…" : "") : it.key) + "</span> " + esc(kindLabel(it)) + "</div>" +
+      '<button type="button" data-pm="hard">' + (hard ? "★ Bỏ khỏi kho khó" : "☆ Thêm vào kho khó") + "</button>" +
+      '<button type="button" data-pm="pl">≡ Thêm vào playlist…</button>' +
+      '<button type="button" data-pm="note">✎ ' + (nt ? "Sửa ghi chú" : "Ghi chú") + "</button>" +
+      (it.type === "c" || it.type === "r" ? '<button type="button" data-pm="giai">※ Giải thích</button>' : "") +
+      (inDetailOf(btn, id) ? "" : '<button type="button" data-pm="open">ⓘ Xem chi tiết</button>');
+    pop = document.createElement("div");
+    pop.className = "pop"; pop.setAttribute("role", "menu"); pop.setAttribute("data-for", id); pop.innerHTML = h;
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight, pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var x = Math.max(8, Math.min(r.right - pw, W - pw - 8)), y = r.bottom + 6;
+    if (y + ph > H - 8) y = Math.max(8, r.top - ph - 6);
+    pop.style.left = x + "px"; pop.style.top = y + "px";
+    pop.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-pm]"); if (!b) return;
+      e.stopPropagation();
+      var a = b.getAttribute("data-pm"); closePop();
+      if (a === "hard") { var on = HC.toggleHard(id); refreshHard(id); toast(on ? "Đã thêm vào kho khó" : "Đã bỏ khỏi kho khó"); }
+      else if (a === "note") editNote(id);
+      else if (a === "pl") pickPl(id);
+      else if (a === "giai") showGiai(id);
+      else if (a === "open") openDetail(id);
+    });
+    try { pop.querySelector("button").focus({ preventScroll: true }); } catch (e) { }
+  }
+  function refreshHard(id) {
+    var on = isHard(id);
+    $$('[data-more="' + id + '"]').forEach(function (b) { b.classList.toggle("on", on); });
+    $$('[data-hs="' + id + '"]').forEach(function (s) { s.classList.toggle("hide", !on); });
+    if (khoRender) khoRender();
+  }
+  var khoRender = null; // màn Kho khó đang mở → vẽ lại khi kho / playlist đổi
+
+  // ---------- chọn playlist cho 1 mục: khung riêng nằm TRÊN khung chi tiết (không đóng khung chi tiết đang mở) ----------
+  var sheetEl = null;
+  function closeSheet() { if (sheetEl) { var f = sheetEl._onClose; sheetEl.remove(); sheetEl = null; if (f) f(); } }
+  function plSheet(html, onClose) {
+    closeSheet();
+    sheetEl = document.createElement("div");
+    sheetEl.className = "modal sheet"; sheetEl.setAttribute("role", "dialog"); sheetEl.setAttribute("aria-modal", "true");
+    sheetEl.innerHTML = '<div class="box"><button type="button" class="btn sm ghost x" data-sx aria-label="Đóng">✕</button>' + html + "</div>";
+    sheetEl._onClose = onClose;
+    sheetEl.addEventListener("click", function (e) { if (e.target === sheetEl || e.target.closest("[data-sx]")) closeSheet(); });
+    document.body.appendChild(sheetEl);
+    return sheetEl;
+  }
+  document.addEventListener("keydown", function (e) { if (sheetEl && e.key === "Escape") { e.stopPropagation(); closeSheet(); } }, true);
+  window.addEventListener("hashchange", closeSheet);
+  function itemTitle(it) { return it.type === "s" ? it.han.slice(0, 14) + (it.han.length > 14 ? "…" : "") : it.key; }
+  function pickPl(id) {
+    var it = ITEM[id]; if (!it) return;
+    var el = plSheet('<h2 style="margin:0 40px 4px 0">Thêm vào playlist · <span class="han">' + esc(itemTitle(it)) + '</span></h2><p class="sub">Đánh dấu để thêm, bỏ dấu để bớt. Mục ở trong playlist thì cũng ở trong kho khó.</p><div class="plpick" id="plp"></div><div class="row plnew"><input type="text" id="pln" maxlength="' + PL_MAX + '" placeholder="Tên playlist mới, vd Bài 3" aria-label="Tên playlist mới"><button type="button" class="btn primary" id="plc">Tạo và thêm</button></div>', function () { refreshHard(id); });
+    var box = el.querySelector("#plp"), inp = el.querySelector("#pln");
+    function draw() {
+      var L = HC.plList();
+      box.innerHTML = L.length ? L.map(function (p) {
+        return '<label class="plck"><input type="checkbox" data-pk="' + p.id + '"' + (plHas(p.id, id) ? " checked" : "") + '><span>' + esc(p.n) + '</span><span class="chip num">' + p.ids.length + "</span></label>";
+      }).join("") : '<p class="sub">Chưa có playlist nào. Gõ tên bên dưới để tạo.</p>';
+    }
+    box.addEventListener("change", function (e) {
+      var c = e.target.closest("[data-pk]"); if (!c) return;
+      HC.plToggle(c.getAttribute("data-pk"), id, c.checked); draw(); refreshHard(id);
+    });
+    function create() {
+      var k = HC.plCreate(inp.value);
+      if (!k) { toast("Hãy gõ tên playlist"); inp.focus(); return; }
+      HC.plToggle(k, id, true); inp.value = ""; draw(); refreshHard(id); toast("Đã tạo playlist và thêm mục");
+    }
+    el.querySelector("#plc").onclick = create;
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); create(); } });
+    draw();
+  }
+  HC.pickPl = pickPl;
+  // bắt ở pha capture: bấm ⋯ không lật thẻ, không mở chi tiết, không đóng khung
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-more]");
+    if (b) { e.preventDefault(); e.stopPropagation(); openMore(b); return; }
+    var mm = e.target.closest && e.target.closest("#mmore"); // nút » của thanh mục (định nghĩa ở phần router)
+    if (mm) { e.preventDefault(); e.stopPropagation(); openMenuMore(mm); return; }
+    if (pop && !e.target.closest(".pop")) { closePop(); }
+  }, true);
+  document.addEventListener("keydown", function (e) { if (pop && e.key === "Escape") { e.stopPropagation(); closePop(); } }, true);
+  window.addEventListener("resize", closePop);
+  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("hashchange", closePop);
+
+  // ---------- ghi chú (chỉ lưu trong tiến độ của người học) ----------
+  function noteHTML(id) { return '<div class="note" data-note="' + id + '">' + noteInner(id, "view") + "</div>"; }
+  function noteInner(id, mode) {
+    var t = noteOf(id);
+    if (mode === "edit") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><textarea maxlength="' + NOTE_MAX + '" aria-label="Ghi chú" placeholder="Ví dụ: cách nhớ riêng, chỗ hay nhầm…">' + esc(t) + '</textarea><div class="row"><span class="muted nc">' + t.length + " / " + NOTE_MAX + '</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Hủy</button><button type="button" class="btn sm primary" data-nact="save">Lưu ghi chú</button></div>';
+    if (mode === "del") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + esc(t) + '</div><div class="row"><span>Xóa ghi chú này?</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Thôi</button><button type="button" class="btn sm bad" data-nact="delyes">Xóa</button></div>';
+    if (!t) return '<button type="button" class="btn sm ghost" data-nact="edit">✎ Thêm ghi chú</button>';
+    return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + esc(t) + '</div><div class="row"><span class="spacer"></span><button type="button" class="btn sm" data-nact="edit">Sửa</button><button type="button" class="btn sm ghost" data-nact="del">Xóa</button></div>';
+  }
+  function noteMode(box, mode) {
+    var id = box.getAttribute("data-note");
+    box.innerHTML = noteInner(id, mode);
+    if (mode === "edit") {
+      var ta = box.querySelector("textarea"), nc = box.querySelector(".nc");
+      ta.oninput = function () { nc.textContent = ta.value.length + " / " + NOTE_MAX; };
+      try { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { }
+    }
+  }
+  function refreshNotes(id, except) { $$('[data-note="' + id + '"]').forEach(function (b) { if (b !== except) noteMode(b, "view"); }); }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-nact]"); if (!b) return;
+    var box = b.closest("[data-note]"); if (!box) return;
+    e.preventDefault();
+    var id = box.getAttribute("data-note"), a = b.getAttribute("data-nact");
+    if (a === "edit") noteMode(box, "edit");
+    else if (a === "del") noteMode(box, "del");
+    else if (a === "cancel") noteMode(box, "view");
+    else if (a === "save") { HC.setNote(id, box.querySelector("textarea").value); noteMode(box, "view"); refreshNotes(id, box); toast(noteOf(id) ? "Đã lưu ghi chú" : "Đã xóa ghi chú"); }
+    else if (a === "delyes") { HC.setNote(id, ""); noteMode(box, "view"); refreshNotes(id, box); toast("Đã xóa ghi chú"); }
+  });
+  // mở ô ghi chú: có khung chi tiết đang hiện thì sửa ngay ở đó; không thì mở khung nhỏ chỉ có chữ + ghi chú (không lộ đáp án thẻ ôn)
+  function editNote(id) {
+    var box = $('[data-note="' + id + '"]');
+    if (!box) {
+      var it = ITEM[id];
+      modal('<h2 style="margin:0 40px 8px 0">Ghi chú · <span class="han">' + esc(it.type === "s" ? it.han : it.key) + "</span></h2>" + noteHTML(id));
+      box = $('[data-note="' + id + '"]');
+    }
+    noteMode(box, "edit");
+    try { box.scrollIntoView({ block: "nearest" }); } catch (e) { }
+  }
+  HC.editNote = editNote; HC.noteHTML = noteHTML;
+
+  // ---------- giải thích từng chữ (tự soạn, KHÔNG có trong tài liệu → luôn ghi ※) ----------
+  // giai/<mã hex>.json sinh bằng tools/build_giai.py từ tools/work/giai/dot*.txt (định dạng: README.txt ở đó), mỗi chữ / bộ thủ 1 file,
+  // tải khi mở (như net/). {c, py pinyin, pyo âm khác tự động, pyx 1 = đa âm chưa soát, py2 âm khác kèm nghĩa, n [nghĩa + từ loại],
+  // lt lục thư, bp bộ phận, cg nguồn gốc, mn mẹo nhớ, cc ghi thêm}. Chữ chưa soạn chỉ có pinyin. Không tải được → ẩn khung, không báo lỗi.
+  var GDATA = {};
+  function giaiData(ch) {
+    var k = hanKey(ch);
+    if (!GDATA[k]) GDATA[k] = fetch("giai/" + k + ".json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(null, function (e) { delete GDATA[k]; throw e; });
+    return GDATA[k];
+  }
+  HC.giaiData = giaiData;
+  function giaiHTML(it) { return '<div class="giai" data-giai="' + esc(it.key) + '" data-gid="' + it.id + '" hidden></div>'; }
+  function hanTxt(s) { // chữ Hán trong lời giải thích hiện bằng phông chữ Hán
+    return esc(s).replace(/(?:[⺀-⿟㐀-䶿一-鿿豈-﫿]|[\uD840-\uD87F][\uDC00-\uDFFF])+/g, function (m) { return '<span class="han">' + m + "</span>"; });
+  }
+  function giaiInner(j, open) {
+    var py = '<div class="gpy"><span class="k">Pinyin</span> <b>' + esc(j.py || "?") + "</b>" + (j.pyo && j.pyo.length ? ' <span class="muted">· âm khác: ' + esc(j.pyo.join(", ")) + "</span>" : "") + (j.pyx ? ' <span class="muted">(chữ nhiều âm — chưa soát)</span>' : "") + "</div>";
+    if (j.py2) py += '<div class="gpy"><span class="k">Âm khác</span> ' + hanTxt(j.py2) + "</div>";
+    var h = '<div class="facts"><span class="k">Giải thích</span> <span class="gsx">※ bổ sung, không có trong tài liệu</span></div>' + py;
+    if (!j.n) return h + '<div class="muted gnone">Chưa soạn phần nghĩa, cấu tạo, mẹo nhớ cho chữ này.</div>';
+    var row = function (lab, v, cls) { return v ? '<div class="gr' + (cls ? " " + cls : "") + '"><div class="gk">' + lab + '</div><div class="gv">' + v + "</div></div>" : ""; };
+    var b = row("Nghĩa", '<ul class="gn">' + j.n.map(function (x) { return "<li>" + hanTxt(x) + "</li>"; }).join("") + "</ul>") +
+      row("Loại chữ", j.lt ? hanTxt(j.lt) + ' <span class="muted">(lục thư)</span>' : "") +
+      row("Cấu tạo", j.bp && hanTxt(j.bp)) +
+      row("Nguồn gốc", j.cg && hanTxt(j.cg) + '<div class="muted gsm">theo Thuyết văn giải tự và tư liệu chữ cổ</div>') +
+      row("Mẹo nhớ", j.mn && hanTxt(j.mn) + '<div class="muted gsm">mẹo tự đặt để dễ nhớ, không phải nguồn gốc thật</div>', "gmn") +
+      row("Ghi thêm", j.cc && hanTxt(j.cc));
+    return h + '<details class="gd"' + (open ? " open" : "") + "><summary>Nghĩa, cấu tạo, nguồn gốc, mẹo nhớ</summary>" + b + "</details>";
+  }
+  function giaiFill(el) {
+    if (el.getAttribute("data-ld")) return;
+    el.setAttribute("data-ld", "1");
+    giaiData(el.getAttribute("data-giai")).then(function (j) {
+      el.innerHTML = giaiInner(j, el.getAttribute("data-go") === "1");
+      el.hidden = false;
+      if (el.getAttribute("data-go") === "1") { el.removeAttribute("data-go"); giaiScroll(el); }
+    }, function () { el.removeAttribute("data-ld"); });
+  }
+  function giaiScroll(el) { // cuộn tới khung; cuộn lại 1 lần nữa vì hoạt hình chữ ở trên có thể tải xong sau, đẩy khung xuống
+    var go = function () { try { el.scrollIntoView({ block: "start" }); } catch (e) { } };
+    go(); setTimeout(go, 450);
+  }
+  function showGiai(id) { // mục "Giải thích" ở ⋯: mở khung chi tiết (nếu chưa mở) tới phần giải thích
+    var box = $('[data-detail="' + id + '"] .giai');
+    if (!box) { openDetail(id); box = $('[data-detail="' + id + '"] .giai'); }
+    if (!box) return;
+    if (box.getAttribute("data-ld") && !box.hidden) {
+      var d = box.querySelector("details"); if (d) d.open = true;
+      giaiScroll(box);
+    } else { box.setAttribute("data-go", "1"); if (!box.getAttribute("data-ld")) giaiFill(box); }
+  }
+  HC.showGiai = showGiai;
+
+  // ---------- HÌNH TRANG SÁCH "Tìm về cội nguồn chữ Hán" (ảnh quét, có bản quyền) ----------
+  // sach.json (trên hosting, KHÔNG có hình) = {v, m: {id: vị trí | [["nhãn thành phần", vị trí], ...]}}, sinh bằng tools/sach_pack.py
+  // từ tools/work/sach/khop.txt. Hình (PNG base64) CHỈ ở Firestore riêng của người dùng: hanco_progress/{uid}/sach/p<vị trí> = {b, vt, upd};
+  // hanco_progress/{uid}/sach/info = {sz: {vị trí: độ dài base64}, upd}. Đưa lên ở Cài đặt (file tools/work/sach/sach.pack).
+  // Máy giữ hình đã xem trong Cache Storage "sach-v1" (KHÔNG bắt đầu bằng "hanco-" nên sw.js không xóa khi đổi VERSION), trừ khi bật
+  // "Không lưu hình sách trên máy này" (localStorage hanco-sach-noluu — tiện ích từng máy, không thuộc S). Không động tới S.
+  var SACH_BOOK = "Tìm về cội nguồn chữ Hán", SACH_CACHE = "sach-v1", SACH_NOLUU = "hanco-sach-noluu";
+  var sachMapPr = null, SURL = {};
+  function sachMap() {
+    if (!sachMapPr) sachMapPr = fetch("sach.json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return j.m || {}; }, function (e) { sachMapPr = null; throw e; });
+    return sachMapPr;
+  }
+  function sachPages(m) { var o = {}; Object.keys(m).forEach(function (k) { var v = m[k]; if (typeof v === "number") o[v] = 1; else v.forEach(function (x) { o[x[1]] = 1; }); }); return Object.keys(o).map(Number).sort(function (a, b) { return a - b; }); }
+  function sachPg(vt) { return vt < 251 ? vt : vt - 2; } // số trang in trên sách (bản quét có 2 trang chụp trùng ở vị trí 251, 252)
+  function sachNoLuu() { if (!window.caches) return true; try { return localStorage.getItem(SACH_NOLUU) === "1"; } catch (e) { return false; } }
+  function sachKey(vt) { return location.origin + location.pathname.replace(/[^\/]*$/, "") + "__sach__/p" + vt + ".png"; } // khóa trong bộ đệm, không phải địa chỉ thật
+  function sachCacheGet(vt) {
+    if (!window.caches) return Promise.resolve(null);
+    return caches.open(SACH_CACHE).then(function (c) { return c.match(sachKey(vt)); }).then(function (r) { return r ? r.blob() : null; }).then(null, function () { return null; });
+  }
+  function sachCachePut(vt, blob) {
+    if (sachNoLuu()) return Promise.resolve();
+    return caches.open(SACH_CACHE).then(function (c) { return c.put(sachKey(vt), new Response(blob, { headers: { "Content-Type": "image/png" } })); }).then(null, function () { });
+  }
+  function b64Blob(b64) { var s = atob(b64), n = s.length, u = new Uint8Array(n); for (var i = 0; i < n; i++) u[i] = s.charCodeAt(i); return new Blob([u], { type: "image/png" }); }
+  function sachErr(code) { var e = new Error(code); e.code = code; return e; }
+  function sachRef() { return fb.ref ? fb.ref.collection("sach") : null; }
+  function sachFetch(vt) { // đọc 1 trang từ Firestore → Blob (đã lưu vào bộ đệm nếu được phép)
+    var col = sachRef();
+    if (!col) return Promise.reject(sachErr(fb.on ? "signedout" : "nofb"));
+    if (navigator.onLine === false) return Promise.reject(sachErr("offline"));
+    return col.doc("p" + vt).get().then(function (d) {
+      var x = d.exists ? d.data() : null;
+      if (!x || !x.b) throw sachErr("missing");
+      var blob = b64Blob(x.b);
+      return sachCachePut(vt, blob).then(function () { return blob; });
+    });
+  }
+  function sachImg(vt) { // → Promise<địa chỉ blob của hình>; bản trên máy trước, không có thì Firestore
+    if (!SURL[vt]) SURL[vt] = sachCacheGet(vt).then(function (b) { return b || sachFetch(vt); }).then(function (b) { return URL.createObjectURL(b); }, function (e) { delete SURL[vt]; throw e; });
+    return SURL[vt];
+  }
+  HC.sachImg = sachImg;
+  function sachHTML(it) { return '<div class="sach" data-sach="' + it.id + '" hidden></div>'; }
+  function sachFill(el) {
+    if (el.getAttribute("data-ld")) return;
+    el.setAttribute("data-ld", "1");
+    sachMap().then(function (m) {
+      var v = m[el.getAttribute("data-sach")];
+      if (v == null) return; // không có trong sách, cả thành phần cũng không → không hiện gì
+      var one = typeof v === "number", list = one ? [[null, v]] : v;
+      el.innerHTML = '<div class="facts"><span class="k">Sách «' + esc(SACH_BOOK) + '»</span> <span class="gsx">※ tư liệu tham khảo, không có trong tài liệu</span></div>' +
+        '<div class="muted ssub">' + (one ? "Có trong sách, trang " + sachPg(v) + ". Bấm vào hình để xem to." : "Chữ này không có trang riêng trong sách; các thành phần cấu tạo có trong sách:") + "</div>" +
+        '<div class="sgrid' + (one ? " one" : "") + '">' + list.map(function (x) {
+          return '<figure class="sfig" data-svt="' + x[1] + '">' + (x[0] ? '<figcaption><span class="han">' + esc(x[0]) + "</span> · trang " + sachPg(x[1]) + "</figcaption>" : "") + '<div class="simg"><span class="muted snote">Đang tải hình…</span></div></figure>';
+        }).join("") + "</div>";
+      el.hidden = false;
+      $$(".sfig", el).forEach(sachFig);
+    }, function () { el.removeAttribute("data-ld"); });
+  }
+  function sachFig(fig) {
+    var vt = +fig.getAttribute("data-svt"), box = fig.querySelector(".simg");
+    sachImg(vt).then(function (u) {
+      box.innerHTML = '<button type="button" class="sbtn" data-szoom="' + vt + '" aria-label="Xem to trang ' + sachPg(vt) + '"><img alt="Trang ' + sachPg(vt) + " sách " + esc(SACH_BOOK) + '" src="' + u + '"></button>';
+    }, function (e) {
+      var c = e && (e.code || e.message), t;
+      if (c === "signedout") t = 'Đăng nhập Google để xem hình trang sách. <button type="button" class="btn sm" data-sin>Đăng nhập</button>';
+      else if (c === "nofb") t = "Cần đăng nhập Google để xem hình trang sách.";
+      else if (c === "missing") t = 'Tài khoản này chưa có hình trang sách (có gói hình thì đưa lên ở <a href="#caidat-sach">Cài đặt → Hình trang sách</a>).';
+      else if (c === "permission-denied") t = "Chưa đọc được hình: máy chủ chưa cho phép đọc hình sách.";
+      else if (c === "offline" || c === "unavailable") t = "Cần mạng để tải hình này (hình chưa lưu trên máy).";
+      else t = "Chưa tải được hình.";
+      box.innerHTML = '<span class="muted snote">' + t + "</span>";
+    });
+  }
+  function sachRefresh() { // đăng nhập / đăng xuất xong: vẽ lại các khung sách đang hiện
+    SURL = {};
+    $$(".sach[data-sach]").forEach(function (el) { el.removeAttribute("data-ld"); el.hidden = true; el.innerHTML = ""; sachFill(el); });
+    var ss = $("#sach-set"); if (ss && ss._redraw) ss._redraw(); // thẻ Cài đặt (route caidat-sach không được softRefresh vẽ lại)
+  }
+  // khung xem to: nằm trên khung chi tiết; ‹ › chuyển giữa các hình trong cùng khung sách; Phóng to = rộng hết khung, cuộn dọc
+  var sviewEl = null;
+  function closeSview() { if (sviewEl) { sviewEl.remove(); sviewEl = null; } }
+  function sachView(vt, list) {
+    closeSview();
+    list = list && list.length ? list : [vt];
+    var i = Math.max(0, list.indexOf(vt)), big = false;
+    sviewEl = document.createElement("div");
+    sviewEl.className = "modal sview"; sviewEl.setAttribute("role", "dialog"); sviewEl.setAttribute("aria-modal", "true");
+    sviewEl.innerHTML = '<div class="box"><div class="row sbar"><b class="stt"></b><span class="spacer"></span>' +
+      (list.length > 1 ? '<button type="button" class="btn sm" data-sp="-1" aria-label="Hình trước">‹</button><button type="button" class="btn sm" data-sp="1" aria-label="Hình sau">›</button>' : "") +
+      '<button type="button" class="btn sm" data-sbig>Phóng to</button><button type="button" class="btn sm ghost" data-sx aria-label="Đóng">✕</button></div><div class="sbody"></div></div>';
+    var body = sviewEl.querySelector(".sbody"), tt = sviewEl.querySelector(".stt"), bb = sviewEl.querySelector("[data-sbig]");
+    function draw() {
+      var v = list[i];
+      tt.textContent = "Trang " + sachPg(v) + (list.length > 1 ? " (" + (i + 1) + "/" + list.length + ")" : "");
+      body.innerHTML = '<span class="muted snote">Đang tải hình…</span>';
+      sachImg(v).then(function (u) { if (list[i] !== v || !sviewEl) return; body.innerHTML = '<img alt="Trang ' + sachPg(v) + " sách " + esc(SACH_BOOK) + '" src="' + u + '">'; body.scrollTop = 0; }, function () { body.innerHTML = '<span class="muted snote">Chưa tải được hình.</span>'; });
+    }
+    function setBig(b) { big = b; sviewEl.classList.toggle("szoom", big); bb.textContent = big ? "Thu nhỏ" : "Phóng to"; }
+    sviewEl.addEventListener("click", function (e) {
+      if (e.target === sviewEl || e.target.closest("[data-sx]")) return closeSview();
+      var p = e.target.closest("[data-sp]");
+      if (p) { i = (i + +p.getAttribute("data-sp") + list.length) % list.length; draw(); return; }
+      if (e.target.closest("[data-sbig]")) return setBig(!big);
+    });
+    body.addEventListener("dblclick", function () { setBig(!big); });
+    document.body.appendChild(sviewEl);
+    draw();
+    try { bb.focus(); } catch (e) { }
+  }
+  document.addEventListener("keydown", function (e) {
+    if (!sviewEl) return;
+    if (e.key === "Escape") { e.stopPropagation(); closeSview(); }
+    else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && sviewEl.querySelector("[data-sp]")) { e.stopPropagation(); e.preventDefault(); sviewEl.querySelector('[data-sp="' + (e.key === "ArrowLeft" ? -1 : 1) + '"]').click(); }
+  }, true);
+  window.addEventListener("hashchange", closeSview);
+  // bấm hình / nút Đăng nhập trong khung sách: bắt ở pha capture để không lật thẻ, không mở/đóng khung khác
+  document.addEventListener("click", function (e) {
+    var z = e.target.closest && e.target.closest("[data-szoom]"), s = !z && e.target.closest && e.target.closest(".sach [data-sin]");
+    if (!z && !s) return;
+    e.stopPropagation(); e.preventDefault();
+    if (s) return HC.fbSignIn();
+    var box = z.closest(".sach"), list = box ? $$(".sfig", box).map(function (f) { return +f.getAttribute("data-svt"); }) : [];
+    sachView(+z.getAttribute("data-szoom"), list);
+  }, true);
+
+  // Cài đặt → thẻ "Hình trang sách"
+  function fmtMB(b) { return (b / 1048576).toFixed(b < 10485760 ? 1 : 0).replace(".", ",") + " MB"; }
+  function sachCacheStat() { // → {n trang, b byte} đang lưu trên máy này
+    if (!window.caches) return Promise.resolve({ n: 0, b: 0 });
+    return caches.open(SACH_CACHE).then(function (c) {
+      return c.keys().then(function (ks) {
+        return Promise.all(ks.map(function (k) { return c.match(k).then(function (r) { return r ? r.blob() : null; }).then(function (b) { return b ? b.size : 0; }); }));
+      });
+    }).then(function (a) { return { n: a.length, b: a.reduce(function (s, x) { return s + x; }, 0) }; }, function () { return { n: 0, b: 0 }; });
+  }
+  function sachInfo() { var col = sachRef(); return col ? col.doc("info").get().then(function (d) { return (d.exists && d.data()) || {}; }) : Promise.reject(sachErr("signedout")); }
+  function sachSettings(el) {
+    if (!el) return;
+    var busy = false, cachesOk = !!window.caches;
+    function errText(e) { var c = e && (e.code || e.message); return c === "permission-denied" ? "máy chủ chưa cho phép lưu hình sách (cần cập nhật quy tắc Firestore)" : c === "offline" || c === "unavailable" ? "không có mạng" : "lỗi " + (c || "không rõ"); }
+    function draw() {
+      var noluu = sachNoLuu();
+      el.innerHTML = '<h2>Hình trang sách</h2><p class="sub">Hình trang sách «' + esc(SACH_BOOK) + '» (ảnh quét, có bản quyền) chỉ lưu trên tài khoản Google của bạn, không có trên trang web công khai. Hình hiện trong khung chi tiết chữ và bộ thủ: chữ có trong sách → trang của chữ; chữ không có → trang từng thành phần cấu tạo.</p>' +
+        '<div class="srow"><span class="k">Trên tài khoản</span> <span id="sst-acc">' + (fb.user ? "đang kiểm tra…" : fb.on ? "chưa đăng nhập" : "không dùng được trên trang này") + "</span></div>" +
+        '<div class="srow"><span class="k">Trên máy này</span> <span id="sst-dev">' + (cachesOk ? "đang tính…" : "trình duyệt này không lưu hình được") + "</span></div>" +
+        '<div class="row" style="margin-top:8px">' +
+        (fb.user ? '<button class="btn" id="sup">Đưa hình sách lên tài khoản</button><input type="file" id="supf" accept=".pack,application/json" hidden>' + (cachesOk ? '<button class="btn" id="sall"' + (noluu ? " disabled" : "") + ">Tải hết về máy này</button>" : "") : fb.on ? '<button class="btn primary" id="sin">Đăng nhập bằng Google</button>' : "") +
+        (cachesOk ? '<button class="btn ghost" id="sdel">Xóa hình sách đã lưu</button>' : "") + "</div>" +
+        '<div id="sconf"></div><div id="sprog" class="sprog" hidden><div class="bar"><i></i></div><span class="muted"></span></div>' +
+        (cachesOk ? '<label class="row" style="margin-top:10px"><input type="checkbox" id="snl"' + (noluu ? " checked" : "") + "> Không lưu hình sách trên máy này (mỗi lần xem tải lại từ tài khoản, cần mạng)</label>" : "") +
+        '<p class="sub" style="margin-top:8px">Đưa hình lên chỉ cần làm 1 lần, từ máy tính có file <code>tools/work/sach/sach.pack</code>. "Tải hết về máy này" lấy khoảng 35 MB để xem khi không có mạng.</p>';
+      var b;
+      if ((b = $("#sin", el))) b.onclick = HC.fbSignIn;
+      if ((b = $("#sup", el))) b.onclick = function () { if (!busy) $("#supf", el).click(); };
+      if ((b = $("#supf", el))) b.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) upload(f); };
+      if ((b = $("#sall", el))) b.onclick = function () { if (!busy) fetchAll(); };
+      if ((b = $("#sdel", el))) b.onclick = function () {
+        if (busy) return;
+        $("#sconf", el).innerHTML = '<div class="row" style="margin-top:8px"><span>Xóa hết hình sách đã lưu trên máy này? (Hình trên tài khoản vẫn còn.)</span><button class="btn sm bad" id="sdy">Xóa</button><button class="btn sm" id="sdn">Thôi</button></div>';
+        $("#sdy", el).onclick = function () { caches.delete(SACH_CACHE).then(function () { SURL = {}; toast("Đã xóa hình sách trên máy này"); draw(); }, function () { toast("Chưa xóa được"); }); };
+        $("#sdn", el).onclick = function () { $("#sconf", el).innerHTML = ""; };
+      };
+      if ((b = $("#snl", el))) b.onchange = function () {
+        try { if (this.checked) localStorage.setItem(SACH_NOLUU, "1"); else localStorage.removeItem(SACH_NOLUU); } catch (e) { }
+        toast(this.checked ? "Từ giờ không lưu hình sách trên máy này (hình đã lưu vẫn còn — bấm Xóa nếu muốn)" : "Từ giờ giữ lại hình sách đã xem trên máy này");
+        draw();
+      };
+      stat();
+    }
+    function stat() {
+      var a = $("#sst-acc", el), d = $("#sst-dev", el);
+      if (cachesOk) sachCacheStat().then(function (s) { if (d && d.isConnected) d.textContent = s.n ? s.n + " trang · " + fmtMB(s.b) : "chưa lưu hình nào"; });
+      if (fb.user) Promise.all([sachMap(), sachInfo()]).then(function (r) {
+        var tot = sachPages(r[0]).length, n = Object.keys(r[1].sz || {}).length;
+        if (a && a.isConnected) a.textContent = n ? n + "/" + tot + " trang" + (r[1].upd ? " (đưa lên " + new Date(r[1].upd).toLocaleDateString("vi-VN") + ")" : "") : "chưa có hình (cần đưa lên)";
+      }, function (e) { if (a && a.isConnected) a.textContent = "chưa kiểm tra được: " + errText(e); });
+    }
+    function prog(k, n, txt) {
+      var p = $("#sprog", el); if (!p) return;
+      p.hidden = false; p.querySelector("i").style.width = (n ? Math.round(k * 100 / n) : 0) + "%"; p.querySelector("span").textContent = txt;
+    }
+    function pool(list, work, done) { // chạy 4 việc song song; dừng ở lỗi đầu tiên
+      var k = 0, i = 0, fail = null, run = 0;
+      return new Promise(function (res, rej) {
+        function next() {
+          if (fail) { if (!run) rej(fail); return; }
+          if (i >= list.length) { if (!run) res(k); return; }
+          var x = list[i++]; run++;
+          work(x).then(function () { k++; done(k); }, function (e) { fail = fail || e; }).then(function () { run--; next(); });
+        }
+        for (var j = 0; j < 4; j++) next();
+      });
+    }
+    function upload(file) {
+      busy = true; prog(0, 1, "Đang đọc file…");
+      var fr = new FileReader();
+      fr.onerror = function () { busy = false; prog(0, 1, "Không đọc được file."); };
+      fr.onload = function () {
+        var pk; try { pk = JSON.parse(fr.result); } catch (e) { pk = null; }
+        if (!pk || pk.v !== 1 || !pk.pages || typeof pk.pages !== "object") { busy = false; prog(0, 1, "File không đúng: hãy chọn tools/work/sach/sach.pack."); return; }
+        fr = null;
+        var col = sachRef(); if (!col) { busy = false; prog(0, 1, "Cần đăng nhập."); return; }
+        sachInfo().then(function (info) {
+          var sz = info.sz || {}, todo = Object.keys(pk.pages).filter(function (vt) { return /^\d+$/.test(vt) && typeof pk.pages[vt] === "string" && sz[vt] !== pk.pages[vt].length; });
+          var n = todo.length, skip = Object.keys(pk.pages).length - n, lastSave = 0;
+          if (!n) { prog(1, 1, "Tài khoản đã có đủ " + Object.keys(sz).length + " trang, không cần đưa lên."); return; }
+          prog(0, n, "Đang đưa lên 0/" + n + " trang" + (skip ? " (bỏ qua " + skip + " trang đã có)" : "") + "…");
+          var saveInfo = function () { return col.doc("info").set({ sz: sz, upd: Date.now() }); };
+          return pool(todo, function (vt) {
+            var b = pk.pages[vt];
+            return col.doc("p" + vt).set({ b: b, vt: +vt, upd: Date.now() }).then(function () {
+              sz[vt] = b.length;
+              if (Object.keys(sz).length - lastSave >= 25) { lastSave = Object.keys(sz).length; return saveInfo(); }
+            });
+          }, function (k) { prog(k, n, "Đang đưa lên " + k + "/" + n + " trang…"); }).then(function () {
+            return saveInfo().then(function () { prog(n, n, "Xong: đã đưa lên " + n + " trang. Tài khoản có " + Object.keys(sz).length + " trang."); toast("Đã đưa hình sách lên tài khoản"); });
+          }, function (e) {
+            return saveInfo().then(null, function () { }).then(function () { prog(0, 1, "Dừng giữa chừng (" + errText(e) + "). Bấm lại và chọn file để đưa tiếp phần còn lại."); });
+          });
+        }).then(null, function (e) { prog(0, 1, "Chưa đưa lên được: " + errText(e) + "."); }).then(function () { busy = false; pk = null; stat(); });
+      };
+      fr.readAsText(file);
+    }
+    function fetchAll() {
+      busy = true; prog(0, 1, "Đang kiểm tra…");
+      sachMap().then(function (m) {
+        var ps = sachPages(m);
+        return Promise.all(ps.map(function (vt) { return sachCacheGet(vt).then(function (b) { return b ? null : vt; }); })).then(function (a) {
+          var todo = a.filter(function (x) { return x != null; }), n = todo.length;
+          if (!n) { prog(1, 1, "Máy này đã có đủ " + ps.length + " trang."); return; }
+          prog(0, n, "Đang tải 0/" + n + " trang…");
+          return pool(todo, sachFetch, function (k) { prog(k, n, "Đang tải " + k + "/" + n + " trang…"); }).then(function () { prog(n, n, "Xong: máy này đã có đủ " + ps.length + " trang."); }, function (e) {
+            prog(0, 1, (e && e.code === "missing" ? "Tài khoản chưa có đủ hình (cần đưa lên trước)." : "Dừng giữa chừng (" + errText(e) + "). Bấm lại để tải tiếp."));
+          });
+        });
+      }).then(null, function (e) { prog(0, 1, "Chưa tải được: " + errText(e) + "."); }).then(function () { busy = false; stat(); });
+    }
+    el._redraw = function () { if (!busy && el.isConnected) draw(); };
+    draw();
+  }
+
   // ruby: ghép từng chữ với âm trong phiên âm của đề cương (nếu khớp số âm tiết), không thì lấy âm từ từ điển
-  function rubyHTML(s, hide) {
+  function rubyHTML(s, hide, link) {
     var hs = chars(s.han), syl = String(s.pa).replace(/\.\.\.|…/g, " ").split(/[\s,;.:]+/).filter(Boolean);
     var hanOnly = hs.filter(isHan);
     var useSyl = syl.length === hanOnly.length, k = 0;
     return '<span class="' + (hide ? "norubies" : "") + '">' + hs.map(function (ch) {
       if (!isHan(ch)) return esc(ch);
       var am = useSyl ? syl[k++] : (CHAR[ch] ? firstAm(CHAR[ch].am) : "");
-      return "<ruby>" + esc(ch) + "<rt>" + esc(String(am).toLowerCase()) + "</rt></ruby>";
+      var c = link && CHAR[ch];
+      return "<ruby" + (c ? ' class="rk" data-open="' + c.id + '" title="Xem chữ ' + esc(ch) + '"' : "") + ">" + esc(ch) + "<rt>" + esc(String(am).toLowerCase()) + "</rt></ruby>";
     }).join("") + "</span>";
   }
   HC.rubyHTML = rubyHTML;
@@ -1066,7 +1640,7 @@
     }
   }
   function aniWatch() {
-    var scan = function (n) { if (n.nodeType !== 1) return; if (n.classList.contains("ani")) aniStart(n); $$(".ani", n).forEach(aniStart); };
+    var scan = function (n) { if (n.nodeType !== 1) return; if (n.classList.contains("ani")) aniStart(n); $$(".ani", n).forEach(aniStart); if (n.classList.contains("giai")) giaiFill(n); $$(".giai[data-giai]", n).forEach(giaiFill); if (n.classList.contains("sach")) sachFill(n); $$(".sach[data-sach]", n).forEach(sachFill); };
     if (window.MutationObserver) new MutationObserver(function (ms) { ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, scan); }); }).observe(document.body, { childList: true, subtree: true });
     scan(document.body);
   }
@@ -1083,7 +1657,8 @@
     // Ưu tiên vừa ngay khi mở; nếu chỗ còn lại quá ít thì cho vừa sau khi kéo ô viết lên sát thanh trên.
     var vh = window.innerHeight || 0, reserve = opts.reserve == null ? 72 : opts.reserve;
     if (vh) {
-      var tb = document.querySelector(".topbar"), tbH = tb ? tb.offsetHeight : 0;
+      // thanh mục nằm dọc bên trái (màn ngang) thì không chiếm chiều cao
+      var tb = document.querySelector(".topbar"), tbH = tb && tb.offsetWidth < (window.innerWidth || 0) * 0.5 ? 0 : tb ? tb.offsetHeight : 0;
       var top = box.getBoundingClientRect().top + (window.pageYOffset || 0);
       var hCell = (vh - top - reserve) / rows;
       if (hCell < 160) hCell = (vh - tbH - reserve - 12) / rows;
@@ -1189,26 +1764,146 @@
 
   // ---------- router ----------
   var VIEWS = [
-    ["home", "Hôm nay"], ["hoc", "Học mới"], ["on", "Ôn tập"], ["viet", "Tập viết"], ["choi", "Trò chơi"],
+    ["home", "Hôm nay"], ["hoc", "Học mới"], ["on", "Ôn tập"], ["kho", "Kho khó"], ["viet", "Tập viết"], ["choi", "Trò chơi"],
     ["bo", "Bộ thủ"], ["loaitu", "Loại từ"], ["cau", "Câu"], ["thi", "Thi thử"], ["tra", "Tra cứu"], ["caidat", "Tiến độ & cài đặt"]
   ];
+  // ký hiệu chữ Hán (chỉ để trang trí, không phải nội dung thi) + nhãn ngắn cho thanh mục dọc hẹp
+  var MENU_IC = {
+    home: ["今", "Hôm nay"], hoc: ["新", "Học mới"], on: ["溫", "Ôn tập"], kho: ["難", "Kho khó"], viet: ["書", "Tập viết"], choi: ["戲", "Trò chơi"],
+    bo: ["部", "Bộ thủ"], loaitu: ["類", "Loại từ"], cau: ["句", "Câu"], thi: ["試", "Thi thử"], tra: ["查", "Tra cứu"], caidat: ["設", "Cài đặt"]
+  };
   var cleanup = null;
-  function renderMenu(cur) {
-    var dr = due("r").length, dw = due("w").length, q = plan().quota, nq = q.c + q.w + q.r + q.s;
-    $("#menu").innerHTML = VIEWS.map(function (v) {
-      var b = v[0] === "on" && dr ? dr : v[0] === "viet" && dw ? dw : v[0] === "hoc" && nq ? nq : 0;
-      return '<a href="#' + v[0] + '"' + (v[0] === cur ? ' aria-current="page"' : "") + ">" + v[1] + (b ? '<span class="badge">' + (b > 99 ? "99+" : b) + "</span>" : "") + "</a>";
-    }).join("");
-    var a = $('#menu a[aria-current="page"]'); if (a && a.scrollIntoView) { try { a.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (e) { } }
+  // THỨ TỰ các mục trên thanh menu: người học tự xếp (người dùng yêu cầu 25/11/2026), nhớ RIÊNG từng máy ở localStorage
+  // "hanco-menu-thu-tu" (mảng tên màn), KHÔNG thuộc S. Luôn đủ mọi mục của VIEWS: mục lạ / trùng bị bỏ, mục mới thêm vào cuối.
+  var MENU_KEY = "hanco-menu-thu-tu", menuCur = null, menuBadge = {};
+  function menuOrder() {
+    var ids = VIEWS.map(function (v) { return v[0]; }), saved = null, out = [];
+    try { saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null"); } catch (e) { saved = null; }
+    if (Object.prototype.toString.call(saved) === "[object Array]") saved.forEach(function (k) { if (typeof k === "string" && ids.indexOf(k) >= 0 && out.indexOf(k) < 0) out.push(k); });
+    ids.forEach(function (k) { if (out.indexOf(k) < 0) out.push(k); });
+    return out;
   }
+  function menuSaveOrder(order) { try { if (order) localStorage.setItem(MENU_KEY, JSON.stringify(order)); else localStorage.removeItem(MENU_KEY); } catch (e) { } }
+  function viewName(k) { for (var i = 0; i < VIEWS.length; i++) if (VIEWS[i][0] === k) return VIEWS[i][1]; return k; }
+  function badgeHTML(b) { return b ? '<span class="badge">' + (b > 99 ? "99+" : b) + "</span>" : ""; }
+  function renderMenu(cur) {
+    if (cur) menuCur = cur; cur = menuCur;
+    var dr = due("r").length, dw = due("w").length, q = plan().quota, nq = q.c + q.w + q.r + q.s;
+    menuBadge = { on: dr, viet: dw, hoc: nq };
+    $("#menu").innerHTML = menuOrder().map(function (k) {
+      var name = viewName(k), ic = MENU_IC[k] || ["", name];
+      return '<a href="#' + k + '" data-v="' + k + '" title="' + esc(name) + '"' + (k === cur ? ' aria-current="page"' : "") + '><span class="ic" aria-hidden="true">' + ic[0] + '</span><span class="lb">' + name + '</span><span class="sl" aria-hidden="true">' + ic[1] + "</span>" + badgeHTML(menuBadge[k]) + "</a>";
+    }).join("") + '<button type="button" class="mmore mhid" id="mmore" aria-haspopup="menu" aria-expanded="false" title="Các mục khác" aria-label="Các mục khác">»<span class="dot" aria-hidden="true"></span></button>' +
+      '<button type="button" class="msrt" data-msort title="Đổi vị trí các mục trên thanh menu"><span class="ic" aria-hidden="true">⇅</span><span>Sắp xếp mục</span></button>';
+    fitMenu();
+    var a = $('#menu a[aria-current="page"]:not(.mhid)'); if (a && a.scrollIntoView) { try { a.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (e) { } }
+  }
+  // thanh mục ở TRÊN (màn hẹp / dọc): mục nào không vừa 1 hàng thì ẩn, dồn vào nút » ở cuối hàng. Thanh dọc bên trái: hiện đủ.
+  function menuIsTop() { var tb = $(".topbar"); return !!tb && tb.offsetWidth >= (window.innerWidth || 0) * 0.5; }
+  function fitMenu() {
+    var nav = $("#menu"), more = $("#mmore"); if (!nav || !more) return;
+    var links = $$("a[data-v]", nav);
+    links.forEach(function (a) { a.classList.remove("mhid"); });
+    more.classList.add("mhid"); more.classList.remove("cur", "has-b");
+    if (!menuIsTop()) return;
+    nav.scrollLeft = 0;
+    if (nav.scrollWidth <= nav.clientWidth + 1) return; // vừa hết, không cần »
+    more.classList.remove("mhid");
+    var left = nav.getBoundingClientRect().left, limit = nav.clientWidth - more.offsetWidth - 6, cut = -1;
+    var rights = links.map(function (a) { return a.getBoundingClientRect().right - left; }); // đo hết rồi mới ẩn (ẩn làm xê dịch mục sau)
+    for (var i = 0; i < rights.length; i++) if (rights[i] > limit) { cut = i; break; }
+    if (cut < 0) { more.classList.add("mhid"); return; }
+    for (var j = cut; j < links.length; j++) {
+      links[j].classList.add("mhid");
+      if (links[j].getAttribute("aria-current")) more.classList.add("cur");
+      if (menuBadge[links[j].getAttribute("data-v")]) more.classList.add("has-b");
+    }
+  }
+  var fitRaf = 0;
+  window.addEventListener("resize", function () { if (fitRaf) return; fitRaf = (window.requestAnimationFrame || setTimeout)(function () { fitRaf = 0; fitMenu(); }); });
+  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitMenu); } catch (e) { }
+  // bấm »: danh sách các mục đang ẩn (dùng chung khung bật lên .pop với nút ⋯)
+  function openMenuMore(btn) {
+    if (pop && pop.getAttribute("data-for") === "#menu") { closePop(); return; }
+    closePop();
+    var hid = $$("#menu a.mhid[data-v]");
+    var h = hid.map(function (a) {
+      var k = a.getAttribute("data-v"), name = viewName(k), ic = MENU_IC[k] || ["", name];
+      return '<a class="pmi" role="menuitem" href="#' + k + '"' + (k === menuCur ? ' aria-current="page"' : "") + '><span class="ic" aria-hidden="true">' + ic[0] + "</span><span>" + name + "</span>" + badgeHTML(menuBadge[k]) + "</a>";
+    }).join("") + '<hr><button type="button" role="menuitem" data-msort>⇅ Sắp xếp vị trí các mục…</button>';
+    pop = document.createElement("div");
+    pop.className = "pop"; pop.setAttribute("role", "menu"); pop.setAttribute("data-for", "#menu"); pop.innerHTML = h;
+    pop.style.maxHeight = "calc(100vh - 16px)"; pop.style.overflowY = "auto";
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight, pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var x = Math.max(8, Math.min(r.right - pw, W - pw - 8)), y = r.bottom + 6;
+    if (y + ph > H - 8) y = Math.max(8, H - ph - 8);
+    pop.style.left = x + "px"; pop.style.top = y + "px";
+    btn.setAttribute("aria-expanded", "true");
+    pop.addEventListener("click", function (e) { if (e.target.closest("a.pmi")) closePop(); });
+    var f = pop.querySelector("a.pmi, button"); if (f) try { f.focus({ preventScroll: true }); } catch (e) { }
+  }
+  // khung "Sắp xếp thanh mục": nút ▲ ▼ từng mục (không kéo-thả: trên màn cảm ứng dễ trượt nhầm thành cuộn trang)
+  function openMenuSort() {
+    closePop();
+    var m = modal('<h2>Sắp xếp thanh mục</h2><p class="sub">Bấm ▲ ▼ để đổi vị trí. Thứ tự lưu riêng trên máy này. Ở màn hẹp, các mục đầu hiện trên thanh, các mục sau nằm trong nút ».</p><ol class="msort" id="msl"></ol>' +
+      '<div class="row acts"><button class="btn" type="button" id="msreset">Đặt lại mặc định</button><button class="btn primary" type="button" id="msdone">Xong</button></div>');
+    var el = m.el;
+    function draw(focusK, dir) {
+      var o = menuOrder(), vis = $$("#menu a[data-v]:not(.mhid)").map(function (a) { return a.getAttribute("data-v"); });
+      var top = menuIsTop() && $("#mmore") && !$("#mmore").classList.contains("mhid");
+      $("#msl", el).innerHTML = o.map(function (k, i) {
+        var name = viewName(k), ic = MENU_IC[k] || ["", name];
+        return "<li" + (top && vis.indexOf(k) >= 0 ? ' class="vis" title="Đang hiện trên thanh"' : "") + '><span class="no">' + (i + 1) + '</span><span class="ic" aria-hidden="true">' + ic[0] + '</span><span class="lb">' + name + "</span>" +
+          '<button class="btn sm" type="button" data-up="' + i + '" aria-label="Đưa ' + esc(name) + ' lên"' + (i ? "" : " disabled") + ">▲</button>" +
+          '<button class="btn sm" type="button" data-dn="' + i + '" aria-label="Đưa ' + esc(name) + ' xuống"' + (i < o.length - 1 ? "" : " disabled") + ">▼</button></li>";
+      }).join("");
+      if (focusK) { var i2 = o.indexOf(focusK), b = $("[data-" + dir + '="' + i2 + '"]', el); if (!b || b.disabled) b = $("[data-" + (dir === "up" ? "dn" : "up") + '="' + i2 + '"]', el); if (b) try { b.focus({ preventScroll: true }); } catch (e) { } }
+    }
+    function move(i, d) {
+      var o = menuOrder(), j = i + d; if (j < 0 || j >= o.length) return;
+      var k = o[i]; o[i] = o[j]; o[j] = k;
+      menuSaveOrder(o); renderMenu(); draw(k, d < 0 ? "up" : "dn");
+    }
+    $("#msl", el).addEventListener("click", function (e) {
+      var u = e.target.closest("[data-up]"), d = e.target.closest("[data-dn]");
+      if (u) move(+u.getAttribute("data-up"), -1); else if (d) move(+d.getAttribute("data-dn"), 1);
+    });
+    $("#msreset", el).onclick = function () { menuSaveOrder(null); renderMenu(); draw(); toast("Đã đặt lại thứ tự mặc định"); };
+    $("#msdone", el).onclick = m.close;
+    draw();
+  }
+  HC.openMenuSort = openMenuSort;
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest && e.target.closest("[data-msort]");
+    if (t) { e.preventDefault(); openMenuSort(); }
+  });
+  // nút « / » thu gọn thanh mục dọc (chỉ hiện khi màn ngang ≥ 1000px); nhớ theo từng máy, không thuộc S
+  function menuGonSync() {
+    var gon = document.documentElement.classList.contains("menu-gon"), t = $("#mtog"); if (!t) return;
+    t.textContent = gon ? "»" : "«"; t.title = gon ? "Mở rộng thanh mục" : "Thu gọn thanh mục"; t.setAttribute("aria-label", t.title); t.setAttribute("aria-expanded", gon ? "false" : "true");
+  }
+  (function () {
+    var t = $("#mtog"); if (!t) return;
+    t.onclick = function () {
+      var gon = document.documentElement.classList.toggle("menu-gon");
+      try { localStorage.setItem("hanco-menu-gon", gon ? "1" : "0"); } catch (e) { }
+      menuGonSync();
+      try { window.dispatchEvent(new Event("resize")); } catch (e) { } // đóng menu bật lên đang mở (vị trí đã đổi)
+    };
+    menuGonSync();
+  })();
   function renderStats() {
     if (!S) return;
     var L = lvl();
     var sync = fb.on ? (fb.user ? "Đã đăng nhập Google (" + esc(fb.user.email || "") + "). Tiến độ tự lưu lên Firebase và tự đồng bộ với mọi máy bạn đăng nhập cùng tài khoản. Mỗi ngày tự sao lưu 1 bản, giữ 14 ngày." : "Chưa đăng nhập. Bấm Đăng nhập bằng Google (chỉ 1 lần trên máy này) để tự đồng bộ giữa các máy.") : remote.status === "synced" ? "Đã lưu vào tài khoản" : remote.status === "error" ? "Chưa đồng bộ được, đang lưu trên máy này" : remote.status === "full" ? "Bộ nhớ tài khoản đầy" : "Lưu trên trình duyệt này";
     var cloud = "";
     if (fb.on) {
-      if (!fb.user) cloud = '<button class="pill" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ Đăng nhập</button>';
-      else cloud = '<span class="pill" title="' + esc(fb.user.email || "") + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '">☁ ' + (fb.status === "syncing" ? "Đang lưu…" : fb.status === "offline" ? "Ngoại tuyến · đã lưu trên máy" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ") + "</span>";
+      if (!fb.user) cloud = '<button class="pill cl" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ <span class="lb">Đăng nhập</span></button>';
+      else {
+        var fst = fb.status === "syncing" ? "Đang lưu…" : fb.status === "offline" ? "Ngoại tuyến · đã lưu trên máy" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ";
+        cloud = '<span class="pill cl" title="' + esc(fst + " · " + (fb.user.email || "")) + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '">☁ <span class="lb">' + fst + "</span></span>";
+      }
     }
     $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>";
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
@@ -1224,7 +1919,7 @@
     var name = h[0]; if (!VIEWS.some(function (v) { return v[0] === name; })) name = "home";
     renderMenu(name); renderStats();
     var view = $("#view"); view.innerHTML = "";
-    var fn = { home: vHome, hoc: vLearn, on: vReview, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, tra: vLookup, caidat: vSettings }[name];
+    var fn = { home: vHome, hoc: vLearn, on: vReview, kho: vKho, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, tra: vLookup, caidat: vSettings }[name];
     cleanup = fn(view, h.slice(1)) || null;
     try { view.focus({ preventScroll: true }); } catch (e) { }
     window.scrollTo(0, 0);
@@ -1284,7 +1979,9 @@
     h += '<div class="card"><h2>Cấp ' + L.l + ' · ' + fmt(S.xp) + ' XP</h2><div class="bar" aria-label="Kinh nghiệm"><i class="b" style="width:' + Math.round(100 * L.cur / L.need) + '%"></i></div><p class="sub" style="margin-top:6px">Còn ' + (L.need - L.cur) + " XP để lên cấp " + (L.l + 1) + ". Chuỗi ngày học: " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>";
     h += '<h3>Huy hiệu</h3><div class="badges">' + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div>";
     var hard = HC.hard().slice(0, 12);
-    h += '<h3>Chữ khó của tôi</h3>' + (hard.length ? '<div class="minis">' + hard.map(miniHTML).join("") + '</div><p style="margin-top:8px"><a class="btn sm" href="#on-kho">Ôn riêng chữ khó</a></p>' : '<p class="sub">Chưa có. Chữ nào bạn quên từ 2 lần trở lên sẽ tự vào đây.</p>');
+    var nk = HC.hardList().length;
+    h += '<h3>Chữ hay quên</h3>' + (hard.length ? '<div class="minis">' + hard.map(miniHTML).join("") + '</div><p style="margin-top:8px"><a class="btn sm" href="#on-kho">Ôn riêng chữ hay quên</a></p>' : '<p class="sub">Chưa có. Chữ nào bạn quên từ 2 lần trở lên sẽ tự vào đây.</p>');
+    h += '<h3>Kho khó</h3><p class="sub">' + (nk ? nk + " mục bạn tự đánh dấu là khó." : "Bấm nút ⋯ cạnh chữ, từ, câu để thêm vào kho khó.") + '</p><p style="margin-top:8px"><a class="btn sm" href="#kho">Mở kho khó</a></p>';
     h += "</div></div></div>";
     v.innerHTML = h;
     var b2 = $("#fbin2", v); if (b2) b2.onclick = HC.fbSignIn;
@@ -1339,7 +2036,7 @@
     function done() {
       v.innerHTML = '<div class="card result"><div class="score-big">+' + total + '</div><h2>Xong bài học mới hôm nay</h2><p class="sub">Các chữ vừa học đã vào lịch ôn. Chữ và từ cũng đã có trong mục Tập viết.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#viet">Tập viết ngay</a><a class="btn" href="#choi">Chơi trò ôn</a><a class="btn" href="#home">Về trang chính</a></div></div>';
     }
-    function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea")) { e.preventDefault(); nextSee(); } }
+    function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea,.more,.pop,.modal")) { e.preventDefault(); nextSee(); } }
     document.addEventListener("keydown", key);
     see();
     return function () { document.removeEventListener("keydown", key); };
@@ -1350,13 +2047,13 @@
     var mode = args[0] === "kho" ? "kho" : "due";
     var ids = mode === "kho" ? HC.hard().map(function (x) { return x.id; }).slice(0, 40) : due("r").slice(0, 120);
     if (!ids.length) {
-      v.innerHTML = '<div class="card"><h1>Ôn tập</h1><p class="sub">' + (mode === "kho" ? "Chưa có chữ khó." : "Không còn thẻ đến hạn hôm nay. Thẻ sẽ tự quay lại đúng ngày cần ôn.") + '</p><div class="row"><a class="btn primary" href="#choi">Chơi trò ôn</a><a class="btn" href="#hoc">Học mới</a></div></div>';
+      v.innerHTML = '<div class="card"><h1>Ôn tập</h1><p class="sub">' + (mode === "kho" ? "Chưa có chữ hay quên." : "Không còn thẻ đến hạn hôm nay. Thẻ sẽ tự quay lại đúng ngày cần ôn.") + '</p><div class="row"><a class="btn primary" href="#choi">Chơi trò ôn</a><a class="btn" href="#hoc">Học mới</a></div></div>';
       return;
     }
     var queue = ids.slice(), i = 0, shown = false, done = 0, again = {};
     function render() {
       var it = ITEM[queue[i]];
-      v.innerHTML = '<div class="row" style="margin-bottom:10px"><h1 style="margin:0">' + (mode === "kho" ? "Ôn chữ khó" : "Ôn thẻ") + '</h1><span class="spacer"></span><span class="chip num">' + done + " / " + ids.length + '</span></div><div class="stage"><div class="fc" id="card"><span class="kind">' + kindLabel(it) + '</span><div class="big ' + lenCls(it.key) + '">' + (it.type === "s" ? rubyHTML(it, true) : esc(it.key)) + '</div><div class="ans' + (shown ? "" : " hide") + '"><div class="am">' + esc(it.type === "s" ? it.pa : it.am) + "</div>" + (it.type === "s" ? '<div class="ns">' + esc(it.dn) + "</div>" : meanHTML(it)) + extraLine(it) + "</div></div>" +
+      v.innerHTML = '<div class="row" style="margin-bottom:10px"><h1 style="margin:0">' + (mode === "kho" ? "Ôn chữ hay quên" : "Ôn thẻ") + '</h1><span class="spacer"></span><span class="chip num">' + done + " / " + ids.length + '</span></div><div class="stage"><div class="fc" id="card"><span class="kind">' + kindLabel(it) + '</span>' + moreBtn(it.id) + '<div class="big ' + lenCls(it.key) + '">' + (it.type === "s" ? rubyHTML(it, true) : esc(it.key)) + '</div><div class="ans' + (shown ? "" : " hide") + '"><div class="am">' + esc(it.type === "s" ? it.pa : it.am) + "</div>" + (it.type === "s" ? '<div class="ns">' + esc(it.dn) + "</div>" : meanHTML(it)) + extraLine(it) + (it.type === "c" || it.type === "w" ? occHTML(it, true) : "") + "</div></div>" +
         '<div class="acts">' + (shown ? '<div class="grades"><button class="btn bad" data-g="0">Quên<small>hỏi lại sớm</small></button><button class="btn warn" data-g="1">Nhớ mờ<small>ngày mai</small></button><button class="btn good" data-g="2">Nhớ rõ<small>' + nextGap(it.id) + "</small></button></div>" : '<button class="btn primary" id="show" style="min-width:200px">Xem đáp án</button>') + "</div>" +
         '<div class="kbd">Phím Space: xem đáp án · 1 / 2 / 3: chấm</div></div>';
       if (shown) $$("[data-g]", v).forEach(function (b) { b.onclick = function () { gradeIt(+b.getAttribute("data-g"), b); }; });
@@ -1378,7 +2075,7 @@
       v.innerHTML = '<div class="card result"><div class="score-big">' + done + '</div><h2>Đã ôn xong</h2><p class="sub">Thẻ nào nhớ rõ sẽ quay lại sau vài ngày, thẻ quên sẽ quay lại ngày mai.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#viet">Tập viết</a><a class="btn" href="#choi">Trò chơi</a><a class="btn" href="#home">Trang chính</a></div></div>';
     }
     function key(e) {
-      if (e.target.closest("input,textarea")) return;
+      if (e.target.closest("input,textarea,.pop,.more,.modal")) return;
       if (!shown && (e.key === " " || e.key === "Enter")) { e.preventDefault(); shown = true; render(); }
       else if (shown && /^[123]$/.test(e.key)) { var b = $('[data-g="' + (+e.key - 1) + '"]', v); if (b) b.click(); }
     }
@@ -1410,6 +2107,7 @@
     toast("Không lưu được mẫu (bộ nhớ máy đầy). Vào Tập viết → Mẫu chấm nhầm, tải các mẫu về rồi xóa bớt.");
     return false;
   }
+  HC.saveSample = saveSample; // trò viết tay của kho khó (games.js) dùng cho nút "Tôi viết đúng mà"
   function sampleTab(v, tabs) {
     var a = samples();
     var grp = [["dung", "Bạn viết đúng nhưng app chấm Sai"], ["sai", "Bạn viết sai nhưng app chấm Đúng"], ["cau", "Báo từ phần viết câu"]].map(function (g) {
@@ -1618,7 +2316,7 @@
   function sheet(v, tabs) {
     var learned = learnedOf("c").concat(learnedOf("w"));
     var p = plan();
-    v.innerHTML = tabs + '<div class="card"><h2>Phiếu tập viết</h2><p class="sub">Mỗi dòng có 3 ô chữ mờ để tô và 7 ô trống kẻ chữ 米. Tải phiếu về, mở rồi bấm Ctrl+P để in.</p><div class="row"><div class="field"><label for="ps">Chọn chữ</label><select id="ps"><option value="today">Chữ / từ học hôm nay</option><option value="hard">Chữ khó của tôi</option><option value="learned">Tất cả chữ đã học</option><option value="next">20 chữ sắp học</option><option value="fo">Toàn bộ ' + FOC.c + ' chữ ' + esc(PL.name) + '</option><option value="common">Toàn bộ ' + COMMON_C + ' chữ thông dụng</option></select></div><button class="btn primary" id="pdl" style="align-self:end">Tải phiếu (.html)</button></div><div id="pprev" style="margin-top:12px"></div></div>';
+    v.innerHTML = tabs + '<div class="card"><h2>Phiếu tập viết</h2><p class="sub">Mỗi dòng có 3 ô chữ mờ để tô và 7 ô trống kẻ chữ 米. Tải phiếu về, mở rồi bấm Ctrl+P để in.</p><div class="row"><div class="field"><label for="ps">Chọn chữ</label><select id="ps"><option value="today">Chữ / từ học hôm nay</option><option value="hard">Chữ hay quên</option><option value="learned">Tất cả chữ đã học</option><option value="next">20 chữ sắp học</option><option value="fo">Toàn bộ ' + FOC.c + ' chữ ' + esc(PL.name) + '</option><option value="common">Toàn bộ ' + COMMON_C + ' chữ thông dụng</option></select></div><button class="btn primary" id="pdl" style="align-self:end">Tải phiếu (.html)</button></div><div id="pprev" style="margin-top:12px"></div></div>';
     function items() {
       var s = $("#ps", v).value, t = today();
       if (s === "today") return learned.filter(function (x) { return S.it[x.id][5] === t; });
@@ -1674,7 +2372,7 @@
     var sets = {}; QS.forEach(function (s) { (sets[s.set] = sets[s.set] || []).push(s); });
     var h = '<h1>Câu trong đề cương</h1><p class="sub">' + D.sents.length + " câu. Mỗi câu luyện 4 bước: đọc có phiên âm từng chữ → tự đọc phiên âm → tự dịch → viết lại chữ Hán. " + FOC.s + " câu " + esc(PL.name) + " được đưa dần vào Học mới từ tuần 2 đến tuần 4 của lộ trình; câu HK1, kỳ 2 học sau lộ trình. Bạn có thể luyện trước bất cứ câu nào." + '</p><div class="grid">';
     Object.keys(sets).forEach(function (k) {
-      h += '<div class="card"><h2>' + esc(k) + "</h2>" + sets[k].map(function (s) { var r = S.it[s.id]; return '<a class="li" href="#cau-' + s.id + '" style="text-decoration:none;color:inherit"><span class="chip num" style="justify-self:center">' + s.no + '</span><span class="t"><b class="han" style="font-size:1.15rem">' + esc(s.han) + "</b><span>" + esc(s.pa) + '</span></span><span>' + (s.k10 ? '<span class="chip k10">Đề K10</span> ' : "") + (r ? '<span class="chip ok">đã học</span>' : "") + "</span></a>"; }).join("") + "</div>";
+      h += '<div class="card"><h2>' + esc(k) + "</h2>" + sets[k].map(function (s) { var r = S.it[s.id]; return '<div class="lirow"><a class="li" href="#cau-' + s.id + '" style="text-decoration:none;color:inherit"><span class="chip num" style="justify-self:center">' + s.no + '</span><span class="t"><b class="han" style="font-size:1.15rem">' + esc(s.han) + "</b><span>" + esc(s.pa) + '</span></span><span>' + (s.k10 ? '<span class="chip k10">Đề K10</span> ' : "") + (r ? '<span class="chip ok">đã học</span>' : "") + "</span></a>" + moreBtn(s.id) + "</div>"; }).join("") + "</div>";
     });
     v.innerHTML = h + "</div>";
   }
@@ -1682,8 +2380,8 @@
     var step = 0, pad;
     var steps = ["Đọc có phiên âm", "Tự đọc phiên âm", "Tự dịch nghĩa", "Viết chữ Hán"];
     function render(show) {
-      var h = '<div class="row" style="margin-bottom:10px"><a class="btn sm ghost" href="#cau">← Danh sách câu</a><span class="muted" style="font-size:0.85rem">' + esc(s.set) + " · câu " + s.no + '</span></div><div class="row" style="margin-bottom:12px">' + steps.map(function (t, i) { return '<button class="btn sm' + (i === step ? " primary" : "") + '" data-step="' + i + '">' + (i + 1) + ". " + t + "</button>"; }).join("") + '</div><div class="card"><div class="stage">';
-      if (step === 0) h += '<div class="sent">' + rubyHTML(s) + '</div><div style="font-weight:600">' + esc(s.pa) + "</div><div>" + esc(s.dn) + '</div><p class="sub">Bấm vào từng chữ ở mục Tra cứu nếu muốn xem nghĩa riêng.</p>';
+      var h = '<div class="row" style="margin-bottom:10px"><a class="btn sm ghost" href="#cau">← Danh sách câu</a><span class="muted" style="font-size:0.85rem">' + esc(s.set) + " · câu " + s.no + '</span><span class="spacer"></span>' + moreBtn(s.id) + '</div><div class="row" style="margin-bottom:12px">' + steps.map(function (t, i) { return '<button class="btn sm' + (i === step ? " primary" : "") + '" data-step="' + i + '">' + (i + 1) + ". " + t + "</button>"; }).join("") + '</div><div class="card"><div class="stage">';
+      if (step === 0) h += '<div class="sent">' + rubyHTML(s, false, true) + '</div><div style="font-weight:600">' + esc(s.pa) + "</div><div>" + esc(s.dn) + '</div><p class="sub">Bấm vào từng chữ để xem âm, nghĩa và cách viết riêng của chữ đó.</p>';
       if (step === 1) h += '<div class="sent">' + rubyHTML(s, !show) + '</div><div class="' + (show ? "" : "hide") + '" style="font-weight:600">' + esc(s.pa) + "</div>";
       if (step === 2) h += '<div class="sent">' + esc(s.han) + '</div><div style="font-weight:600">' + esc(s.pa) + '</div><div class="' + (show ? "" : "hide") + '">' + esc(s.dn) + "</div>";
       if (step === 3) h += '<div style="font-weight:700;font-size:1.1rem;text-align:center">' + esc(s.pa) + '</div><div class="muted" style="text-align:center">' + esc(s.dn) + '</div><div class="padwrap" id="padbox"></div><div class="gfb hide" id="fb" role="status"></div><div class="sent ' + (show ? "" : "hide") + '">' + esc(s.han) + "</div>";
@@ -1711,6 +2409,100 @@
     render(false);
   }
 
+  // ---------- KHO KHÓ (người học tự thêm qua nút ⋯) + playlist ----------
+  // #kho = danh sách kho (lọc chữ/từ/câu) · #kho-pl = các playlist · #kho-pl-<plId> = một playlist
+  function khoRowHTML(it, extra) {
+    // câu: giống danh sách Câu (số câu ở cột đầu, chữ Hán + phiên âm ở giữa)
+    var g = it.type === "s" ? '<span class="chip num" style="justify-self:center">' + esc(String(it.no)) + "</span>" : '<span class="g ' + lenCls(it.key) + '">' + esc(it.key) + "</span>";
+    var t = it.type === "s" ? '<b class="han" style="font-size:1.15rem">' + esc(it.han) + "</b><span>" + esc(it.pa) + "</span>" : "<b>" + esc(it.am) + "</b><span>" + esc(meaningShort(it)) + "</span>";
+    return '<div class="lirow kr"><button type="button" class="li" data-open="' + it.id + '">' + g + '<span class="t">' + t + '</span><span class="chip">' + esc(kindLabel(it)) + "</span></button>" + (extra || "") + moreBtn(it.id) + "</div>";
+  }
+  function vKho(v, args) {
+    var tab = args[0] === "pl" ? "pl" : args[0] === "luyen" ? "luyen" : "kho", plId = tab === "pl" ? args[1] || "" : "", f = "all", renaming = false, adding = false;
+    if (plId && !plLive(plId)) plId = ""; // playlist đã xóa (vd ở máy khác) → về danh sách playlist
+    function head() {
+      var nh = HC.hardList().length, np = HC.plList().length;
+      return '<div class="row" style="margin-bottom:6px"><h1 style="margin:0">Kho khó</h1><span class="spacer"></span><a class="btn sm' + (tab === "kho" ? " primary" : "") + '" href="#kho">Kho khó <span class="num">(' + nh + ')</span></a><a class="btn sm' + (tab === "pl" ? " primary" : "") + '" href="#kho-pl">Playlist <span class="num">(' + np + ')</span></a><a class="btn sm' + (tab === "luyen" ? " primary" : "") + '" href="#kho-luyen">Luyện</a></div>';
+    }
+    function drawKho() {
+      var all = HC.hardList(), cnt = { all: all.length, c: 0, w: 0, s: 0, r: 0 };
+      all.forEach(function (it) { if (cnt[it.type] != null) cnt[it.type]++; });
+      var list = f === "all" ? all : all.filter(function (it) { return it.type === f; });
+      var h = head() + '<p class="sub">Chữ, từ, câu, bộ thủ bạn tự đánh dấu là khó bằng nút ⋯ (ở Tra cứu, Câu, thẻ học, thẻ ôn, khung chi tiết). Kho khó KHÔNG đổi lịch ôn của thẻ.</p>';
+      h += '<div class="row kf" role="group" aria-label="Lọc">' + [["all", "Tất cả"], ["c", "Chữ"], ["w", "Từ"], ["s", "Câu"], ["r", "Bộ thủ"]].map(function (x) {
+        return '<button type="button" class="btn sm' + (f === x[0] ? " primary" : "") + '" data-kf="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + ' <span class="num">' + cnt[x[0]] + "</span></button>";
+      }).join("") + "</div>";
+      h += '<div class="card"><div class="list">' + (list.length ? list.map(function (it) { return khoRowHTML(it, '<button type="button" class="more kx" data-kx="' + it.id + '" aria-label="Bỏ khỏi kho khó" title="Bỏ khỏi kho khó">✕</button>'); }).join("")
+        : '<p class="sub" style="padding:8px">' + (all.length ? "Không có mục loại này trong kho." : "Kho đang trống. Bấm nút ⋯ cạnh một chữ, từ hay câu rồi chọn “☆ Thêm vào kho khó”.") + "</p>") + "</div></div>";
+      var forget = HC.hard().filter(function (it) { return !isHard(it.id); });
+      if (forget.length) h += '<div class="card"><h2>Chữ hay quên</h2><p class="sub">App tự gom ' + forget.length + " chữ / từ / câu / bộ thủ bạn quên từ 2 lần trở lên mà chưa có trong kho khó.</p><div class=\"minis\">" + forget.slice(0, 24).map(miniHTML).join("") + (forget.length > 24 ? '<span class="muted">… +' + (forget.length - 24) + "</span>" : "") + '</div><p style="margin-top:8px"><button type="button" class="btn sm" id="kaddf">Thêm cả ' + forget.length + " mục vào kho khó</button></p></div>";
+      v.innerHTML = h;
+      var b = $("#kaddf", v); if (b) b.onclick = function () { var t = Date.now(); forget.forEach(function (it) { S.hard[it.id] = t; }); save(); toast("Đã thêm " + forget.length + " mục vào kho khó"); drawKho(); };
+    }
+    function drawPls() {
+      var L = HC.plList();
+      var h = head() + '<p class="sub">Playlist là nhóm mục trong kho khó do bạn tự đặt (vd theo bài, theo tuần). Một mục có thể ở nhiều playlist; bỏ mục khỏi kho khó thì nó cũng rời mọi playlist.</p>';
+      h += '<div class="card"><div class="row plnew"><input type="text" id="pln" maxlength="' + PL_MAX + '" placeholder="Tên playlist mới, vd Bài 3" aria-label="Tên playlist mới"><button type="button" class="btn primary" id="plc">Tạo playlist</button></div></div>';
+      h += '<div class="card"><div class="list">' + (L.length ? L.map(function (p) {
+        return '<a class="li pli" href="#kho-pl-' + p.id + '"><span class="g">≡</span><span class="t"><b>' + esc(p.n) + "</b><span>" + (p.ids.length ? p.ids.slice(0, 8).map(function (id) { return esc(itemTitle(ITEM[id])); }).join(" · ") : "chưa có mục") + '</span></span><span class="chip num">' + p.ids.length + " mục</span></a>";
+      }).join("") : '<p class="sub" style="padding:8px">Chưa có playlist nào.</p>') + "</div></div>";
+      v.innerHTML = h;
+      var inp = $("#pln", v);
+      function create() { var k = HC.plCreate(inp.value); if (!k) { toast("Hãy gõ tên playlist"); inp.focus(); return; } toast("Đã tạo playlist"); HC.go("kho-pl-" + k); }
+      $("#plc", v).onclick = create;
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); create(); } });
+    }
+    function drawPl() {
+      var p = plLive(plId); if (!p) { plId = ""; drawPls(); return; }
+      var ids = plIds(plId), rest = HC.hardList().filter(function (it) { return !plHas(plId, it.id); });
+      var h = head() + '<div class="card"><div class="row"><a class="btn sm ghost" href="#kho-pl">← Các playlist</a><span class="spacer"></span>' + (renaming ? "" : '<button type="button" class="btn sm" id="plr">Đổi tên</button><button type="button" class="btn sm ghost" id="pld">Xóa playlist</button>') + "</div>";
+      h += renaming ? '<div class="row plnew" style="margin-top:8px"><input type="text" id="plrn" maxlength="' + PL_MAX + '" value="' + esc(p.n) + '" aria-label="Tên playlist"><button type="button" class="btn sm" id="plrc">Hủy</button><button type="button" class="btn sm primary" id="plrs">Lưu tên</button></div>'
+        : '<h2 style="margin:8px 0 0">' + esc(p.n) + ' <span class="chip num">' + ids.length + " mục</span></h2>";
+      h += "</div>";
+      h += '<div class="card"><div class="list">' + (ids.length ? ids.map(function (id) { return khoRowHTML(ITEM[id], '<button type="button" class="more kx" data-kr="' + id + '" aria-label="Bớt khỏi playlist" title="Bớt khỏi playlist (vẫn ở kho khó)">−</button>'); }).join("")
+        : '<p class="sub" style="padding:8px">Playlist trống. Thêm mục từ kho khó bên dưới, hoặc bấm ⋯ ở một chữ / từ / câu rồi chọn “Thêm vào playlist…”.</p>') + "</div></div>";
+      h += '<div class="card"><div class="row"><h2 style="margin:0">Thêm mục từ kho khó</h2><span class="spacer"></span>' + (rest.length ? '<button type="button" class="btn sm" id="pla">' + (adding ? "Thu gọn" : "Chọn mục (" + rest.length + ")") + "</button>" : "") + "</div>";
+      if (!rest.length) h += '<p class="sub">' + (HC.hardList().length ? "Mọi mục trong kho khó đã ở playlist này." : "Kho khó đang trống.") + "</p>";
+      else if (adding) h += '<div class="plpick">' + rest.map(function (it) { return '<label class="plck"><input type="checkbox" data-pa="' + it.id + '"><span><b class="han">' + esc(itemTitle(it)) + "</b> " + esc(it.type === "s" ? it.pa : it.am) + '</span><span class="chip">' + esc(kindLabel(it)) + "</span></label>"; }).join("") + '</div><div class="row"><button type="button" class="btn sm ghost" id="plall">Chọn hết</button><span class="spacer"></span><button type="button" class="btn primary" id="plok">Thêm mục đã chọn</button></div>';
+      h += "</div>";
+      v.innerHTML = h;
+      var q = function (s) { return $(s, v); };
+      if (q("#plr")) q("#plr").onclick = function () { renaming = true; drawPl(); var i = q("#plrn"); try { i.focus(); i.select(); } catch (e) { } };
+      if (q("#pld")) q("#pld").onclick = function () { if (!confirm("Xóa playlist “" + p.n + "”? Các mục vẫn còn trong kho khó.")) return; HC.plDelete(plId); toast("Đã xóa playlist"); HC.go("kho-pl"); };
+      if (renaming) {
+        var ri = q("#plrn");
+        var saveName = function () { if (!HC.plRename(plId, ri.value)) { toast("Hãy gõ tên playlist"); ri.focus(); return; } renaming = false; toast("Đã đổi tên"); drawPl(); };
+        q("#plrs").onclick = saveName; q("#plrc").onclick = function () { renaming = false; drawPl(); };
+        ri.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); saveName(); } else if (e.key === "Escape") { e.stopPropagation(); renaming = false; drawPl(); } });
+      }
+      if (q("#pla")) q("#pla").onclick = function () { adding = !adding; drawPl(); };
+      if (q("#plall")) q("#plall").onclick = function () { var cs = $$("[data-pa]", v), all = cs.every(function (c) { return c.checked; }); cs.forEach(function (c) { c.checked = !all; }); };
+      if (q("#plok")) q("#plok").onclick = function () {
+        var sel = $$("[data-pa]", v).filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-pa"); });
+        if (!sel.length) { toast("Chưa chọn mục nào"); return; }
+        HC.plSet(plId, sel, true); adding = false; toast("Đã thêm " + sel.length + " mục"); drawPl();
+      };
+    }
+    // thẻ Luyện: chọn nguồn (cả kho / playlist) + loại mục + số câu → 2 trò của kho khó (vẽ trong games.js: HC.khoSetup)
+    function drawLuyen() {
+      v.innerHTML = head() + '<div id="ksu"></div>';
+      if (HC.khoSetup) HC.khoSetup($("#ksu", v)); else $("#ksu", v).innerHTML = '<p class="sub">Chưa tải xong trò chơi, hãy tải lại trang.</p>';
+    }
+    function draw() { if (tab === "kho") drawKho(); else if (tab === "luyen") drawLuyen(); else if (plId) drawPl(); else drawPls(); }
+    function onClick(e) {
+      var k = e.target.closest("[data-kf]"); if (k) { f = k.getAttribute("data-kf"); drawKho(); return; }
+      var x = e.target.closest("[data-kx]");
+      if (x) { var id = x.getAttribute("data-kx"), it = ITEM[id]; if (!confirm("Bỏ “" + itemTitle(it) + "” khỏi kho khó? Mục này cũng rời mọi playlist.")) return; HC.toggleHard(id, false); refreshHard(id); toast("Đã bỏ khỏi kho khó"); return; }
+      var r = e.target.closest("[data-kr]");
+      if (r) { HC.plToggle(plId, r.getAttribute("data-kr"), false); toast("Đã bớt khỏi playlist"); drawPl(); }
+    }
+    v.addEventListener("click", onClick); // #view dùng chung mọi màn → gỡ khi rời màn
+    // ⋯ đổi kho / playlist khi đang ở màn này → vẽ lại (giữ chỗ cuộn); không vẽ lại khi đang gõ tên
+    khoRender = function () { if (renaming) return; var y = window.scrollY; draw(); window.scrollTo(0, y); };
+    draw();
+    return function () { khoRender = null; v.removeEventListener("click", onClick); };
+  }
+
   // ---------- LOOKUP ----------
   function vLookup(v) {
     v.innerHTML = '<h1>Tra cứu</h1><p class="sub">Tìm theo chữ Hán, âm (gõ không dấu cũng được) hoặc nghĩa. Danh sách xếp theo số lần xuất hiện trong ' + (D.srcs || []).length + ' tài liệu (giáo trình, đề cương, đề thi).</p><div class="row" style="margin:10px 0"><input type="search" id="q" placeholder="Ví dụ: 道, dao, con đường…" aria-label="Tìm"><select id="qt" aria-label="Loại"><option value="c">Chữ lẻ (1.222)</option><option value="w">Từ (733)</option><option value="all">Cả hai</option></select></div><div class="card"><div class="list" id="res"></div></div>';
@@ -1719,7 +2511,7 @@
       var src = t === "c" ? D.chars : t === "w" ? D.words : D.chars.concat(D.words);
       var res = src.filter(function (x) { if (!q) return true; return x.key.indexOf(q) >= 0 || fold(x.am).indexOf(qf) >= 0 || fold(x.ns).indexOf(qf) >= 0 || fold(x.nb).indexOf(qf) >= 0 || (x.v || "").indexOf(q) >= 0 || (x.gt || "").indexOf(q) >= 0 || (x.dt || "").indexOf(q) >= 0; }); // gõ dạng rút gọn (汉) cũng ra chữ phồn thể (漢)
       if (t === "all") res.sort(function (a, b) { return b.n - a.n; });
-      $("#res", v).innerHTML = res.slice(0, 150).map(function (x) { return '<button class="li" data-open="' + x.id + '"><span class="g ' + lenCls(x.key) + '">' + esc(x.key) + '</span><span class="t"><b>' + esc(x.am) + (x.gt ? ' <small class="muted">· rút gọn <span class="han">' + esc(x.gt) + "</span></small>" : "") + "</b><span>" + esc(meaningShort(x)) + '</span></span><span class="chip num">' + x.n + " lần</span></button>"; }).join("") + (res.length > 150 ? '<p class="sub" style="padding:8px">… còn ' + (res.length - 150) + " kết quả, hãy gõ cụ thể hơn.</p>" : res.length ? "" : '<p class="sub">Không tìm thấy.</p>');
+      $("#res", v).innerHTML = res.slice(0, 150).map(function (x) { return '<div class="lirow"><button class="li" data-open="' + x.id + '"><span class="g ' + lenCls(x.key) + '">' + esc(x.key) + '</span><span class="t"><b>' + esc(x.am) + (x.gt ? ' <small class="muted">· rút gọn <span class="han">' + esc(x.gt) + "</span></small>" : "") + "</b><span>" + esc(meaningShort(x)) + '</span></span><span class="chip num">' + x.n + " lần</span></button>" + moreBtn(x.id) + "</div>"; }).join("") + (res.length > 150 ? '<p class="sub" style="padding:8px">… còn ' + (res.length - 150) + " kết quả, hãy gõ cụ thể hơn.</p>" : res.length ? "" : '<p class="sub">Không tìm thấy.</p>');
     }
     var t = null; $("#q", v).oninput = function () { clearTimeout(t); t = setTimeout(run, 120); }; $("#qt", v).onchange = run; run();
   }
@@ -1732,9 +2524,12 @@
     v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="card hero" id="lich" style="margin-bottom:14px"></div><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div><div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Bắt đầu ngày ' + dateOf(S.start) + " · hôm nay là ngày " + (p.di + 1) + " · ngày học thứ " + p.k + ' (tính 6 ngày học + 1 ngày ôn mỗi tuần).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày sau 5 tuần</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày sau 5 tuần</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh khi trả lời đúng / sai</label><div class="row" style="margin-top:12px"><button class="btn" id="restart">Tính lại lịch từ hôm nay</button></div><p class="sub" style="margin-top:6px">Tính lại lịch giữ nguyên chữ đã học, chỉ dời ngày bắt đầu của lộ trình 5 tuần về hôm nay.</p></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
-      '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div></div>';
+      '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div><div class="card" id="sach-set"></div></div>';
+    var cg = $(".cols2", v); if (cg) cg.insertAdjacentHTML("beforeend", '<div class="card"><h2>Thanh mục</h2><p class="sub">Đổi vị trí các mục trên thanh menu cho hợp cách học của bạn (lưu riêng trên máy này). Ở màn hẹp, các mục đầu hiện trên thanh, các mục sau nằm trong nút ».</p><button class="btn" type="button" data-msort>⇅ Sắp xếp thanh mục</button></div>');
     var redraw = bindSched($("#lich", v));
     if (args && args[0] === "lich") HC.later(function () { var el = $("#lich", v); if (el) el.scrollIntoView(); }, 0);
+    sachSettings($("#sach-set", v));
+    if (args && args[0] === "sach") HC.later(function () { var el = $("#sach-set", v); if (el) el.scrollIntoView(); }, 0);
     var e1 = $("#fbin3", v); if (e1) e1.onclick = HC.fbSignIn;
     var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbSync().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
     var e3 = $("#fbout", v); if (e3) e3.onclick = function () { HC.fbSignOut(); toast("Đã đăng xuất trên máy này"); };

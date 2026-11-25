@@ -40,6 +40,22 @@
   hanzi-writer-data, chỉ ghi khi số nét + vị trí khớp), net/ của chữ đó có `r` (chỉ số nét thuộc bộ) để TÔ MÀU phần bộ trong
   hoạt hình. Tập viết: chữ phồn thể BẮT BUỘC; dạng rút gọn KHÔNG bắt buộc (nút "Viết thêm dạng rút gọn"), đã viết thì phải
   đúng CẢ HAI mới tính Đúng; viết dạng rút gọn vào ô phồn thể → Sai, app báo rõ. Không thêm trường nào vào `S`.
+- `giai/<mã hex>.json` = GIẢI THÍCH TỪNG CHỮ (tự soạn, KHÔNG có trong tài liệu → app luôn ghi ※): Pinyin, nghĩa + từ loại, lục thư,
+  cấu tạo, nguồn gốc (Thuyết văn / chữ cổ), MẸO NHỚ (ghi rõ là mẹo). Mỗi chữ + bộ thủ 1 file, tải khi mở chữ (`giaiData`/`giaiHTML`/
+  `giaiFill`/`showGiai` trong app.js; khung `.giai` trong chi tiết chữ + bộ thủ, mục "※ Giải thích" ở ⋯). Nguồn soạn: `tools/work/giai/dot*.txt`
+  (định dạng: `tools/work/giai/README.txt`); sinh bằng `cd tools && python build_giai.py` (chữ chưa soạn → file chỉ có pinyin tự động,
+  từ Make Me a Hanzi `tools/ref/makemeahanzi/` LGPL chỉ tham khảo + pypinyin; đa âm ghi "chưa soát" tới khi khối giải thích ghi `py:`).
+  Đợt soạn tiếp theo: `python build_giai.py --next`. KHÔNG đưa vào app-data.json, KHÔNG sửa chars*.txt.
+- Sách "Tìm về cội nguồn chữ Hán" (ảnh quét, có bản quyền): PDF ở `tools/ref/` (KHÔNG BAO GIỜ để ở gốc repo — hosting phát hành cả
+  thư mục gốc; release.py dừng nếu thấy .pdf/.pack ngoài tools/). Chỉ mục `tools/work/sach/chimuc.txt`; chữ ↔ trang sách
+  `tools/work/sach/khop.txt` sinh bằng `cd tools && python sach_khop.py` (S có trong sách / T chỉ có thành phần / - không có).
+  HÌNH TRANG SÁCH (người dùng duyệt 25/11/2026): `cd tools && python sach_pack.py` → `sach.json` ở gốc (chữ/bộ id → vị trí hoặc
+  [[thành phần, vị trí]], KHÔNG có hình, lên hosting) + `tools/work/sach/sach.pack` (hình PNG base64 630 trang ~46 MB, CHỈ ở máy).
+  Người dùng đưa gói lên 1 lần: Cài đặt → "Hình trang sách" → Firestore riêng `hanco_progress/{uid}/sach/p<vị trí>` (+ `sach/info`
+  = độ dài từng trang đã đưa, để đưa tiếp / đưa lại trang đổi). App hiện khung `.sach` trong chi tiết chữ + bộ thủ (`sachFill`,
+  khung xem to `sachView`, thẻ Cài đặt `sachSettings` trong app.js); máy giữ hình đã xem ở Cache Storage `sach-v1` (không "hanco-"),
+  công tắc localStorage `hanco-sach-noluu`. Không thuộc `S`. Số trang in = vị trí (< 251) hoặc vị trí − 2. Thử ở máy không đụng
+  tài khoản: `python .claude/make-sach-test.py` → `/.claude/sach-test.html?signedin` (Firebase giả).
 - `tools/` (chỉ ở máy, đã gitignore): pipeline dữ liệu từ các tài liệu nguồn.
   - `sources.json` = DANH MỤC tài liệu (mã A, B, C…, file PDF trong `src/`, file text trong `txt/`, loại giao-trinh /
     de-cuong / de-thi, kỳ HK1 / HK2 / GK3…). Hiện 5: A giáo trình HK1, B đề cương HK1 (in K11), C đề cương cuối kỳ 2,
@@ -53,7 +69,8 @@
   - Sửa nghĩa/âm → sửa file trong `tools/work/` rồi chạy `cd tools && python build.py && python build_app.py && python check_update.py`.
   - `build_app.py` còn khai: loại từ theo kỳ + câu ví dụ (`ltq`, bỏ câu mà chữ mang nghĩa khác: EXCL), đề thi thử (`EXAMS`),
     lộ trình (`PLAN`). `check_update.py` = so id cũ / đối chiếu tài liệu (phải ĐẠT trước khi phát hành).
-  - `python tools/release.py` = đổi VERSION trong sw.js + kiểm tra cú pháp + deploy hosting.
+  - `python tools/release.py` = kiểm tra (cú pháp, ảnh `han/`, `giai/` đủ mọi chữ, không có .pdf/.pack ngoài tools/, `sach.json` khớp khop.txt và không chứa hình) + đổi VERSION
+    trong sw.js + deploy hosting. `--check` = chỉ kiểm tra (không đổi sw.js, không deploy).
 
 ## Luật dữ liệu người học — BẮT BUỘC
 - Tiến độ = `S` (`{v,start,set,it,xp,streak,best,log,badges,upd}`), `it[id] = [rBox,rDue,wBox,wDue,lapses,introDay]`
@@ -68,7 +85,7 @@
   KHÔNG phải vị trí trong mảng (mảng xếp theo tần suất, đổi tự do). Mục mới nhận số tiếp theo; `build_app.py` tự dừng nếu
   mục cũ mất hoặc đổi id. CẤM sửa/xóa mục cũ trong ids.json, đổi tên bộ câu hay đổi chữ chính của mục cũ (muốn gộp chữ
   thì thêm vào cột biến thể). Nếu buộc phải đổi id thì PHẢI viết ánh xạ id cũ → mới trong `normalize()` trước khi phát hành.
-- Quy tắc Firestore ở `firestore.rules` (mỗi người chỉ đọc/ghi `hanco_progress/{uid}` của mình).
+- Quy tắc Firestore ở `firestore.rules` (mỗi người chỉ đọc/ghi `hanco_progress/{uid}` của mình, kể cả `backups/` và `sach/`).
   Deploy hosting không động tới Firestore; chỉ deploy rules khi được yêu cầu.
 
 ## Luật nội dung
@@ -88,6 +105,13 @@
 ## Giao diện 3 loại máy — BẮT BUỘC (người dùng yêu cầu 25/11/2026)
 Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 FE để NẰM NGANG (khung ~1280×600–700), ngoài ra máy tính và
 điện thoại. Mọi màn hình, kể cả màn/tính năng thêm sau này, phải dùng được trên cả 3 loại máy, không phải kéo xuống mới bấm được nút.
+- Thanh mục (người dùng yêu cầu 25/11/2026): màn NẰM NGANG ≥ 640px → thanh DỌC bên trái (`.topbar` cố định, `body` lùi
+  `--side`): ngang ≥ 1000px rộng 224px (ký hiệu chữ Hán `MENU_IC` + tên mục, nút «/» thu gọn → `html.menu-gon`, nhớ ở localStorage
+  `hanco-menu-gon`, không thuộc `S`); ngang 640–999px luôn thanh hẹp 76px (ký hiệu + nhãn ngắn). Màn dọc / hẹp → thanh mục ở
+  TRÊN, 1 hàng; mục không vừa dồn vào nút » cuối hàng (`fitMenu`, đo lại khi đổi cỡ / phông tải xong). Người học tự SẮP XẾP vị trí
+  các mục (khung "Sắp xếp thanh mục" `openMenuSort`, mở từ », nút "⇅ Sắp xếp mục" cuối thanh dọc, màn Cài đặt), lưu RIÊNG từng máy
+  ở localStorage `hanco-menu-thu-tu`, không thuộc `S`; `menuOrder()` luôn trả đủ mục của `VIEWS` (mục mới tự vào cuối). Thêm mục
+  mới vào `VIEWS` thì thêm cả ký hiệu + nhãn ngắn vào `MENU_IC`. Khung `position: fixed` mới phải tính `--side` (đừng che thanh dọc).
 - Nút chính của mỗi bước (Xem đáp án, Quên/Nhớ, Chấm điểm, Tiếp, Trước/Sau, Kiểm tra…) bọc trong `.acts` (thường là
   `<div class="row acts">`): thanh nút dính đáy màn hình. Không đặt 2 `.acts` liền nhau trong cùng một khung (sẽ chồng lên nhau)
   — gộp thành 1 `.acts` chứa nhiều `.row`.
@@ -142,8 +166,11 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
    thẻ đã học vẫn ôn theo lịch SRS cũ. Các con số trên giao diện lấy từ dữ liệu, không ghi cứng.
 7. Sinh lại: `build.py`, `build_app.py` (id cũ phải giữ — xem luật id), `check_update.py` (phải ĐẠT), `build_strokes.py`,
    `build_order.py`, ảnh `han/` cho chữ mới (render_han; giữ nguyên ảnh cũ: `git checkout -- han` sau khi vẽ),
-   giải thích từng chữ cho MỌI chữ mới (khi tính năng `giai/` đã có: soạn theo đúng định dạng + yêu cầu trong
-   `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` rồi chạy script sinh `giai/`).
+   `python sach_khop.py` (dò chữ mới trong sách; chỗ "cần soát" mở trang sách xem) rồi `python sach_pack.py` (sach.json + gói
+   hình; có trang MỚI thì nhắc người dùng đưa lại gói ở Cài đặt → Hình trang sách — chỉ trang mới/đổi được ghi), `python build_giai.py` (mọi chữ mới có
+   file giai/ với pinyin), rồi SOẠN giải thích cho MỌI chữ mới theo `tools/work/giai/README.txt` + yêu cầu trong
+   `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` (tệp dot mới) và chạy lại `build_giai.py`. `check_update.py` cảnh báo chữ
+   chưa có giải thích / chưa dò sách; `release.py --check` dừng nếu thiếu file giai/.
 8. Kiểm tra: node --check; chạy app ở máy (Học mới, Câu, Loại từ, Tra cứu chữ mới, Thi thử đề mới, bản điện thoại);
    mô phỏng lộ trình theo ngày; thử tiến độ cũ + `merge()` (không mất mục nào); đối chiếu luật "Mục mới phải đủ"
    (chữ/từ/câu mới có đủ mọi thứ mục cũ có — liệt kê mục còn thiếu, không bỏ qua im lặng).

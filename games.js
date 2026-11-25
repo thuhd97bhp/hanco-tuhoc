@@ -20,7 +20,7 @@
     if (!rec || (!rec.good_.length && !rec.bad_.length)) return "";
     var badIds = {}; rec.bad_.forEach(function (it) { badIds[it.id] = 1; });
     var good = rec.good_.filter(function (it) { return !badIds[it.id]; }).length;
-    return '<p class="sub">Nhớ: ' + good + " mục" + (rec.bad_.length ? " · Sai: " + rec.bad_.length + " mục — đã đánh dấu chưa thuộc, sẽ ôn lại sớm (muộn nhất ngày mai):" : "") + "</p>" +
+    return '<p class="sub">Nhớ: ' + good + " mục" + (rec.bad_.length ? " · Sai: " + rec.bad_.length + (rec.kho ? " mục — lần sau được hỏi trước (không đổi lịch ôn):" : " mục — đã đánh dấu chưa thuộc, sẽ ôn lại sớm (muộn nhất ngày mai):") : "") + "</p>" +
       (rec.bad_.length ? '<div class="minis" style="justify-content:center">' + rec.bad_.map(function (it) { var k = U().chars(it.key); return '<span class="mini"><span class="han">' + esc(k.length > 10 ? k.slice(0, 10).join("") + "…" : it.key) + "</span>" + (it.type === "s" ? "" : " " + esc(HC.firstAm(it.am))) + "</span>"; }).join("") + "</div>" : "");
   }
   function setScore(v, s, extra) { var e = v.querySelector("#gs"); if (e) e.textContent = "Điểm " + s; var t = v.querySelector("#gt"); if (t && extra != null) t.textContent = extra; }
@@ -342,6 +342,286 @@
       var pt = 100 / qs.length; qs.forEach(function (q) { q.pts = pt; }); // ít mục đã học thì ít câu hơn, vẫn thang 100
       runQuiz(v, head(g), qs, function (score, max, parts) { finish(v, g, Math.round(score), { label: Math.round(score) + " / 100", msg: parts, bonus: Math.round(score / 4), rec: rec }); });
     } });
+
+  // ========== KHO KHÓ: 2 trò luyện mục người học tự đánh dấu khó (kế hoạch kho khó, Bước 3) ==========
+  // Nguồn: cả kho khó HOẶC 1–nhiều playlist; loại chữ / từ / câu / bộ thủ; số câu. Kết quả CHỈ ghi vào S.gm (HC.gmRec) — KHÔNG đổi lịch ôn S.it.
+  // Lựa chọn nhớ ở localStorage "hanco-kho-luyen" (tiện ích từng máy, không đồng bộ, không thuộc S).
+  var KS_KEY = "hanco-kho-luyen", KS_TYPES = [["c", "Chữ"], ["w", "Từ"], ["s", "Câu"], ["r", "Bộ thủ"]], ksAuto = false, ksOnly = null;
+  var KG = { khoam: "Hán → âm Hán Việt", khohan: "Âm + nghĩa → chữ Hán" };
+  function ksGet() {
+    var o = {}; try { o = JSON.parse(localStorage.getItem(KS_KEY) || "{}") || {}; } catch (e) { o = {}; }
+    var types = Array.isArray(o.types) ? o.types.filter(function (t) { return /^[cwsr]$/.test(t); }) : [];
+    return { src: o.src === "pl" ? "pl" : "all", pls: Array.isArray(o.pls) ? o.pls.filter(function (k) { return typeof k === "string"; }) : [], types: types.length ? types : ["c", "w", "s", "r"], n: [10, 20, 30].indexOf(o.n) >= 0 ? o.n : 10, mode: o.mode === "write" ? "write" : "mc" };
+  }
+  function ksPut(o) { try { localStorage.setItem(KS_KEY, JSON.stringify(o)); } catch (e) { } }
+  // mục theo lựa chọn: cả kho, hoặc hợp các playlist đã chọn (playlist đã xóa tự bỏ qua); lọc theo loại
+  function ksItems(o) {
+    var list = [];
+    if (o.src === "pl") { var seen = {}; HC.plList().forEach(function (p) { if (o.pls.indexOf(p.id) < 0) return; p.ids.forEach(function (id) { if (!seen[id]) { seen[id] = 1; list.push(HC.ITEM[id]); } }); }); }
+    else list = HC.hardList();
+    return list.filter(function (it) { return it && o.types.indexOf(it.type) >= 0; });
+  }
+  // ưu tiên mục sai nhiều (S.gm); mục chưa chơi lần nào cũng được ưu tiên; không lặp mục trong một lượt
+  function ksW(it) { var g = (HC.state().gm || {})[it.id]; return g ? Math.max(0.5, 1 + g[1] * 2 - g[0] * 0.5) : 3; }
+  function ksPick(items, n) {
+    var pool = items.slice(), out = [];
+    while (out.length < n && pool.length) {
+      var tot = 0, x = 0, k; pool.forEach(function (it) { tot += ksW(it); });
+      var r = Math.random() * tot;
+      for (k = 0; k < pool.length; k++) { x += ksW(pool[k]); if (r < x) break; }
+      out.push(pool.splice(Math.min(k, pool.length - 1), 1)[0]);
+    }
+    return U().shuffle(out);
+  }
+  // khung chọn nguồn luyện — dùng ở màn Kho khó (thẻ Luyện, gid trống → 2 nút vào 2 trò) và đầu mỗi trò (gid = id trò)
+  HC.khoSetup = function (box, gid) {
+    var o = ksGet();
+    function draw() {
+      var L = HC.plList(), live = {}; L.forEach(function (p) { live[p.id] = 1; });
+      o.pls = o.pls.filter(function (k) { return live[k]; });
+      if (o.src === "pl" && !L.length) o.src = "all";
+      var items = ksItems(o), nq = Math.min(o.n, items.length), nh = HC.hardList().length;
+      var h = '<div class="card ksu"><h2>Luyện kho khó</h2><p class="sub">Kết quả chỉ ghi đúng / sai để lần sau hỏi trước mục sai nhiều — <b>không đổi lịch ôn</b> của thẻ.</p>';
+      h += '<div class="ksg"><b>Nguồn</b><div class="ksopts"><label class="plck"><input type="radio" name="kss" value="all"' + (o.src === "all" ? " checked" : "") + '><span>Cả kho khó <span class="num muted">(' + nh + ' mục)</span></span></label><label class="plck"><input type="radio" name="kss" value="pl"' + (o.src === "pl" ? " checked" : "") + (L.length ? "" : " disabled") + "><span>Chọn playlist" + (L.length ? "" : ' <small class="muted">(chưa có playlist)</small>') + "</span></label></div>";
+      if (o.src === "pl") h += '<div class="ksopts kspl">' + L.map(function (p) { return '<label class="plck"><input type="checkbox" data-kp="' + esc(p.id) + '"' + (o.pls.indexOf(p.id) >= 0 ? " checked" : "") + "><span>" + esc(p.n) + ' <span class="num muted">(' + p.ids.length + ")</span></span></label>"; }).join("") + "</div>";
+      h += "</div>";
+      h += '<div class="ksg"><b>Loại mục</b><div class="ksopts">' + KS_TYPES.map(function (t) { return '<label class="plck"><input type="checkbox" data-kt="' + t[0] + '"' + (o.types.indexOf(t[0]) >= 0 ? " checked" : "") + "><span>" + t[1] + "</span></label>"; }).join("") + "</div></div>";
+      h += '<div class="ksg"><b>Số câu hỏi</b><div class="ksopts">' + [10, 20, 30].map(function (n) { return '<label class="plck"><input type="radio" name="ksn" value="' + n + '"' + (o.n === n ? " checked" : "") + '><span class="num">' + n + "</span></label>"; }).join("") + "</div></div>";
+      if (gid !== "khoam") h += '<div class="ksg"><b>Chữ / từ / bộ thủ trả lời bằng</b>' + (gid ? "" : ' <small class="muted">(trò ' + esc(KG.khohan) + ")</small>") + '<div class="ksopts"><label class="plck"><input type="radio" name="ksm" value="mc"' + (o.mode === "mc" ? " checked" : "") + '><span>Trắc nghiệm 4 lựa chọn</span></label><label class="plck"><input type="radio" name="ksm" value="write"' + (o.mode === "write" ? " checked" : "") + '><span>Viết tay (app tự chấm)</span></label></div><small class="muted">Câu: luôn là xếp các chữ theo đúng thứ tự.</small></div>';
+      var msg = !nh ? "Kho khó đang trống. Bấm nút ⋯ cạnh một chữ, từ, câu hay bộ thủ (Tra cứu, Câu, Bộ thủ, thẻ học, thẻ ôn) rồi chọn “☆ Thêm vào kho khó”."
+        : o.src === "pl" && !o.pls.length ? "Hãy đánh dấu ít nhất 1 playlist."
+        : !o.types.length ? "Hãy chọn ít nhất 1 loại mục."
+        : !items.length ? "Nguồn đã chọn không có mục thuộc loại này."
+        : "Đang chọn " + items.length + " mục → " + nq + " câu hỏi" + (items.length < o.n ? " (mỗi mục hỏi 1 lần)" : "") + ".";
+      h += '<p><span class="chip' + (items.length ? "" : " warn") + '" id="ksmsg">' + esc(msg) + "</span></p>" + (nh ? "" : '<p><a class="btn" href="#tra">Mở Tra cứu</a> <a class="btn" href="#cau">Mở danh sách Câu</a></p>') + "</div>";
+      h += '<div class="row acts">' + (gid ? [gid] : ["khoam", "khohan"]).map(function (k) { return '<button type="button" class="btn primary" data-ks="' + k + '"' + (items.length ? "" : " disabled") + ">" + (gid ? "Bắt đầu" : "▶ " + esc(KG[k])) + "</button>"; }).join("") + "</div>";
+      box.innerHTML = h;
+    }
+    box.onchange = function (e) {
+      var t = e.target, k;
+      if (t.name === "kss") { o.src = t.value; if (o.src === "pl" && !o.pls.length) o.pls = HC.plList().map(function (p) { return p.id; }); }
+      else if (t.name === "ksn") o.n = +t.value;
+      else if (t.name === "ksm") o.mode = t.value;
+      else if (t.hasAttribute("data-kp")) { k = t.getAttribute("data-kp"); o.pls = o.pls.filter(function (x) { return x !== k; }); if (t.checked) o.pls.push(k); }
+      else if (t.hasAttribute("data-kt")) { k = t.getAttribute("data-kt"); o.types = o.types.filter(function (x) { return x !== k; }); if (t.checked) o.types.push(k); }
+      else return;
+      ksPut(o); draw();
+    };
+    box.onclick = function (e) {
+      var b = e.target.closest("[data-ks]"); if (!b || b.disabled) return;
+      ksPut(o); ksAuto = true; ksOnly = null;
+      if (gid) HC.route(); else HC.go("choi-" + b.getAttribute("data-ks"));
+    };
+    draw();
+  };
+  // vào trò: vừa bấm Bắt đầu / Chơi lại / Luyện lại mục sai → chơi ngay; còn lại → hiện khung chọn nguồn
+  function ksStart(v, g, play) {
+    if (ksAuto) {
+      ksAuto = false;
+      var o = ksGet(), items = ksOnly || ksItems(o); ksOnly = null;
+      if (items.length) return play(o, ksPick(items, Math.min(o.n, items.length)));
+    }
+    v.innerHTML = head(g) + '<div id="ksu"></div>';
+    HC.khoSetup(v.querySelector("#ksu"), g.id);
+  }
+  function ksFinish(v, g, score, N, rec, msg) {
+    finish(v, g, score, { label: score + " / " + N, msg: msg, rec: rec });
+    var ag = v.querySelector("#again"); if (!ag) return;
+    ag.onclick = function () { ksAuto = true; HC.route(); };
+    var bad = rec.bad_.slice(), box = ag.parentNode;
+    if (bad.length) { var b = document.createElement("button"); b.className = "btn"; b.textContent = "Luyện lại " + bad.length + " mục sai"; b.onclick = function () { ksAuto = true; ksOnly = bad; HC.route(); }; box.insertBefore(b, ag.nextSibling); }
+    box.insertAdjacentHTML("beforeend", '<a class="btn" href="#kho-luyen">Đổi nguồn luyện</a>');
+  }
+  function ksTop(it, i, N) { return '<div class="row" style="width:min(680px,100%)"><span class="chip num">' + (i + 1) + " / " + N + '</span><span class="chip">' + esc(HC.kindLabel(it)) + "</span></div>"; }
+  function ksAns(it) { return '<div class="ans"><div class="am">' + esc(it.am) + "</div>" + HC.meanHTML(it) + "</div>"; }
+
+  // 12. Kho khó: Hán → âm Hán Việt (PHẢI đúng dấu; chữ nhiều âm: âm nào có trong dữ liệu cũng được; câu so với phiên âm đề cương)
+  reg({ id: "khoam", icon: "難", name: "Kho khó: Hán → âm", desc: "Mục trong kho khó (cả kho hoặc playlist bạn chọn): nhìn chữ / từ / câu / bộ thủ, gõ âm Hán Việt — phải đúng dấu. Không đổi lịch ôn.",
+    run: function (v) { var g = this; ksStart(v, g, function (o, items) { khoAm(v, g, items); }); } });
+  function khoAm(v, g, items) {
+    var i = 0, score = 0, N = items.length, rec = HC.gmRec();
+    function round() {
+      var it = items[i], isS = it.type === "s", used = false;
+      v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="fc" style="min-height:auto">' + (isS ? '<div class="sent">' + esc(it.han) + "</div>" : '<div class="big ' + U().lenCls(it.key) + '">' + esc(it.key) + "</div>") + '<div class="muted">Gõ âm Hán Việt' + (isS ? " của cả câu" : "") + " — phải đúng dấu</div></div>" +
+        '<input class="answer" id="in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + (isS ? "Phiên âm cả câu, có dấu…" : "Âm Hán Việt, có dấu…") + '" aria-label="Âm Hán Việt">' +
+        '<div class="ksfb hide" id="fb" role="status"></div><div class="row acts"><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="ok">Kiểm tra</button><button class="btn primary hide" id="nx">' + (i + 1 < N ? "Câu tiếp →" : "Xem kết quả") + "</button></div></div>";
+      setScore(v, score);
+      var inp = v.querySelector("#in"), fb = v.querySelector("#fb"), okb = v.querySelector("#ok"), idk = v.querySelector("#idk"), nx = v.querySelector("#nx");
+      function reveal(r) { // r: 2 đúng dấu · 1 đúng âm sai dấu · 0 sai · -1 không nhớ
+        used = true; inp.disabled = true; okb.classList.add("hide"); idk.classList.add("hide"); nx.classList.remove("hide");
+        var good = r === 2;
+        if (good) { score++; correct(okb); rec.ok(it); } else { wrong(); rec.bad(it); }
+        fb.className = "ksfb " + (good ? "ok" : "no");
+        fb.innerHTML = '<div class="verdict">' + (good ? "Đúng ✓" : r === 1 ? "Đúng âm nhưng sai / thiếu dấu ✗ (trò này phải đúng dấu)" : r === -1 ? "Đã tính là chưa nhớ ✗" : "Chưa đúng ✗") + "</div>" + ksAns(it);
+        setScore(v, score);
+        try { nx.focus(); } catch (e) { }
+      }
+      function check() { if (used) return; if (!inp.value.trim()) { HC.toast("Hãy gõ âm Hán Việt (có dấu) rồi bấm Kiểm tra"); try { inp.focus(); } catch (e) { } return; } reveal(HC.checkAm(inp.value, it.am)); }
+      okb.onclick = check; idk.onclick = function () { if (!used) reveal(-1); }; nx.onclick = next;
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); check(); } });
+      HC.later(function () { try { inp.focus(); } catch (e) { } }, 30);
+    }
+    function next() { i++; if (i < N) round(); else ksFinish(v, g, score, N, rec, "Gõ đúng âm (đúng dấu) " + score + " trên " + N + " mục"); }
+    round();
+  }
+
+  // 13. Kho khó: âm + nghĩa → chữ Hán. Chữ / từ: trắc nghiệm 4 lựa chọn hoặc viết tay (chấm tự động như tập viết); câu: xếp chữ.
+  reg({ id: "khohan", icon: "認", name: "Kho khó: âm + nghĩa → chữ Hán", desc: "Mục trong kho khó: nhìn âm và nghĩa, chọn đúng chữ Hán (trắc nghiệm) hoặc viết tay; câu thì xếp các chữ theo thứ tự. Không đổi lịch ôn.",
+    run: function (v) { var g = this; ksStart(v, g, function (o, items) { khoHan(v, g, items, o.mode); }); } });
+  // nhiễu hợp lý: chữ → 1 cùng bộ, 1 gần âm, 1 gần hình (cùng bộ, số nét chênh ≤ 2); từ → cùng số chữ, chung chữ / gần âm;
+  // bộ thủ → bộ khác số nét gần / gần âm. Thiếu → HC.distract
+  function khoDistract(it) {
+    var u = U(), out = [], used = {};
+    used[it.key] = 1;
+    u.chars((it.v || "") + (it.gt || "") + (it.dt || "")).forEach(function (c) { used[c] = 1; }); // không lấy dị thể / dạng rút gọn của chính nó
+    function fa(x) { return u.fold(HC.firstAm(x.am)); }
+    var A = fa(it), A2 = A.slice(0, 2);
+    function take(arr) {
+      arr = arr.filter(function (x) { return x.key && !used[x.key] && !(x.am === it.am && (x.ns || "") === (it.ns || "")); });
+      var c = arr.filter(function (x) { return x.common; }); if (c.length) arr = c;
+      if (!arr.length) return false;
+      var x = arr[Math.floor(Math.random() * arr.length)]; used[x.key] = 1; out.push(x); return true;
+    }
+    if (it.type === "c") {
+      var C = HC.D.chars, net = it.net || 0;
+      if (it.rad) take(C.filter(function (x) { return x.rad === it.rad; }));
+      take(C.filter(function (x) { return fa(x) === A; })) || take(C.filter(function (x) { return fa(x).slice(0, 2) === A2; }));
+      if (it.rad) take(C.filter(function (x) { return x.rad === it.rad && Math.abs((x.net || 0) - net) <= 2; }));
+    } else if (it.type === "r") { // bộ thủ: 1 số nét gần (±1), 1 gần âm, 1 cùng số nét
+      var R = HC.D.rads, rn = it.net || 0;
+      take(R.filter(function (x) { return Math.abs((x.net || 0) - rn) <= 1; }));
+      take(R.filter(function (x) { return fa(x) === A; })) || take(R.filter(function (x) { return fa(x).slice(0, 2) === A2; }));
+      take(R.filter(function (x) { return (x.net || 0) === rn; }));
+    } else {
+      var ks = u.chars(it.key), n = ks.length, W = HC.D.words.filter(function (x) { return u.chars(x.w).length === n; });
+      take(W.filter(function (x) { return u.chars(x.w).some(function (c) { return ks.indexOf(c) >= 0; }); }));
+      take(W.filter(function (x) { return fa(x).split(" ")[0] === A.split(" ")[0]; }));
+      take(W.filter(function (x) { return u.chars(x.w).some(function (c) { return ks.indexOf(c) >= 0; }); }));
+    }
+    if (out.length < 3) HC.distract(it, 8, "am").forEach(function (x) { if (out.length < 3 && !used[x.key]) { used[x.key] = 1; out.push(x); } });
+    return out.slice(0, 3);
+  }
+  // câu ≤ 16 chữ: xếp cả câu; dài hơn: chia theo vế (mỗi phần ≤ 16 chữ) và xếp lần lượt
+  function sChunks(s) {
+    var u = U(), parts = [], cur = [];
+    u.chars(s.han).forEach(function (ch) { if (u.isHan(ch)) cur.push(ch); else if (cur.length) { parts.push(cur); cur = []; } });
+    if (cur.length) parts.push(cur);
+    var all = [].concat.apply([], parts); if (all.length <= 16) return [all];
+    var out = [], buf = [];
+    parts.forEach(function (p) {
+      while (p.length > 16) { if (buf.length) { out.push(buf); buf = []; } out.push(p.slice(0, 12)); p = p.slice(12); }
+      if (buf.length && buf.length + p.length > 16) { out.push(buf); buf = []; }
+      buf = buf.concat(p);
+    });
+    if (buf.length) out.push(buf);
+    return out;
+  }
+  function khoHan(v, g, items, mode) {
+    var i = 0, score = 0, N = items.length, rec = HC.gmRec();
+    function nxLabel() { return i + 1 < N ? "Câu tiếp →" : "Xem kết quả"; }
+    function result(good, el) { var it = items[i]; if (good) { score++; correct(el); rec.ok(it); } else { wrong(); rec.bad(it); } setScore(v, score); }
+    function round() { var it = items[i]; if (it.type === "s") qOrder(it); else if (mode === "write") qWrite(it); else qChoice(it); }
+    function next() { i++; if (i < N) round(); else ksFinish(v, g, score, N, rec, "Đúng " + score + " trên " + N + " mục"); }
+    // trắc nghiệm 4 lựa chọn
+    function qChoice(it) {
+      var opts = U().shuffle([it].concat(khoDistract(it)));
+      v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="fc" style="min-height:auto">' + ksAns(it) + '<div class="muted">Chọn đúng ' + (it.type === "c" ? "chữ Hán" : it.type === "r" ? "bộ thủ" : "từ Hán") + '</div></div><div class="choices kschoice">' +
+        opts.map(function (o, k) { var n = U().chars(o.key).length; return '<button class="choice" data-k="' + k + '"><span class="han"' + (n > 3 ? ' style="font-size:' + (n > 5 ? 1.15 : 1.45) + 'rem"' : "") + ">" + esc(o.key) + "</span></button>"; }).join("") +
+        '</div><div class="ksfb hide" id="fb" role="status"></div><div class="row acts"><button class="btn primary hide" id="nx">' + nxLabel() + "</button></div></div>";
+      setScore(v, score);
+      var fb = v.querySelector("#fb"), nx = v.querySelector("#nx");
+      nx.onclick = next;
+      U().$$(".kschoice .choice", v).forEach(function (b) {
+        b.onclick = function () {
+          var o = opts[+b.dataset.k], ok = o === it;
+          U().$$(".kschoice .choice", v).forEach(function (x) { x.disabled = true; if (opts[+x.dataset.k] === it) x.classList.add("right"); });
+          if (!ok) b.classList.add("wrong");
+          result(ok, b);
+          fb.className = "ksfb " + (ok ? "ok" : "no");
+          fb.innerHTML = '<div class="verdict">' + (ok ? "Đúng ✓" : "Chưa đúng ✗") + '</div><div><span class="han ksh">' + esc(it.key) + "</span></div>" + (ok ? "" : '<div class="muted">Bạn chọn <span class="han">' + esc(o.key) + "</span> = " + esc(o.am) + " · " + esc(HC.meaningShort(o)) + "</div>");
+          nx.classList.remove("hide"); try { nx.focus(); } catch (e) { }
+        };
+      });
+    }
+    // viết tay: chấm bằng gradeShape (HC.makePad), chỉ bắt buộc chữ phồn thể; 28 chữ hiếm chưa có dữ liệu → tự so với chữ mẫu
+    function qWrite(it) {
+      var scored = false, firstG = null;
+      v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="work"><div class="winfo"><div class="fc" style="min-height:auto">' + ksAns(it).replace('</div>' + HC.meanHTML(it) + '</div>', '</div>' + HC.meanHTML(it) + '<div class="extra">' + U().chars(it.key).length + " chữ · viết chữ phồn thể</div></div>") + "</div></div>" +
+        '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row" id="w1"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="chk">Chấm điểm</button></div>' +
+        '<div class="row hide" id="self"><button class="btn bad" id="sbad">Tôi viết sai</button><button class="btn good" id="sgood">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn primary" id="nx">' + nxLabel() + "</button></div></div></div>" +
+        '<div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div></div></div></div>';
+      setScore(v, score);
+      var q = function (s) { return v.querySelector(s); }, fb = q("#fb");
+      var pad = HC.makePad(q("#padbox"), it.key, { onEdit: function () { if (!scored) fb.classList.add("hide"); } });
+      function say(h) { fb.innerHTML = h; fb.classList.remove("hide"); }
+      function show(id) { ["w1", "self", "aft"].forEach(function (x) { q("#" + x).classList.toggle("hide", x !== id); }); }
+      q("#undo").onclick = pad.undo; q("#clr").onclick = pad.clear; q("#nx").onclick = next;
+      q("#idk").onclick = function () { scored = true; result(false, this); pad.model(true); say('<div class="verdict no">Đã tính là chưa nhớ ✗</div><div class="muted">Chữ mẫu hiện mờ trong ô viết: <span class="han">' + esc(it.key) + "</span></div>"); show("aft"); };
+      q("#sgood").onclick = function () { scored = true; result(true, this); show("aft"); };
+      q("#sbad").onclick = function () { scored = true; result(false, this); show("aft"); };
+      var chk = q("#chk");
+      chk.onclick = function () {
+        if (pad.empty()) { HC.toast("Hãy viết chữ vào ô trước rồi bấm Chấm điểm"); return; }
+        chk.disabled = true; chk.textContent = "Đang chấm…";
+        pad.grade().then(function (res) {
+          chk.disabled = false; chk.textContent = "Chấm điểm";
+          var nod = res.some(function (r) { return r.nodata; }), good = res.every(function (r) { return r.ok || r.nodata; });
+          var lines = res.map(function (r) { return '<div class="' + (r.nodata ? "" : r.ok ? "ok" : "no") + '"><span class="han">' + esc(r.ch) + "</span> " + esc(r.msg) + "</div>"; }).join("");
+          if (nod) { pad.model(true); say(lines + '<div class="verdict">Bạn tự so với chữ mẫu rồi chọn bên dưới</div>'); show("self"); return; }
+          scored = true; firstG = pad.graded(); result(good, chk);
+          var asGt = !good && it.gt && pad.alsoIs(it.gt).some(Boolean) ? '<div class="no">Bạn đã viết dạng rút gọn <span class="han">' + esc(it.gt) + '</span>. Ở đây cần chữ phồn thể <span class="han">' + esc(it.key) + "</span>.</div>" : "";
+          say('<div class="verdict ' + (good ? "ok" : "no") + '">' + (good ? "Đúng ✓" : "Chưa đúng ✗") + "</div>" + asGt + lines + (good ? "" : '<div class="muted">Chữ mẫu hiện mờ phía sau.</div>'));
+          q("#apl").classList.toggle("hide", good);
+          show("aft");
+        }, function () {
+          chk.disabled = false; chk.textContent = "Chấm điểm"; pad.model(true);
+          say('<div class="verdict">Không tải được dữ liệu chấm (có thể đang mất mạng)</div><div class="muted">Tự so với chữ mẫu rồi chọn bên dưới.</div>');
+          show("self");
+        });
+      };
+      q("#appeal").onclick = function () {
+        rec.fix(it); score++; HC.addXP(1, this); setScore(v, score);
+        if (firstG) HC.saveSample(it.key, firstG, pad.size, "dung");
+        q("#apl").classList.add("hide");
+        say('<div class="verdict ok">Đã tính là Đúng ✓</div><div class="muted">Cảm ơn bạn! Chữ này đã được lưu để chỉnh lại cách chấm (Tập viết → Mẫu chấm nhầm).</div>');
+      };
+    }
+    // câu: xếp các chữ theo đúng thứ tự (câu dài: từng vế); đúng khi không bấm sai lần nào
+    function qOrder(it) {
+      var chunks = sChunks(it), ci = 0, miss = 0, over = false;
+      function draw() {
+        var need = chunks[ci], tiles = U().shuffle(need.map(function (c, k) { return { c: c, k: k }; })), pos = 0;
+        v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="card" style="width:min(680px,100%);text-align:center"><div style="font-weight:700">' + esc(it.pa) + '</div><div class="muted">' + esc(it.dn) + '</div><p class="sub" style="margin:6px 0 0">Bấm các chữ theo đúng thứ tự' + (chunks.length > 1 ? " · phần " + (ci + 1) + " / " + chunks.length : "") + "</p></div>" +
+          (ci ? '<div class="sent ksdone">' + esc(chunks.slice(0, ci).map(function (x) { return x.join(""); }).join(" ")) + "</div>" : "") +
+          '<div class="slots" id="sl"></div><div class="tiles" id="tl">' + tiles.map(function (t, j) { return '<button class="tile" data-j="' + j + '">' + esc(t.c) + "</button>"; }).join("") + '</div><div class="ksfb hide" id="fb" role="status"></div><div class="row acts"><button class="btn" id="idk">Không nhớ — xem câu</button><button class="btn primary hide" id="nx">' + nxLabel() + "</button></div></div>";
+        setScore(v, score);
+        v.querySelector("#nx").onclick = next;
+        v.querySelector("#idk").onclick = function () { if (!over) { miss++; end(); } };
+        U().$$("#tl .tile", v).forEach(function (b) {
+          b.onclick = function () {
+            if (over || b.classList.contains("used")) return;
+            var t = tiles[+b.dataset.j];
+            if (t.c === need[pos]) {
+              b.classList.add("used"); v.querySelector("#sl").insertAdjacentHTML("beforeend", '<span class="tile">' + esc(t.c) + "</span>"); pos++; HC.beep(true);
+              if (pos === need.length) { ci++; if (ci < chunks.length) HC.later(draw, 450); else end(); }
+            } else { miss++; wrong(); b.classList.add("pop"); HC.later(function () { b.classList.remove("pop"); }, 300); }
+          };
+        });
+      }
+      function end() {
+        over = true;
+        var good = !miss, fb = v.querySelector("#fb");
+        result(good, v.querySelector("#sl"));
+        U().$$("#tl .tile", v).forEach(function (b) { b.disabled = true; });
+        v.querySelector("#idk").classList.add("hide");
+        fb.className = "ksfb " + (good ? "ok" : "no");
+        fb.innerHTML = '<div class="verdict">' + (good ? "Hoàn hảo ✓" : "Chưa đúng ✗ (bấm sai hoặc xem đáp án)") + '</div><div class="sent">' + esc(it.han) + "</div>";
+        var nx = v.querySelector("#nx"); nx.classList.remove("hide"); try { nx.focus(); } catch (e) { }
+      }
+      draw();
+    }
+    round();
+  }
 
   // ---------- generic quiz runner (Đấu cuối tuần + Thi thử) ----------
   function runQuiz(v, headHTML, qs, done) {
