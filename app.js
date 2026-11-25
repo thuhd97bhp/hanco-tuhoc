@@ -1525,21 +1525,32 @@
     var o = ch.codePointAt(0);
     return isHan(ch) || (o >= 0x20000 && o <= 0x3FFFF) || (o >= 0x3001 && o <= 0x3003) || (o >= 0x3008 && o <= 0x3011) || o === 0xFF01 || o === 0xFF08 || o === 0xFF09 || o === 0xFF0C || o === 0xFF0E || o === 0xFF1A || o === 0xFF1B || o === 0xFF1F;
   }
+  // Ảnh tải xong: bật lớp "on" cho mọi chữ đang chờ — gộp lại 1 lần mỗi khung hình (trước đây mỗi chữ trên trang quét cả trang 1 lần → chậm).
+  var sgMarkWait = false;
+  function sgMark() {
+    sgMarkWait = false;
+    Array.prototype.forEach.call(document.querySelectorAll(".sg:not(.on)"), function (x) { var h = HIMG[x.getAttribute("data-k")]; if (h && h.ok) x.className = "sg on"; });
+  }
+  function sgLoaded() { if (sgMarkWait) return; sgMarkWait = true; (window.requestAnimationFrame || setTimeout)(sgMark); }
   function sgText(tn) {
     var t = tn.nodeValue, p = tn.parentNode;
-    if (!t || !p || p.nodeType !== 1 || !/[^\x00-⹿]/.test(t) || (p.closest && p.closest(SG_SKIP))) return;
+    if (!t || !p || p.nodeType !== 1 || tn._sg === t || !/[^\x00-⹿]/.test(t) || (p.closest && p.closest(SG_SKIP))) return;
     var cs = chars(t); if (!cs.some(sgChar)) return;
-    var f = document.createDocumentFragment(), buf = "";
+    var f = document.createDocumentFragment(), buf = "", made = 0;
+    var flush = function () { if (buf) { var x = document.createTextNode(buf); x._sg = buf; f.appendChild(x); buf = ""; } }; // _sg: chữ do mình tạo, không xử lý lại
     cs.forEach(function (ch) {
       if (!sgChar(ch)) { buf += ch; return; }
       var k = hanKey(ch), h = HIMG[k];
-      if (h && h.bad) { buf += ch; return; }
-      if (buf) { f.appendChild(document.createTextNode(buf)); buf = ""; }
+      if (h && h.bad) { buf += ch; return; } // chữ không có ảnh (vd 查 設 ⺗): giữ nguyên chữ
+      flush(); made++;
       var s = document.createElement("span"); s.className = h && h.ok ? "sg on" : "sg"; s.setAttribute("data-k", k);
       s.style.setProperty("--sg", "url(han/" + k + ".webp)"); s.textContent = ch; f.appendChild(s);
-      if (!(h && h.ok)) hanImg(ch, function () { Array.prototype.forEach.call(document.querySelectorAll('.sg[data-k="' + k + '"]:not(.on)'), function (x) { x.className = "sg on"; }); });
+      if (!(h && h.ok) && !(h && h.sgw)) { hanImg(ch, sgLoaded); HIMG[k].sgw = 1; } // mỗi chữ chỉ hẹn 1 lần
     });
-    if (buf) f.appendChild(document.createTextNode(buf));
+    // Không có chữ nào đổi sang ảnh → KHÔNG thay nút chữ. (Lỗi đơ app: thay bằng nút chữ y hệt → MutationObserver thấy nút mới
+    // → lại thay → lặp vô tận, trình duyệt treo cứng trên máy không có MS Song, gặp chữ không có ảnh như ký hiệu thanh mục 查 設.)
+    if (!made) { tn._sg = t; return; }
+    flush();
     p.replaceChild(f, tn);
   }
   function sgScan(n) {
@@ -1554,7 +1565,7 @@
     var scan = function (n) { if (n.nodeType !== 1) return; if (n.classList.contains("big")) songify(n); Array.prototype.forEach.call(n.querySelectorAll(".big"), songify); };
     new MutationObserver(function (ms) {
       ms.forEach(function (m) {
-        Array.prototype.forEach.call(m.addedNodes, function (n) { scan(n); if (n.parentNode) sgScan(n); });
+        Array.prototype.forEach.call(m.addedNodes, function (n) { if (n.nodeType === 1 && n.classList.contains("sg")) return; scan(n); if (n.parentNode) sgScan(n); }); // .sg = chữ mình vừa bọc, không cần quét
         var t = m.target.nodeType === 1 ? m.target : m.target.parentNode;
         var b = t && t.closest ? t.closest(".big") : null; if (b) songify(b);
         if (m.type === "characterData" && m.target.parentNode) sgText(m.target);
