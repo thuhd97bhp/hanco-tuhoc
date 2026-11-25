@@ -27,11 +27,15 @@
   hanzii.net) cho HOẠT HÌNH VIẾT CHỮ thay chữ to ở thẻ học / khung chi tiết (`aniHTML`/`aniStart` trong app.js; người dùng
   yêu cầu thay hẳn chữ to MS Song bằng hoạt hình). Chữ không có dữ liệu (28 chữ hiếm) → hiện chữ MS Song như cũ. Sinh bằng
   `cd tools && python build_order.py`. Thêm chữ mới vào dữ liệu → chạy lại lệnh này.
-- `han/<mã hex>.webp` = ảnh từng chữ vẽ bằng MS Song (320x320, chữ 256px ở giữa), dùng cho chữ mẫu ở ô tập viết và chữ to `.big`
-  trên máy KHÔNG cài MS Song (điện thoại). Sinh bằng `python tools/render_han.py` rồi mở http://127.0.0.1:8770/render_han.html
-  trên máy Windows có MS Song. Thêm chữ mới vào dữ liệu → PHẢI chạy lại cả 2 lệnh trên (release.py sẽ dừng nếu thiếu ảnh).
-  Thử giao diện ảnh trên máy có MS Song: thêm `?song=img` vào địa chỉ. Chỉ vẽ chữ chưa có ảnh: `render_han.py --missing`
-  (chữ MS Song không có, vd ⺗ ⺮ ⻗: xóa ảnh vẽ ra — app vẽ từ dữ liệu nét).
+- `han/<mã hex>.webp` = ảnh từng chữ vẽ bằng MS Song (320x320, chữ 256px ở giữa). Trên máy KHÔNG cài MS Song (máy tính bảng,
+  điện thoại) app đổi MỌI chữ Hán trên trang sang ảnh này (`songWatch`/`sgText` trong app.js; chữ to `.big`, chữ mẫu ô tập viết).
+  Xem luật "Ảnh chữ" ở Luật nội dung. Vẽ: `python tools/render_han.py --missing` (khởi động sẵn: launch.json `renderhan-thieu`) rồi
+  mở http://127.0.0.1:8770/render_han.html trên máy Windows có MS Song; `--list` = chỉ xem chữ còn thiếu + phông sẽ dùng.
+  Danh sách chữ cần ảnh = `render_han.wanted()` (dữ liệu, `giai/`, chữ mẫu `app-strokes.json`, chữ trong app.js/games.js/index.html).
+  Chữ MS Song không có (dạng bộ ⺈⺌⺗⺮⺳⺶⻗, chữ hiếm vùng mở rộng 𧾷𦥑𫘨𫜪) → phông Tống dự phòng, canh cỡ + độ cao theo MS Song
+  bằng chữ mẫu chung (`refs`); chữ nào dùng phông nào ghi ở `tools/work/han_font.txt`. Thử giao diện ảnh trên máy có MS Song: thêm
+  `?song=img` vào địa chỉ. LƯU Ý mã `sgText`: chữ không có ảnh phải để NGUYÊN nút chữ (thay bằng nút y hệt → MutationObserver lặp
+  vô tận → app đơ cứng trên máy tính bảng — lỗi đã gặp 25/11/2026).
 - DẠNG RÚT GỌN + DẠNG BỘ (người dùng yêu cầu 24/11/2026): chữ/từ có `gt` = dạng rút gọn (giản thể) — tài liệu không ghi nên tra
   bằng OpenCC (`pip install opencc`, t2s đổi theo cả cụm từ; sửa tay ở `tools/work/gianthe_sua.txt`), app luôn ghi ※ "tra từ
   điển"; `gtc` chữ khác cùng dạng rút gọn (發/髮 → 发), `gts` dạng rút gọn trùng một chữ phồn thể khác (後 → 后), `dt` dị thể
@@ -95,6 +99,13 @@
   ghi chú, và BÁO người dùng. Mẹo nhớ không có trong đề cương phải ghi rõ là mẹo nhớ. Không tự bịa nội dung thi.
 - Chữ Hán luôn hiện bằng font **MS Song** (`--f-han`), dự phòng SimSun/PMingLiU/Noto Serif TC. Dùng chữ phồn thể
   như đề cương. Không nhúng/phát hành file font MS Song (Founder, fsType = Restricted License) — chỉ phát hành ẢNH chữ đã vẽ (`han/`).
+- ẢNH CHỮ — BẮT BUỘC, TỰ LÀM KHÔNG CẦN HỎI (người dùng yêu cầu 25/11/2026): MỌI chữ Hán app có thể hiện — chữ/từ/câu mới,
+  chữ trong giải thích `giai/`, chữ mẫu chấm nét, chữ thêm vào mã giao diện (vd ký hiệu thanh mục `MENU_IC`) — PHẢI có ảnh `han/`
+  vẽ bằng MS Song. Hễ thêm/đổi chữ ở đâu thì tự chạy `render_han.py --missing` + vẽ ngay trong cùng lượt làm việc, KHÔNG trả lời
+  4 mục, không hỏi. Chữ MS Song không có → `render_han.py` tự vẽ bằng phông kiểu Tống gần nhất có chữ đó (FZSong Superfont cùng
+  hãng Founder → SimSun-ExtB → Adobe Song Std, chọn theo bảng mã phông, đã canh theo MS Song), ghi vào `tools/work/han_font.txt`
+  và BÁO người dùng chữ nào không phải MS Song. Không phông nào có → báo người dùng. Sau khi vẽ: xem lại ảnh mới bằng mắt (cạnh ảnh
+  MS Song cũ: không lệch, không cắt nét, không ô trống). `release.py` DỪNG nếu còn chữ thiếu ảnh.
 - "Thông dụng" = xuất hiện ≥ 3 lần trong tất cả tài liệu hoặc có trong một đề cương / đề thi (hiện 759 chữ, 850 từ).
   Từ 1 chữ không lặp lại ở danh sách từ.
 - Lộ trình (người dùng yêu cầu 23/11/2026): mọi chữ, từ, câu, loại từ của KỲ THI SẮP TỚI (mục `fo`, hiện giữa kỳ 3:
@@ -124,6 +135,10 @@ Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 F
   http.server; `layoutSeed()` nếu chưa có thẻ đã học, rồi `await layoutCheck()`), ở đủ các khung: điện thoại dọc 375×660 và
   375×812, điện thoại ngang 740×360, máy tính bảng ngang 1280×650 và 1280×590, máy tính bảng dọc 800×1180, máy tính 1366×650
   và 1920×960. Phải không còn dòng "LOI". Màn mới → thêm tên màn vào danh sách trong script nếu script chưa tự đi tới.
+- Chạy kiểm tra trên Ở CẢ CHẾ ĐỘ ẢNH CHỮ (người dùng yêu cầu 25/11/2026): mở trang với `?song=img` (giống máy tính bảng / điện
+  thoại không có MS Song) và chạy lại `layoutCheck()` ở đủ 8 khung. Chế độ này chạy thêm mã đổi chữ sang ảnh nên lỗi chỉ xảy ra
+  trên máy tính bảng (vd app đơ cứng) chỉ thấy được ở đây. Đạt khi: không dòng "LOI", lệnh chạy xong không bị treo (trang treo →
+  lệnh javascript_tool hết giờ), và khung trình duyệt phải đang HIỆN (khung ẩn làm sai số đo thời gian).
 
 ## Cách làm việc
 - Chỉ sửa file được yêu cầu, không refactor lan man; giữ ES5 + `HC.u` helpers, chuỗi giao diện tiếng Việt.
@@ -165,12 +180,13 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
    chọn sao cho mỗi ngày ≤ ~20 chữ + ~20 từ và chừa tuần cuối để ôn + thi thử (lần này: 5 tuần). Tiến độ đã học giữ nguyên;
    thẻ đã học vẫn ôn theo lịch SRS cũ. Các con số trên giao diện lấy từ dữ liệu, không ghi cứng.
 7. Sinh lại: `build.py`, `build_app.py` (id cũ phải giữ — xem luật id), `check_update.py` (phải ĐẠT), `build_strokes.py`,
-   `build_order.py`, ảnh `han/` cho chữ mới (render_han; giữ nguyên ảnh cũ: `git checkout -- han` sau khi vẽ),
-   `python sach_khop.py` (dò chữ mới trong sách; chỗ "cần soát" mở trang sách xem) rồi `python sach_pack.py` (sach.json + gói
+   `build_order.py`, `python sach_khop.py` (dò chữ mới trong sách; chỗ "cần soát" mở trang sách xem) rồi `python sach_pack.py` (sach.json + gói
    hình; có trang MỚI thì nhắc người dùng đưa lại gói ở Cài đặt → Hình trang sách — chỉ trang mới/đổi được ghi), `python build_giai.py` (mọi chữ mới có
    file giai/ với pinyin), rồi SOẠN giải thích cho MỌI chữ mới theo `tools/work/giai/README.txt` + yêu cầu trong
    `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` (tệp dot mới) và chạy lại `build_giai.py`. `check_update.py` cảnh báo chữ
    chưa có giải thích / chưa dò sách; `release.py --check` dừng nếu thiếu file giai/.
+   CUỐI CÙNG (sau khi soạn xong giải thích, vì lời giải thích cũng có chữ Hán): vẽ ảnh `han/` cho MỌI chữ còn thiếu —
+   `python tools/render_han.py --missing` + mở trang vẽ (theo luật "Ảnh chữ"; chỉ vẽ chữ thiếu, ảnh cũ giữ nguyên).
 8. Kiểm tra: node --check; chạy app ở máy (Học mới, Câu, Loại từ, Tra cứu chữ mới, Thi thử đề mới, bản điện thoại);
    mô phỏng lộ trình theo ngày; thử tiến độ cũ + `merge()` (không mất mục nào); đối chiếu luật "Mục mới phải đủ"
    (chữ/từ/câu mới có đủ mọi thứ mục cũ có — liệt kê mục còn thiếu, không bỏ qua im lặng).
@@ -178,6 +194,7 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
    kết quả kiểm tra → hỏi deploy. Được đồng ý → `release.py` → commit → push → mở link thật kiểm tra.
 
 ## Quy trình trước khi sửa — BẮT BUỘC
+- Ngoại lệ (người dùng yêu cầu 25/11/2026): vẽ ảnh `han/` cho chữ còn thiếu (luật "Ảnh chữ" ở Luật nội dung) → tự làm, không hỏi.
 - Khi người dùng yêu cầu sửa/thêm/xóa bất cứ gì (mã, dữ liệu, giao diện, luật, deploy), KHÔNG sửa ngay.
   Trả lời trước bằng 4 mục rồi DỪNG, chờ người dùng đồng ý:
   1. Ý hiểu: nhắc lại yêu cầu bằng lời của mình (nêu rõ chỗ còn mơ hồ và cách mình định hiểu).
