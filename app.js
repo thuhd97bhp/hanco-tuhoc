@@ -382,6 +382,7 @@
       return col.get().then(function (qs) {
         var ids = qs.docs.map(function (d) { return d.id; }).sort();
         var old = ids.slice(0, Math.max(0, ids.length - 14));
+        try { var o = demGet(); o.nb = o.nb || {}; o.nb[fb.user.uid] = ids.length - old.length; demSave(); } catch (e) { } // số bản sao lưu (ước tính dung lượng)
         return Promise.all(old.map(function (id) { return col.doc(id).delete(); }));
       });
     });
@@ -434,10 +435,146 @@
       return true;
     });
   };
+  // ---------- BỘ ĐẾM HẠN MỨC (Bước 5 kế hoạch nhiều người dùng) ----------
+  // App không đọc được số hạn mức chính thức (chỉ có ở console) → MỖI MÁY tự đếm: lượt đọc r / ghi w / xóa x Firestore, byte tải từ
+  // Firestore b (ước tính = độ dài dữ liệu nhận + ~100), byte tải từ Hosting h (sw.js đếm tệp đi qua service worker vào đệm "dem-v1";
+  // tệp không qua service worker thì trang tự đếm bằng Resource Timing). Chia NGÀY HẠN MỨC theo giờ Thái Bình Dương (Google đặt lại hạn
+  // mức ngày lúc 0 giờ PT = 15:00 giờ VN, 14:00 mùa hè bên Mỹ). localStorage DEM_LS = {id mã máy, d, r,w,x,b,h, y {hôm trước}, mo, m {tháng},
+  // hs tổng byte sw.js đã tính, t}. Gửi kèm bản thống kê (tk.q[id máy]) ≤ 1 lần/giờ; máy quản trị ghi hanco_qt/dem. Tất cả là ƯỚC TÍNH.
+  var DEM_LS = "hanco-dem", DEM_SW = "dem-v1", DEM_KEY = "./__dem", DEM_K = ["r", "w", "x", "b", "h"], dem = null, demT = null;
+  var PT_F = null; try { PT_F = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", year: "numeric", month: "numeric", day: "numeric" }); } catch (e) { }
+  function ptDay(ms) {
+    if (ms == null) ms = Date.now();
+    if (PT_F) { try { var p = PT_F.format(new Date(ms)).replace(/[^\d\/]/g, "").split("/"), d = Math.round(Date.UTC(+p[2], +p[0] - 1, +p[1]) / 864e5); if (d > 0) return d; } catch (e) { } }
+    return Math.floor((ms - 8 * 3600e3) / 864e5); // không có Intl: coi như UTC−8
+  }
+  function ptMon(d) { var x = new Date(d * 864e5); return x.getUTCFullYear() * 100 + x.getUTCMonth() + 1; }
+  function demZero() { return { r: 0, w: 0, x: 0, b: 0, h: 0 }; }
+  function demGet() {
+    if (dem) return dem;
+    var o = jget(DEM_LS);
+    if (!o.id) o.id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
+    DEM_K.forEach(function (k) { o[k] = +o[k] || 0; });
+    if (!o.m) o.m = demZero();
+    dem = o; demRoll(); return dem;
+  }
+  function demRoll() { // sang ngày / tháng hạn mức mới
+    var o = dem, t = ptDay(), mo = ptMon(t);
+    if (o.d !== t) {
+      if (o.d) { o.y = { d: o.d }; DEM_K.forEach(function (k) { o.y[k] = Math.round(o[k]); }); }
+      DEM_K.forEach(function (k) { o[k] = 0; }); o.d = t;
+    }
+    if (o.mo !== mo) { o.m = demZero(); o.mo = mo; }
+  }
+  function demAdd(k, n) {
+    if (!(n > 0)) return;
+    try {
+      var o = demGet(); demRoll(); o[k] += n; o.m[k] += n; o.t = Date.now();
+      if (!demT) demT = setTimeout(demSave, 3000);
+    } catch (e) { }
+  }
+  function demSave() { clearTimeout(demT); demT = null; if (dem) lsSet(DEM_LS, JSON.stringify(dem)); }
+  HC.demAdd = demAdd;
+  // bản gửi đi (bỏ hs; làm tròn)
+  function demOut() {
+    var o = demGet(); demRoll();
+    var e = { d: o.d, mo: o.mo, t: o.t || Date.now(), m: {} };
+    DEM_K.forEach(function (k) { e[k] = Math.round(o[k]); e.m[k] = Math.round(o.m[k] || 0); });
+    if (o.y) e.y = o.y;
+    return e;
+  }
+  HC.demOut = demOut;
+  // byte Hosting sw.js đã đếm (tổng cộng dồn trong đệm DEM_SW) → cộng phần tăng thêm vào h
+  function demPull() {
+    if (!window.caches || !caches.open) return Promise.resolve();
+    return caches.open(DEM_SW).then(function (c) { return c.match(DEM_KEY); }).then(function (r) { return r ? r.json() : null; }).then(function (j) {
+      if (!j || !(+j.b >= 0)) return;
+      var o = demGet(), b = +j.b, hs = +o.hs || 0, d = b >= hs ? b - hs : b; // đệm bị xóa → sw.js đếm lại từ 0
+      o.hs = b; if (d > 0) demAdd("h", d); else demSave();
+    }).catch(function () { });
+  }
+  HC.demPull = demPull;
+  // tệp cùng trang KHÔNG qua service worker (lần mở đầu tiên, trình duyệt không có service worker): trang tự đếm (workerStart = 0)
+  function demPerf() {
+    try {
+      if (!window.PerformanceObserver) return;
+      var me = location.origin;
+      var po = new PerformanceObserver(function (l) {
+        l.getEntries().forEach(function (e) { if (e.name.indexOf(me) === 0 && !(e.workerStart > 0) && e.transferSize > 0) demAdd("h", e.transferSize); });
+      });
+      po.observe({ type: "resource", buffered: true });
+    } catch (e) { }
+  }
+  // gắn bộ đếm vào thư viện Firestore (compat) — CHỈ đếm, trả nguyên kết quả lệnh gốc; thư viện khác dạng thì không gắn
+  function demPatch() {
+    var F = window.firebase && firebase.firestore;
+    if (!F || F.__dem || !F.DocumentReference || !F.Query) return;
+    F.__dem = 1;
+    function wrap(P, name, fn) { if (P && typeof P[name] === "function") { var o = P[name]; P[name] = function () { return fn.call(this, o, arguments); }; } }
+    function sz(s) { try { return s && s.exists !== false && s.data ? JSON.stringify(s.data() || {}).length + 100 : 100; } catch (e) { return 100; } }
+    function one(s) { if (s && s.metadata && !s.metadata.fromCache) { demAdd("r", 1); demAdd("b", sz(s)); } return s; }
+    function many(q, docs) { if (q && q.metadata && !q.metadata.fromCache) { demAdd("r", Math.max(1, docs.length)); docs.forEach(function (d) { demAdd("b", sz(d)); }); if (!docs.length) demAdd("b", 100); } return q; }
+    function after(p, k, n) { return p && p.then ? p.then(function (v) { demAdd(k, n); return v; }) : p; }
+    var D = F.DocumentReference.prototype, Q = F.Query.prototype;
+    wrap(D, "get", function (o, a) { return o.apply(this, a).then(one); });
+    wrap(D, "set", function (o, a) { return after(o.apply(this, a), "w", 1); });
+    wrap(D, "update", function (o, a) { return after(o.apply(this, a), "w", 1); });
+    wrap(D, "delete", function (o, a) { return after(o.apply(this, a), "x", 1); });
+    function qget(o, a) { return o.apply(this, a).then(function (q) { return many(q, q.docs || []); }); }
+    wrap(Q, "get", qget);
+    if (F.CollectionReference && F.CollectionReference.prototype.hasOwnProperty("get")) wrap(F.CollectionReference.prototype, "get", qget);
+    // nghe theo thời gian thực: tính bản từ máy chủ có dữ liệu khác bản trước (bỏ bản từ đệm, bản đang chờ ghi, chỉ đổi metadata)
+    function lis(isQ) {
+      return function (o, a) {
+        var args = Array.prototype.slice.call(a), last = null, first = true, i;
+        function seen(s) {
+          try {
+            var m = s.metadata || {}, live = !m.fromCache && !m.hasPendingWrites;
+            if (isQ) {
+              if (!live) return;
+              if (first) { first = false; many(s, s.docs || []); return; }
+              var dd = (s.docChanges ? s.docChanges() : []).filter(function (c) { return c.type !== "removed"; }).map(function (c) { return c.doc; });
+              if (dd.length) many(s, dd);
+            } else {
+              var j = s.exists ? JSON.stringify(s.data() || {}) : "";
+              if (live && (first || j !== last)) { first = false; demAdd("r", 1); demAdd("b", j.length + 100); }
+              last = j;
+            }
+          } catch (e) { }
+        }
+        for (i = 0; i < args.length; i++) {
+          if (typeof args[i] === "function") { args[i] = (function (f) { return function (s) { seen(s); return f.apply(this, arguments); }; })(args[i]); break; }
+          if (args[i] && typeof args[i].next === "function") {
+            args[i] = (function (ob) { return { next: function (s) { seen(s); return ob.next.apply(ob, arguments); }, error: ob.error && ob.error.bind(ob), complete: ob.complete && ob.complete.bind(ob) }; })(args[i]);
+            break;
+          }
+        }
+        return o.apply(this, args);
+      };
+    }
+    wrap(D, "onSnapshot", lis(false));
+    wrap(Q, "onSnapshot", lis(true));
+    var B = F.WriteBatch && F.WriteBatch.prototype;
+    if (B) {
+      wrap(B, "set", function (o, a) { this.__w = (this.__w || 0) + 1; return o.apply(this, a); });
+      wrap(B, "update", function (o, a) { this.__w = (this.__w || 0) + 1; return o.apply(this, a); });
+      wrap(B, "delete", function (o, a) { this.__x = (this.__x || 0) + 1; return o.apply(this, a); });
+      wrap(B, "commit", function (o, a) { var me = this; return o.apply(this, a).then(function (v) { demAdd("w", me.__w || 0); demAdd("x", me.__x || 0); return v; }); });
+    }
+    var T = F.Transaction && F.Transaction.prototype; // transaction chạy lại khi xung đột → đếm dư chút ít
+    if (T) {
+      wrap(T, "get", function (o, a) { return o.apply(this, a).then(function (s) { demAdd("r", 1); demAdd("b", sz(s)); return s; }); });
+      wrap(T, "set", function (o, a) { demAdd("w", 1); return o.apply(this, a); });
+      wrap(T, "update", function (o, a) { demAdd("w", 1); return o.apply(this, a); });
+      wrap(T, "delete", function (o, a) { demAdd("x", 1); return o.apply(this, a); });
+    }
+  }
+  try { addEventListener("pagehide", demSave); document.addEventListener("visibilitychange", function () { if (document.hidden) { demSave(); tkSend(); } }); } catch (e) { }
   function fbInit() {
     if (!window.firebase || !firebase.initializeApp) return tkNoFb();
     try {
       var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_CONFIG);
+      try { demPatch(); demPerf(); } catch (e) { }
       fb.auth = firebase.auth(); fb.db = firebase.firestore(); fb.on = true;
       fb.auth.languageCode = "vi"; // email xác nhận / đặt lại mật khẩu + trang bấm link bằng tiếng Việt
       if (TK_EMU) { fb.auth.useEmulator("http://127.0.0.1:9099", { disableWarnings: true }); fb.db.useEmulator("127.0.0.1", 8080); }
@@ -933,17 +1070,53 @@
     });
   }
   HC.sumOf = sumOf;
+  // bộ đếm hạn mức (Bước 5): gửi kèm tk.q {mã máy: số đếm} (giữ dòng của máy khác cùng tài khoản, bỏ máy im > 40 ngày, tối đa 6 máy)
+  // + tk.nb số bản sao lưu. Chỉ số đếm thay đổi thì KHÔNG tự gửi, trừ khi đã quá 1 giờ VÀ dùng nhiều (≥ 20 lượt / ≥ 1 MB) kể từ lần gửi
+  // trước — chính lần gửi bản thống kê (1 ghi) không đủ để gửi lại → không có vòng gửi mãi khi để app mở.
+  function demBusy(g) {
+    var e = demOut(), ops = e.m.r + e.m.w + e.m.x, by = e.m.b + e.m.h;
+    var big = g.qmo !== e.mo ? ops + by > 0 : ops - (+g.qo || 0) >= 20 || by - (+g.qb || 0) >= 1048576;
+    return { e: e, big: big, ops: ops, by: by };
+  }
+  function demQ(prev, e) {
+    var id = demGet().id, q = {}, now = Date.now(), ks;
+    Object.keys(prev || {}).forEach(function (k) { var x = prev[k]; if (k !== id && x && +x.t > now - 40 * 864e5) q[k] = x; });
+    q[id] = e;
+    ks = Object.keys(q).sort(function (a, b) { return (+q[b].t || 0) - (+q[a].t || 0); });
+    ks.slice(6).forEach(function (k) { delete q[k]; });
+    return q;
+  }
   function tkSend() {
-    if (!TK_GATE || !fb.user || isAdmin() || tk.st !== "ok" || !tk.prof || !fb.ref || !fb.remOk || tk.sending) return;
-    var u = fb.user, g = jget(TKS_LS); if (g.u !== u.uid) g = {};
-    var s; try { s = sumOf(S); } catch (e) { return; }
-    var sig = JSON.stringify(s, function (k, v) { return k === "t" ? undefined : v; });
-    if (sig === g.h) return; // không có gì mới
-    if (Date.now() - (g.t || 0) < TK_GAP && s.last === g.l) return; // ≤ 1 lần/giờ (trừ khi ngày học cuối vừa đổi)
+    if (!TK_GATE || !fb.user || tk.st !== "ok" || !fb.ref || !fb.remOk || tk.sending) return;
+    var u = fb.user;
+    if (!isAdmin() && !tk.prof) return;
     tk.sending = true;
-    fb.db.collection("hanco_users").doc(u.uid).update({ tk: s, upd: Date.now() }).then(function () {
-      lsSet(TKS_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: sig, l: s.last }));
-    }, function () { }).then(function () { tk.sending = false; });
+    demPull().then(function () {
+      if (fb.user !== u) return;
+      if (isAdmin()) return demQtSend(u);
+      var g = jget(TKS_LS); if (g.u !== u.uid) g = {};
+      var s; try { s = sumOf(S); } catch (e) { return; }
+      var sig = JSON.stringify(s, function (k, v) { return k === "t" ? undefined : v; });
+      var bz = demBusy(g), late = Date.now() - (g.t || 0) >= TK_GAP;
+      if (sig === g.h) { if (!late || !bz.big) return; } // không có gì mới (số đếm hạn mức: xem trên)
+      else if (!late && s.last === g.l) return; // ≤ 1 lần/giờ (trừ khi ngày học cuối vừa đổi)
+      var pt = (tk.prof && tk.prof.tk) || {}, nb = (demGet().nb || {})[u.uid];
+      s.q = demQ(pt.q, bz.e);
+      if (nb >= 0) s.nb = nb; else if (pt.nb >= 0) s.nb = pt.nb;
+      return fb.db.collection("hanco_users").doc(u.uid).update({ tk: s, upd: Date.now() }).then(function () {
+        lsSet(TKS_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: sig, l: s.last, qmo: bz.e.mo, qo: bz.ops, qb: bz.by }));
+      }, function () { });
+    }).then(function () { tk.sending = false; }, function () { tk.sending = false; });
+  }
+  // máy quản trị không gửi bản thống kê → ghi số đếm vào hanco_qt/dem {q: {mã máy: số đếm}} (cùng nhịp ≤ 1 lần/giờ khi dùng nhiều)
+  var DEM_QT = "hanco-dem-qt";
+  function demQtSend(u) {
+    var g = jget(DEM_QT), bz = demBusy(g);
+    if (Date.now() - (+g.t || 0) < TK_GAP || !bz.big) return;
+    var q = {}; q[demGet().id] = bz.e;
+    return qtRef("hanco_qt", "dem").set({ q: q }, { merge: true }).then(function () {
+      lsSet(DEM_QT, JSON.stringify({ t: Date.now(), qmo: bz.e.mo, qo: bz.ops, qb: bz.by }));
+    }, function () { });
   }
   HC.tkSend = tkSend;
 
@@ -971,14 +1144,21 @@
     var db = fb.db;
     return Promise.all([
       db.collection("hanco_users").get(), qtRef("hanco_qt", "ma").get(), qtRef("hanco_qt", "daxoa").get(), qtRef("hanco_qt", "tuxoa").get(),
-      qtRef("hanco_cfg", "dk").get(), qtRef("hanco_cfg", "chung").get()
+      qtRef("hanco_cfg", "dk").get(), qtRef("hanco_cfg", "chung").get(),
+      // hạn mức (Bước 5): số đếm các máy quản trị, độ dài hình sách đã đưa lên, dung lượng bản Hosting (release.py ghi), byte sw.js đã đếm
+      qtRef("hanco_qt", "dem").get().catch(function () { return null; }),
+      fb.ref ? fb.ref.collection("sach").doc("info").get().catch(function () { return null; }) : null,
+      fetch("dung-luong.json", { cache: "no-store" }).then(function (x) { return x.ok ? x.json() : null; }).catch(function () { return null; }),
+      demPull()
     ]).then(function (r) {
       var users = r[0].docs.filter(function (d) { return d.id !== ADMIN_UID; }).map(function (d) {
         var x = d.data(); x.uid = d.id; x.taoMs = x.tao && x.tao.toMillis ? x.tao.toMillis() : (+x.upd || 0); return x;
       });
       QT = {
         t: Date.now(), users: users, ma: r[1].exists ? r[1].data() : { so: {}, next: 1 }, dx: r[2].exists ? (r[2].data().ds || []) : [],
-        kh: r[3].exists ? (r[3].data().kh || {}) : {}, dk: r[4].exists ? r[4].data() : { tran: 120, dem: 0, mo: true }, ch: r[5].exists ? r[5].data() : {}, msg: ""
+        kh: r[3].exists ? (r[3].data().kh || {}) : {}, dk: r[4].exists ? r[4].data() : { tran: 120, dem: 0, mo: true }, ch: r[5].exists ? r[5].data() : {}, msg: "",
+        dem: r[6] && r[6].exists ? r[6].data() : {}, sach: r[7] && r[7].exists ? r[7].data() : {}, host: r[8] && +r[8].b > 0 ? r[8] : null,
+        real: QT && QT.real, realMsg: QT && QT.realMsg
       };
       if (!QT.ma.so) QT.ma.so = {};
       chungSet(QT.ch, true);
@@ -1064,16 +1244,184 @@
   function qtLastTxt(r) { return r.last ? (r.idle <= 0 ? "hôm nay" : r.idle === 1 ? "hôm qua" : r.idle + " ngày trước") : r.tk ? "chưa học" : "chưa có số liệu"; }
   function qtLagTxt(r) { return r.lag == null ? "—" : r.lag > 0 ? '<span class="chip warn">chậm ' + r.lag + " mục</span>" : r.lag < 0 ? '<span class="chip ok">nhanh ' + (-r.lag) + " mục</span>" : "đúng lịch"; }
   function qtStTxt(st) { return st === "khoa" ? '<span class="chip warn">đang khóa</span>' : st === "xoa" ? '<span class="chip k10">đã chặn</span>' : '<span class="chip ok">đang học</span>'; }
+  // ---------- DUNG LƯỢNG & HẠN MỨC (Bước 5) — cộng số đếm của mọi máy, so với hạn mức gói Spark. ƯỚC TÍNH ±10–20%. ----------
+  // Hạn mức (kiểm tra lại ở trang giá Firebase khi cần): Firestore 50.000 đọc / 20.000 ghi / 20.000 xóa mỗi ngày, lưu 1 GiB, tải ra
+  // 10 GiB/tháng; Hosting lưu 10 GB, tải ra 360 MB/ngày. Ngày hạn mức theo giờ Thái Bình Dương (ptDay).
+  var QT_LIM = { r: 50000, w: 20000, x: 20000, hd: 360 * 1048576, bm: 10 * 1073741824, fs: 1073741824, hs: 10 * 1073741824 };
+  var QT_USAGE = "https://console.firebase.google.com/project/hanco-tuhoc/usage";
+  function fmtB(n) {
+    n = +n || 0;
+    var u = ["B", "KB", "MB", "GB"], i = 0;
+    while (n >= 1024 && i < 3) { n /= 1024; i++; }
+    return (i ? n.toLocaleString("vi-VN", { maximumFractionDigits: n < 10 ? 1 : 0 }) : Math.round(n)) + " " + u[i];
+  }
+  function qtUse() {
+    var t = ptDay(), mo = ptMon(t), all = {}, me = demGet().id;
+    function put(id, e, who) { if (e && typeof e === "object" && (!all[id] || (+e.t || 0) >= (+all[id].e.t || 0))) all[id] = { e: e, who: who }; }
+    QT.users.forEach(function (u) { var q = u.tk && u.tk.q; if (q && typeof q === "object") Object.keys(q).forEach(function (id) { put(id, q[id], u); }); });
+    var dq = (QT.dem && QT.dem.q) || {};
+    Object.keys(dq).forEach(function (id) { put(id, dq[id], null); });
+    put(me, demOut(), null); // máy quản trị đang dùng: số mới nhất ở máy
+    function add(dst, src) { DEM_K.forEach(function (k) { dst[k] += +src[k] || 0; }); }
+    var sum = { d: demZero(), y: demZero(), m: demZero() }, per = {}, nDev = 0;
+    Object.keys(all).forEach(function (id) {
+      var e = all[id].e, w = all[id].who, key = w ? w.uid : "qt", p = per[key] || (per[key] = { u: w, d: demZero(), y: demZero(), m: demZero(), n: 0 });
+      var yy = e.d === t - 1 ? e : e.y && e.y.d === t - 1 ? e.y : null, used = false;
+      if (e.d === t) { add(sum.d, e); add(p.d, e); used = true; }
+      if (yy) { add(sum.y, yy); add(p.y, yy); used = true; }
+      if (e.mo === mo && e.m) { add(sum.m, e.m); add(p.m, e.m); used = true; }
+      if (used) { p.n++; nDev++; }
+    });
+    // dung lượng Firestore: tiến độ × (1 + số bản sao lưu) + hồ sơ (kèm bản thống kê) + hình sách + phần khác, cộng ~15% chỉ mục
+    var t0 = today(), prog = 0, prof = 0, sach = 0, other = 50 * 1024;
+    QT.users.forEach(function (u) {
+      try { prof += JSON.stringify(u).length + 200; } catch (e) { }
+      if (u.st === "xoa" || !u.tk || !(u.tk.sz > 0)) return;
+      var nb = u.tk.nb >= 0 ? +u.tk.nb : Math.min(14, Math.max(1, t0 - dayOfMs(u.taoMs || Date.now()) + 1));
+      prog += u.tk.sz * (1 + nb);
+    });
+    var nbA = (demGet().nb || {})[fb.user ? fb.user.uid : ""];
+    prog += JSON.stringify(S).length * (1 + (nbA >= 0 ? nbA : 14));
+    var ss = (QT.sach && QT.sach.sz) || {};
+    Object.keys(ss).forEach(function (k) { sach += (+ss[k] || 0) + 200; });
+    try { other += JSON.stringify([QT.ma, QT.dx, QT.kh, QT.ch, QT.dk, QT.dem]).length + QT.users.length * 150; } catch (e) { }
+    var fs = Math.round((prog + prof + sach + other) * 1.15);
+    return { t: t, mo: mo, sum: sum, per: per, nDev: nDev, st: { prog: prog, prof: prof, sach: sach, other: other, fs: fs }, host: QT.host };
+  }
+  // số dùng cho thanh: đọc/ghi/xóa lấy SỐ THẬT (Google Cloud) nếu vừa lấy được, còn lại là ước tính
+  function qtVal(U, per, k) { var R = QT.real; return R && R[per] && R[per][k] != null ? { v: R[per][k], real: true } : { v: U.sum[per][k], real: false }; }
+  function qtPct(v, lim) { return lim ? v / lim * 100 : 0; }
+  function qtBar(lbl, v, lim, f, sub) {
+    var p = qtPct(v, lim), c = p > 80 ? "bad" : p >= 50 ? "mid" : "ok", w = Math.min(100, p);
+    return '<div class="qtbar ' + c + '"><div class="qtbl"><b>' + lbl + "</b><span>" + f(v) + " / " + f(lim) + " · <b>" + (p > 0 && p < 1 ? "&lt;1" : Math.round(p)) + "%</b></span></div>" +
+      '<div class="qtbt" role="progressbar" aria-label="' + esc(lbl.replace(/<[^>]+>/g, "")) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(w) + '"><i style="width:' + w.toFixed(1) + '%"></i></div>' +
+      (sub ? "<small>" + sub + "</small>" : "") + "</div>";
+  }
+  function fmtN(n) { return fmt(Math.round(+n || 0)); }
+  function qtDayBars(U, per) {
+    var r = qtVal(U, per, "r"), w = qtVal(U, per, "w"), x = qtVal(U, per, "x"), tag = function (o) { return o.real ? ' <span class="chip ok">số thật</span>' : ""; };
+    return qtBar("Firestore — đọc" + tag(r), r.v, QT_LIM.r, fmtN) + qtBar("Firestore — ghi" + tag(w), w.v, QT_LIM.w, fmtN) + qtBar("Firestore — xóa" + tag(x), x.v, QT_LIM.x, fmtN) +
+      qtBar("Hosting — tải ra", U.sum[per].h, QT_LIM.hd, fmtB) +
+      '<p class="sub qtnote">Firestore tải ra: ' + fmtB(U.sum[per].b) + " (hạn mức tính theo tháng, xem dưới).</p>";
+  }
+  // các thanh đỏ (> 80%) → cảnh báo ở đầu tab Quản trị
+  function qtRed(U) {
+    var out = [], L = QT_LIM;
+    [["d", "hôm nay"], ["y", "hôm qua"]].forEach(function (a) {
+      [["r", "đọc"], ["w", "ghi"], ["x", "xóa"]].forEach(function (k) { if (qtPct(qtVal(U, a[0], k[0]).v, L[k[0]]) > 80) out.push("Firestore " + k[1] + " " + a[1]); });
+      if (qtPct(U.sum[a[0]].h, L.hd) > 80) out.push("Hosting tải ra " + a[1]);
+    });
+    if (qtPct(U.sum.m.b, L.bm) > 80) out.push("Firestore tải ra tháng này");
+    if (qtPct(U.st.fs, L.fs) > 80) out.push("dung lượng Firestore");
+    if (U.host && qtPct(U.host.b, L.hs) > 80) out.push("dung lượng Hosting");
+    return out;
+  }
+  function qtWarn(el) {
+    if (!el || !QT) return;
+    var red = []; try { red = qtRed(qtUse()); } catch (e) { }
+    el.innerHTML = red.length ? '<p class="tkmsg qtred" role="alert">⚠ Sắp chạm hạn mức gói miễn phí (trên 80%): ' + esc(red.join(", ")) +
+      '. Vượt hạn mức thì phần đó của Firebase tạm ngừng cho CẢ app. <a href="#qt-han">Xem mục Hạn mức</a> · <a href="' + QT_USAGE + '" target="_blank" rel="noopener">số chính xác</a></p>' : "";
+  }
+  function qtLinks() {
+    return '<div class="row qtlinks"><a class="btn sm" href="' + QT_USAGE + '" target="_blank" rel="noopener">Xem số chính xác (Firebase Usage)</a>' +
+      '<a class="btn sm ghost" href="https://console.firebase.google.com/project/hanco-tuhoc/firestore/databases/-default-/usage" target="_blank" rel="noopener">Firestore</a>' +
+      '<a class="btn sm ghost" href="https://console.firebase.google.com/project/hanco-tuhoc/hosting/sites/hanco-tuhoc" target="_blank" rel="noopener">Hosting</a></div>';
+  }
+  // thẻ tóm tắt ở Tổng quan
+  function qtHanSum() {
+    var U = qtUse();
+    return '<div class="card"><h2>Dung lượng &amp; hạn mức <small class="sub">(ước tính)</small></h2><div class="qtbars">' +
+      qtDayBars(U, "d").replace(/<p class="sub qtnote">[\s\S]*?<\/p>/, "") +
+      qtBar("Firestore — tải ra tháng này", U.sum.m.b, QT_LIM.bm, fmtB) + qtBar("Firestore — dung lượng lưu", U.st.fs, QT_LIM.fs, fmtB) +
+      '</div><p class="sub">Hôm nay = từ 15:00 giờ VN (giờ Google đặt lại hạn mức ngày). Số từ ' + U.nDev + ' máy, có thể chậm tới 1 giờ.</p><div class="row"><a class="btn sm" href="#qt-han">Xem chi tiết</a><a class="btn sm ghost" href="' + QT_USAGE + '" target="_blank" rel="noopener">Số chính xác (Firebase)</a></div></div>';
+  }
+  function qtHan(box, redraw) {
+    var U = qtUse(), L = QT_LIM, h = "", R = QT.real, H = U.host;
+    h += '<div class="card"><h2>Hạn mức gói miễn phí (Spark) — ƯỚC TÍNH</h2><p class="sub">Mỗi máy tự đếm số lượt đọc / ghi / xóa Firestore và dung lượng tải về, gửi kèm bản thống kê (tối đa 1 lần/giờ) — đang cộng từ <b>' + U.nDev +
+      ' máy</b>. Sai số khoảng ±10–20%, số "hôm nay" chậm tới 1 giờ; máy chưa cập nhật app thì chưa đếm. Ngày hạn mức của Google đặt lại lúc <b>15:00 giờ VN</b> (14:00 khi bên Mỹ dùng giờ mùa hè). Vượt hạn mức ngày → phần đó tạm ngừng tới lần đặt lại; vượt hạn mức tháng → ngừng tới hết tháng, cho CẢ app.</p>' +
+      qtLinks() + '<div class="row"><button class="btn sm" type="button" id="qtcl">Lấy số thật từ Google Cloud (thử)</button></div>' +
+      (QT.realMsg ? '<p class="sub" role="status">' + esc(QT.realMsg) + "</p>" : "") + "</div>";
+    if (R) {
+      var row = function (lbl, k) { return "<tr><td>" + lbl + "</td>" + ["d", "y", "m"].map(function (p) { return "<td>" + (R[p][k] != null ? fmtN(R[p][k]) : "—") + '<br><small class="sub">ước tính ' + fmtN(U.sum[p][k]) + "</small></td>"; }).join("") + "</tr>"; };
+      h += '<div class="card"><h2>Số thật từ Google Cloud</h2><p class="sub">Lấy lúc ' + hm(R.t) + " (Cloud Monitoring, chậm vài phút). Các thanh đọc / ghi / xóa bên dưới đang dùng số này cho tới khi tải lại.</p>" +
+        '<div class="qtwrap"><table class="t"><thead><tr><th></th><th>Hôm nay</th><th>Hôm qua</th><th>Tháng này</th></tr></thead><tbody>' + row("Đọc", "r") + row("Ghi", "w") + row("Xóa", "x") + "</tbody></table></div></div>";
+    }
+    h += '<div class="cols2"><div class="card"><h2>Hôm nay <small class="sub">(tới giờ)</small></h2><div class="qtbars">' + qtDayBars(U, "d") + "</div></div>" +
+      '<div class="card"><h2>Hôm qua <small class="sub">(cả ngày)</small></h2><div class="qtbars">' + qtDayBars(U, "y") + "</div></div></div>";
+    h += '<div class="card"><h2>Tháng này</h2><div class="qtbars">' + qtBar("Firestore — tải ra", U.sum.m.b, L.bm, fmtB) + "</div>" +
+      '<p class="sub qtnote">Cộng cả tháng: ' + fmtN(U.sum.m.r) + " đọc · " + fmtN(U.sum.m.w) + " ghi · " + fmtN(U.sum.m.x) + " xóa · Hosting tải ra " + fmtB(U.sum.m.h) + ".</p></div>";
+    var st = U.st;
+    h += '<div class="card"><h2>Dung lượng lưu</h2><div class="qtbars">' + qtBar("Firestore", st.fs, L.fs, fmtB) +
+      (H && H.b ? qtBar("Hosting (bản đang chạy)", H.b, L.hs, fmtB) : "") + "</div>" +
+      '<ul class="qtls"><li>Tiến độ + sao lưu (tối đa 14 bản/người): ' + fmtB(st.prog) + "</li><li>Hồ sơ + bản thống kê: " + fmtB(st.prof) + "</li><li>Hình trang sách (bản đã đưa lên): " + fmtB(st.sach) +
+      "</li><li>Khác (danh sách họ tên, mã số, nhật ký…): " + fmtB(st.other) + "</li><li>Đã cộng thêm ~15% cho chỉ mục của Firestore.</li><li>Kho sách chung, cách nhớ chung: chưa có (các bước sau).</li></ul>" +
+      '<p class="sub qtnote">' + (H && H.b ? "Hosting: bản phát hành lúc " + hm(H.t) + ", " + fmtN(H.n) + " tệp, " + fmtB(H.b) + " (release.py ghi). Firebase giữ cả các bản phát hành cũ và tính vào dung lượng — có thể đặt số bản giữ lại trong console → Hosting (lịch sử bản phát hành)." :
+        "Hosting: chưa có số (tệp dung-luong.json do release.py ghi ở lần phát hành tới).") + "</p></div>";
+    // ai dùng nhiều nhất (hôm qua + hôm nay)
+    var ps = Object.keys(U.per).map(function (k) { var p = U.per[k], o = demZero(); DEM_K.forEach(function (x) { o[x] = p.d[x] + p.y[x]; }); return { p: p, o: o, s: o.r + o.w + o.x }; })
+      .filter(function (a) { return a.s + a.o.b + a.o.h > 0; }).sort(function (a, b) { return b.s - a.s || (b.o.b + b.o.h) - (a.o.b + a.o.h); }).slice(0, 10);
+    h += '<div class="card"><h2>Dùng nhiều nhất <small class="sub">(hôm qua + hôm nay)</small></h2>' + (ps.length ? '<div class="qtwrap"><table class="t"><thead><tr><th>Mã</th><th>Tên</th><th>Số máy</th><th>Đọc</th><th>Ghi</th><th>Xóa</th><th>Tải Firestore</th><th>Tải Hosting</th></tr></thead><tbody>' +
+      ps.map(function (a) { var u = a.p.u; return "<tr><td>" + (u ? qtMa(u.uid) : "000") + "</td><td>" + esc(u ? (u.hoten || u.ten || "") : "Quản trị viên") + "</td><td>" + a.p.n + "</td><td>" + fmtN(a.o.r) + "</td><td>" + fmtN(a.o.w) + "</td><td>" + fmtN(a.o.x) + "</td><td>" + fmtB(a.o.b) + "</td><td>" + fmtB(a.o.h) + "</td></tr>"; }).join("") +
+      "</tbody></table></div>" : '<p class="sub">Chưa có số liệu.</p>') + "</div>";
+    box.innerHTML = h;
+    $("#qtcl", box).onclick = function () { qtCloud(this, redraw); };
+  }
+  // SỐ THẬT qua Google Cloud Monitoring: đăng nhập Google lại để xin thêm quyền CHỈ ĐỌC số liệu (monitoring.read). Mã truy cập chỉ giữ
+  // trong lúc gọi (không lưu). Không hứa chạy được: API Cloud Monitoring có thể chưa bật / tài khoản quản trị không đăng nhập bằng Google.
+  function qtCloud(btn, redraw) {
+    var u = fb.user; if (!u || !window.firebase || !firebase.auth.GoogleAuthProvider) return;
+    var pv = new firebase.auth.GoogleAuthProvider();
+    pv.addScope("https://www.googleapis.com/auth/monitoring.read");
+    if (u.email) pv.setCustomParameters({ login_hint: u.email });
+    btn.disabled = true; btn.textContent = "Đang lấy…";
+    function done(msg) { QT.realMsg = msg; redraw(); }
+    u.reauthenticateWithPopup(pv).then(function (r) {
+      var tok = r && r.credential && r.credential.accessToken;
+      if (!tok) throw { code: "no-token" };
+      var end = new Date(), start = new Date(end.getTime() - 33 * 864e5);
+      var M = { r: "firestore.googleapis.com/document/read_count", w: "firestore.googleapis.com/document/write_count", x: "firestore.googleapis.com/document/delete_count" };
+      return Promise.all(Object.keys(M).map(function (k) {
+        var url = "https://monitoring.googleapis.com/v3/projects/" + FB_CONFIG.projectId + "/timeSeries?filter=" + encodeURIComponent('metric.type="' + M[k] + '"') +
+          "&interval.startTime=" + encodeURIComponent(start.toISOString()) + "&interval.endTime=" + encodeURIComponent(end.toISOString()) +
+          "&aggregation.alignmentPeriod=3600s&aggregation.perSeriesAligner=ALIGN_SUM&aggregation.crossSeriesReducer=REDUCE_SUM";
+        return fetch(url, { headers: { Authorization: "Bearer " + tok } }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (j) { if (!res.ok) throw { code: "api", st: res.status, msg: (j.error && j.error.message) || "" }; return [k, j]; });
+        });
+      }));
+    }).then(function (rs) {
+      var t = ptDay(), mo = ptMon(t), R = { t: Date.now(), d: { r: 0, w: 0, x: 0 }, y: { r: 0, w: 0, x: 0 }, m: { r: 0, w: 0, x: 0 } };
+      rs.forEach(function (a) {
+        (a[1].timeSeries || []).forEach(function (ts) {
+          (ts.points || []).forEach(function (p) {
+            var v = +((p.value || {}).int64Value || (p.value || {}).doubleValue || 0), d = ptDay(Date.parse(p.interval.endTime) - 1);
+            if (d === t) R.d[a[0]] += v; if (d === t - 1) R.y[a[0]] += v; if (ptMon(d) === mo) R.m[a[0]] += v;
+          });
+        });
+      });
+      QT.real = R; done("Đã lấy số thật lúc " + hm(R.t) + ".");
+    }).catch(function (e) {
+      var c = (e && e.code) || "", m = "Chưa lấy được số thật";
+      if (c === "auth/popup-blocked") m += ": trình duyệt chặn cửa sổ đăng nhập — cho phép cửa sổ bật lên rồi bấm lại.";
+      else if (c === "auth/popup-closed-by-user" || c === "auth/cancelled-popup-request") m += ": bạn đã đóng cửa sổ Google.";
+      else if (c === "auth/user-mismatch") m += ": cần chọn đúng tài khoản Google quản trị.";
+      else if (c === "auth/no-such-provider" || c === "auth/provider-already-linked") m += ": tài khoản quản trị không đăng nhập bằng Google.";
+      else if (c === "no-token") m += ": Google không trả quyền đọc số liệu.";
+      else if (c === "api") m += " (Google Cloud báo " + e.st + (e.msg ? ": " + String(e.msg).slice(0, 160) : "") + "). Nếu báo API chưa bật: mở console.cloud.google.com → APIs → bật «Cloud Monitoring API» cho dự án hanco-tuhoc rồi thử lại.";
+      else m += " (" + tkErr(e) + ").";
+      done(m + " Vẫn xem được số chính xác ở trang Usage của Firebase.");
+    });
+  }
   function vAdmin(v, args) {
     if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
     var sec = args[0] || "tong", ep = HC.epoch;
-    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["nk", "Nhật ký"]];
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["han", "Hạn mức"], ["nk", "Nhật ký"]];
     v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
-      '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtb"><p class="sub">Đang tải…</p></div>';
+      '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtwarn"></div><div id="qtb"><p class="sub">Đang tải…</p></div>';
     var box = $("#qtb", v);
     function draw() {
       if (HC.epoch !== ep) return;
-      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
+      try { qtWarn($("#qtwarn", v)); } catch (e) { }
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, han: qtHan, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
     function load() {
       box.innerHTML = '<p class="sub">Đang tải…</p>';
@@ -1109,7 +1457,7 @@
     }
     var tb = (QT.ch && QT.ch.tb) || null;
     h += '<div class="card"><h2>Thông báo chung đang hiện</h2>' + (tb && tb.h ? '<p class="tbh">' + tbHTML(tb.h) + '</p><p class="sub">Đăng lúc ' + hm(tb.t) + "</p>" : '<p class="sub">Không có. Đăng ở mục Cài đặt.</p>') + "</div>";
-    h += '<div class="card"><h2>Dung lượng &amp; hạn mức</h2><p class="sub">Phần theo dõi hạn mức gói miễn phí sẽ có ở bước sau. Xem số chính xác ở trang Usage của Firebase.</p><p><a class="btn sm" href="https://console.firebase.google.com/project/hanco-tuhoc/usage" target="_blank" rel="noopener">Mở trang Usage (Firebase)</a></p></div>';
+    try { h += qtHanSum(); } catch (e) { h += '<div class="card"><h2>Dung lượng &amp; hạn mức</h2><p class="sub">Chưa tính được (' + esc(e && e.message) + ").</p>" + qtLinks() + "</div>"; }
     box.innerHTML = h;
   }
   var QT_COLS = [["ma", "Mã"], ["ten", "Tên hiển thị"], ["hoten", "Họ tên"], ["email", "Email"], ["last", "Học lần cuối"], ["sc", "Chuỗi"], ["xw", "XP tuần"], ["pct", "Lộ trình"], ["lag", "So với lịch"], ["due", "Quá hạn"], ["ex", "Thi thử"], ["st", "Trạng thái"]];

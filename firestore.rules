@@ -49,7 +49,9 @@ service cloud.firestore {
         && tenOk(request.resource.data.ten)
         && (!('tk' in request.resource.data) || tkOk(request.resource.data.tk)));
       function tkOk(t) {
-        return t is map && t.keys().hasOnly(['v', 't', 'd', 'last', 'sc', 'sd', 'xp', 'xw', 'la', 'lx', 'n', 'due', 'ky', 'ex', 'hq', 'sz'])
+        // q = bộ đếm hạn mức từng máy {mã máy: số đếm} (Bước 5, tối đa 6 máy), nb = số bản sao lưu
+        return t is map && t.keys().hasOnly(['v', 't', 'd', 'last', 'sc', 'sd', 'xp', 'xw', 'la', 'lx', 'n', 'due', 'ky', 'ex', 'hq', 'sz', 'q', 'nb'])
+          && (!('q' in t) || (t.q is map && t.q.size() <= 6)) && (!('nb' in t) || t.nb is int)
           && (!('la' in t) || (t.la is list && t.la.size() <= 31)) && (!('lx' in t) || (t.lx is list && t.lx.size() <= 31))
           && (!('ky' in t) || (t.ky is list && t.ky.size() <= 12)) && (!('hq' in t) || (t.hq is list && t.hq.size() <= 10));
       }

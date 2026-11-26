@@ -18,7 +18,7 @@ self.addEventListener("install", function (e) {
 self.addEventListener("activate", function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
     return Promise.all(keys.filter(function (k) { return k.indexOf("hanco-") === 0 && k !== VERSION; }).map(function (k) { return caches.delete(k); }));
-  }).then(hanCheck).then(function () { return self.clients.claim(); }));
+  }).then(hanCheck).then(function () { return self.clients.claim(); }).then(demNext));
 });
 
 // Ảnh chữ han/ (~3.700 ảnh, ~20 MB) lưu ở đệm RIÊNG HAN (tên không bắt đầu "hanco-" nên không bị xóa khi phát hành bản mới).
@@ -43,6 +43,31 @@ function hanCheck() {
   return Promise.race([job, new Promise(function (r) { setTimeout(r, 8000); })]);
 }
 
+// ĐẾM DUNG LƯỢNG TẢI TỪ HOSTING (Bước 5 kế hoạch nhiều người dùng, ước tính hạn mức "tải ra 360 MB/ngày"): cộng transferSize (byte
+// thật qua mạng; lấy từ đệm trình duyệt = 0, hỏi lại "chưa đổi" = vài trăm byte) của các tệp CÙNG TRANG mà service worker tải, vào 1
+// tổng cộng dồn {b, t} trong đệm DEM (tên không bắt đầu "hanco-" nên không bị xóa khi phát hành). app.js đọc phần tăng thêm (demPull).
+// Chỉ đếm, không đổi cách trả tệp; lỗi thì bỏ qua.
+var DEM = "dem-v1", DEM_KEY = "./__dem", demQ = Promise.resolve();
+try { if (self.performance && performance.setResourceTimingBufferSize) performance.setResourceTimingBufferSize(3000); } catch (e) { }
+function demFlush() {
+  var n = 0;
+  try {
+    if (!self.performance || !performance.getEntriesByType) return Promise.resolve();
+    performance.getEntriesByType("resource").forEach(function (x) { if (x.name.indexOf(self.location.origin) === 0 && x.transferSize > 0) n += x.transferSize; });
+    if (performance.clearResourceTimings) performance.clearResourceTimings();
+  } catch (e) { return Promise.resolve(); }
+  if (!n) return Promise.resolve();
+  return caches.open(DEM).then(function (c) {
+    return c.match(DEM_KEY).then(function (r) { return r ? r.json() : null; }).catch(function () { return null; }).then(function (j) {
+      return c.put(DEM_KEY, new Response(JSON.stringify({ b: ((j && +j.b) || 0) + n, t: Date.now() }), { headers: { "Content-Type": "application/json" } }));
+    });
+  }).catch(function () { });
+}
+function demNext() { demQ = demQ.then(demFlush, demFlush); return demQ; }
+function demLater(e) { // tải xong (chờ 2 giây cho Resource Timing kịp ghi; tệp chưa xong thì lần sau đếm)
+  try { e.waitUntil(new Promise(function (r) { setTimeout(r, 2000); }).then(demNext)); } catch (x) { }
+}
+
 function isData(url) {
   // dữ liệu tiến độ và đăng nhập: luôn đi thẳng ra mạng, không lưu đệm
   return /firestore\.googleapis\.com|identitytoolkit|securetoken|googleapis\.com\/(identity|v1\/projects)|\/__\/auth\//.test(url);
@@ -56,6 +81,7 @@ self.addEventListener("fetch", function (e) {
   if (sameOrigin && /\/han\/[0-9a-f]+\.webp$/.test(url.pathname)) {
     // ảnh chữ MS Song: dùng bản trong đệm riêng HAN (ảnh vẽ lại đã bị hanCheck xóa khỏi đệm), không có thì tải mới rồi lưu
     var key = url.origin + url.pathname;
+    demLater(e);
     e.respondWith(caches.open(HAN).then(function (c) {
       return c.match(key).then(function (hit) {
         return hit || fetch(key, { cache: "no-cache" }).then(function (res) { if (res && res.ok) c.put(key, res.clone()); return res; });
@@ -65,6 +91,7 @@ self.addEventListener("fetch", function (e) {
   }
   if (sameOrigin || req.mode === "navigate") {
     // mã app: ưu tiên bản mới trên mạng (để nhận cập nhật), mất mạng thì dùng bản đã lưu
+    if (sameOrigin) demLater(e);
     e.respondWith(
       fetch(req).then(function (res) {
         if (res && res.ok) { var copy = res.clone(); caches.open(VERSION).then(function (c) { c.put(req, copy); }); }
