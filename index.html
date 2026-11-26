@@ -474,6 +474,7 @@ a.li.pli { color: inherit; text-decoration: none; }
 .ksdone { font-size: clamp(18px, 4vw, 24px); line-height: 1.4; color: var(--muted); }
 /* ghi chú của người học */
 .note { display: grid; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.note .nt, .note .ned { font-family: "Be Vietnam Pro", "Segoe UI", var(--f-han); } /* chữ Việt phông giao diện, chữ Hán (2 phông trên không có) rơi xuống MS Song; không thêm sans-serif/system-ui trước vì sẽ bắt chữ Hán */
 .note .nt { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 /* ô soạn ghi chú: thanh công cụ 1 hàng nhỏ, bảng màu/cỡ mở ngay dưới (app.js NOTE_TB) */
 .note .ntb, .note .ntpop { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
