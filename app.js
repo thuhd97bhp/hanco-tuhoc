@@ -146,7 +146,13 @@
     messagingSenderId: "487484756352",
     appId: "1:487484756352:web:b85b86841630919ea8b165"
   };
-  var fb = { on: false, auth: null, db: null, user: null, ref: null, status: "off", last: 0, busy: false, again: false, timer: null, unsub: null, lastSeen: 0 };
+  // Tiết kiệm hạn mức (26/11/2026): gom thay đổi, ghi lên tài khoản tối đa ~1 lần / FB_GAP khi đang học; rời app / ẩn màn hình /
+  // có mạng lại → ghi ngay; không có gì mới thì không ghi. KHÔNG đọc cả bản trước mỗi lần ghi: gộp (merge) với bản mới nhất nhận qua
+  // onSnapshot (fb.rem, đã gộp vào S lúc nhận); chưa nhận bản nào từ máy chủ thì get() 1 lần. dirty = có thay đổi chưa lên tài khoản;
+  // myW = mã lần ghi gần nhất của máy này (trường w của tài liệu) để nhận ra tiếng vọng của chính mình. localStorage FB_OK =
+  // "uid|S.upd" lúc máy khớp tài khoản (tắt app đột ngột trước khi ghi → lần mở sau thấy lệch → tự ghi). Không thuộc S.
+  var fb = { on: false, auth: null, db: null, user: null, ref: null, status: "off", last: 0, busy: false, again: false, timer: null, unsub: null, dirty: false, rem: null, remOk: false, myW: "", lastW: 0 };
+  var FB_GAP = 60000, FB_OK = "hanco-fb-ok";
   HC.fb = fb;
   function dayKey(n) { var d = new Date(n * 864e5); return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0"); }
   // gộp tiến độ hai máy: không mất chữ nào đã học ở bất kỳ máy nào
@@ -240,18 +246,60 @@
       return changed;
     } catch (e) { return false; }
   }
+  function fbMark() { try { if (fb.user) localStorage.setItem(FB_OK, fb.user.uid + "|" + (S.upd || 0)); } catch (e) { } }
+  function fbClean() { var v = null; try { v = localStorage.getItem(FB_OK); } catch (e) { } return !!fb.user && v === fb.user.uid + "|" + (S.upd || 0); }
+  // s (đã gộp với r) có gì mới hơn r không — chỉ so "lớn hơn hẳn" trên các trường gộp theo max/thời điểm nên 2 máy không ghi qua lại mãi
+  function fbAhead(s, r) {
+    var k, j, a, b;
+    function gt(x, y) { return (+x || 0) > (+y || 0); }
+    a = s.it || {}; b = r.it || {}; for (k in a) if (!b[k]) return true;
+    a = s.itT || {}; b = r.itT || {}; for (k in a) if (gt(a[k], b[k])) return true;
+    a = s.note || {}; b = r.note || {}; for (k in a) if (!b[k] || gt(a[k][1], b[k][1])) return true;
+    a = s.hard || {}; b = r.hard || {}; for (k in a) if (!b[k] || Math.abs(a[k]) > Math.abs(b[k])) return true;
+    a = s.plans || {}; b = r.plans || {}; for (k in a) if (!b[k] || gt(a[k].t, b[k].t)) return true;
+    a = s.lt || {}; b = r.lt || {}; for (k in a) if (!b[k] || gt(a[k][4], b[k][4])) return true;
+    a = s.gm || {}; b = r.gm || {}; for (k in a) if (!b[k] || gt(a[k][2], b[k][2])) return true;
+    a = s.log || {}; b = r.log || {}; for (k in a) if (!b[k] || gt(a[k].n, b[k].n) || gt(a[k].r, b[k].r) || gt(a[k].x, b[k].x)) return true;
+    a = s.badges || {}; b = r.badges || {}; for (k in a) if (b[k] == null) return true;
+    a = s.best || {}; b = r.best || {}; for (k in a) if (b[k] == null || (k === "memo" ? a[k] < b[k] : a[k] > b[k])) return true;
+    a = s.pl || {}; b = r.pl || {};
+    for (k in a) { if (!b[k] || gt(a[k].nt, b[k].nt) || gt(a[k].x, b[k].x)) return true; for (j in a[k].ids || {}) if (!(b[k].ids || {})[j] || Math.abs(a[k].ids[j]) > Math.abs(b[k].ids[j])) return true; }
+    a = s.streak || {}; b = r.streak || {}; if (gt(a.d, b.d) || (a.d === b.d && gt(a.c, b.c))) return true;
+    return gt(s.xp, r.xp) || (gt(s.upd, r.upd) && (s.start !== r.start || JSON.stringify(s.set) !== JSON.stringify(r.set)));
+  }
+  // nhận bản của tài khoản từ máy chủ (get hoặc onSnapshot): gộp vào S; máy còn phần tài khoản chưa có → dirty (sẽ ghi)
+  function fbGot(d, own) {
+    var first = !fb.remOk; fb.remOk = true;
+    fb.rem = d && d.data ? d.data : null;
+    if (!fb.rem) { fb.dirty = true; return; } // tài khoản chưa có bản nào
+    if (own) return; // tiếng vọng lần ghi của chính máy này: S đã chứa sẵn
+    applyRemote(fb.rem, first);
+    var ahead = true; try { ahead = fbAhead(S, normalize(JSON.parse(fb.rem))); } catch (e) { }
+    if (ahead) fb.dirty = true; else if (!fb.dirty) fbMark();
+  }
   function fbSync() {
     if (!fb.ref) return Promise.resolve();
     if (fb.busy) { fb.again = true; return Promise.resolve(); }
     if (navigator.onLine === false) { fb.status = "offline"; renderStats(); return Promise.resolve(); }
+    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); return Promise.resolve(); } // không có gì mới: không ghi
     fb.busy = true; fb.status = "syncing"; renderStats();
-    return fb.ref.get().then(function (snap) {
-      if (snap.exists && snap.data().data) applyRemote(snap.data().data, true);
-      var body = JSON.stringify(S);
-      return fb.ref.set({ data: body, upd: S.upd || Date.now(), ver: 1 }).then(function () { fb.lastSeen = S.upd || 0; return backup(body); });
+    var ref = fb.ref;
+    var got = fb.remOk ? Promise.resolve() : ref.get({ source: "server" }).then(function (snap) { if (ref === fb.ref) fbGot(snap.exists ? snap.data() : null, false); });
+    return got.then(function () {
+      if (ref !== fb.ref || !fb.dirty) return;
+      var body = JSON.stringify(S), u = S.upd, w = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      fb.dirty = false; fb.myW = w;
+      return ref.set({ data: body, upd: Date.now(), ver: 1, w: w }).then(function () {
+        fb.rem = body; fb.lastW = Date.now();
+        if (!fb.dirty && S.upd === u) fbMark();
+        return backup(body);
+      }, function (e) { fb.dirty = true; throw e; });
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
-      .then(function () { fb.busy = false; renderStats(); if (fb.again) { fb.again = false; fbSync(); } });
+      .then(function () {
+        fb.busy = false; renderStats();
+        if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
+      });
   }
   HC.fbSync = fbSync;
   function backup(body) {
@@ -272,8 +320,15 @@
     if (!fb.ref) return Promise.resolve([]);
     return fb.ref.collection("backups").get().then(function (qs) { return qs.docs.map(function (d) { return { id: d.id, data: d.data().data }; }).sort(function (a, b) { return a.id < b.id ? 1 : -1; }); });
   };
-  HC.fbRestore = function (data) { S = normalize(JSON.parse(data)); S.upd = Date.now(); saveLocal(); return fbSync(); };
-  function scheduleFb() { if (!fb.ref) return; clearTimeout(fb.timer); fb.timer = setTimeout(fbSync, 4000); }
+  // khôi phục bản sao lưu: như trước, gộp với bản hiện có của tài khoản (không làm mất mục nào) rồi ghi ngay
+  HC.fbRestore = function (data) { S = normalize(JSON.parse(data)); if (fb.rem) S = normalize(merge(S, normalize(JSON.parse(fb.rem)))); S.upd = Date.now(); saveLocal(); fb.dirty = true; return fbNow(); };
+  // có thay đổi: hẹn ghi — không dời hẹn khi học liên tục; cách lần ghi trước ≥ FB_GAP (ít nhất 4 giây sau thay đổi đầu tiên)
+  function scheduleFb() {
+    fb.dirty = true;
+    if (!fb.ref || fb.timer) return;
+    fb.timer = setTimeout(function () { fb.timer = null; fbSync(); }, Math.max(4000, FB_GAP - (Date.now() - fb.lastW)));
+  }
+  function fbNow() { clearTimeout(fb.timer); fb.timer = null; return fbSync(); }
   HC.fbSignIn = function () {
     if (!fb.on) return;
     var p = new firebase.auth.GoogleAuthProvider();
@@ -293,25 +348,31 @@
     fb.auth.getRedirectResult().catch(function () { });
     fb.auth.onAuthStateChanged(function (u) {
       if (fb.unsub) { fb.unsub(); fb.unsub = null; }
+      clearTimeout(fb.timer); fb.timer = null;
       fb.user = u; fb.ref = u ? fb.db.collection("hanco_progress").doc(u.uid) : null;
+      fb.rem = null; fb.remOk = false; fb.myW = "";
       try { sachRefresh(); } catch (e) { }
       if (!u) { fb.status = "signedout"; renderStats(); softRefresh(); return; }
-      fbSync().then(function () {
-        // nghe thay đổi từ máy khác theo thời gian thực
-        fb.unsub = fb.ref.onSnapshot(function (snap) {
-          if (!snap.exists || snap.metadata.hasPendingWrites) return;
-          var d = snap.data(); if (!d || !d.data || (d.upd || 0) <= fb.lastSeen) return;
-          fb.lastSeen = d.upd; applyRemote(d.data, false); fb.last = Date.now(); renderStats();
-        }, function () { });
-        softRefresh();
-      });
+      fb.dirty = !fbClean(); // máy có phần chưa lên tài khoản (học khi chưa đăng nhập / tắt app trước khi kịp ghi)
+      var ref = fb.ref, started = false;
+      function start() { if (started || ref !== fb.ref) return; started = true; fbSync().then(softRefresh); }
+      // nghe tài khoản theo thời gian thực: bản đầu tiên từ máy chủ = mốc để gộp (thay cho get), các bản sau = máy khác vừa ghi
+      fb.unsub = ref.onSnapshot({ includeMetadataChanges: true }, function (snap) {
+        if (ref !== fb.ref || snap.metadata.hasPendingWrites || snap.metadata.fromCache) return;
+        var d = snap.exists ? snap.data() : null;
+        if (fb.remOk && d && d.data === fb.rem) return; // không có gì mới (vd chỉ đổi trạng thái đã lên máy chủ)
+        fbGot(d, !!(d && d.w && d.w === fb.myW));
+        fb.last = Date.now();
+        if (!started) start(); else { if (fb.dirty) scheduleFb(); renderStats(); }
+      }, function () { if (ref === fb.ref) { fb.unsub = null; start(); } }); // nghe lỗi → đồng bộ kiểu get 1 lần
+      setTimeout(start, 8000); // mạng chậm / chưa nhận bản nào: tự get
     });
     document.addEventListener("visibilitychange", function () {
       if (!fb.ref) return;
-      if (document.visibilityState === "hidden") { clearTimeout(fb.timer); fbSync(); }
+      if (document.visibilityState === "hidden") fbNow();
     });
-    window.addEventListener("pagehide", function () { if (fb.ref) { clearTimeout(fb.timer); fbSync(); } });
-    window.addEventListener("online", function () { if (fb.ref) { fbSync().then(function () { if (fb.status === "ok") toast("Có mạng trở lại: đã đồng bộ phần học lúc ngoại tuyến"); }); } else renderStats(); });
+    window.addEventListener("pagehide", function () { if (fb.ref) fbNow(); });
+    window.addEventListener("online", function () { if (fb.ref) { var had = fb.dirty; fbNow().then(function () { if (had && fb.status === "ok") toast("Có mạng trở lại: đã đồng bộ phần học lúc ngoại tuyến"); }); } else renderStats(); });
     window.addEventListener("offline", function () { if (fb.ref) { fb.status = "offline"; } renderStats(); });
   }
 
@@ -2878,11 +2939,16 @@
     return '<div class="lirow kr"><button type="button" class="li" data-open="' + it.id + '">' + g + '<span class="t">' + t + '</span><span class="chip">' + esc(kindLabel(it)) + "</span></button>" + (extra || "") + moreBtn(it.id) + "</div>";
   }
   function vKho(v, args) {
-    var tab = args[0] === "pl" ? "pl" : args[0] === "luyen" ? "luyen" : "kho", plId = tab === "pl" ? args[1] || "" : "", f = "all", renaming = false, adding = false;
+    var tab = args[0] === "pl" ? "pl" : args[0] === "luyen" ? "luyen" : args[0] === "dahoc" ? "dahoc" : "kho", plId = tab === "pl" ? args[1] || "" : "", f = "all", renaming = false, adding = false;
+    var SHOW = 5, MORE = 100, kN = SHOW, dt = "c", dq = "", dN = SHOW; // mỗi danh sách hiện 5 dòng; "Xem thêm" mở thêm tối đa 100 dòng; không lưu vào S
+    function moreRow(total, n, key) {
+      if (total <= SHOW) return "";
+      return '<div class="row kmore">' + (total > n ? '<button type="button" class="btn sm" data-km="' + key + ':more">Xem thêm <span class="num">(còn ' + (total - n) + ")</span></button>" : "") + (n > SHOW ? '<button type="button" class="btn sm ghost" data-km="' + key + ':less">Thu gọn</button>' : "") + "</div>";
+    }
     if (plId && !plLive(plId)) plId = ""; // playlist đã xóa (vd ở máy khác) → về danh sách playlist
     function head() {
       var nh = HC.hardList().length, np = HC.plList().length;
-      return '<div class="row" style="margin-bottom:6px"><h1 style="margin:0">Kho khó</h1><span class="spacer"></span><a class="btn sm' + (tab === "kho" ? " primary" : "") + '" href="#kho">Kho khó <span class="num">(' + nh + ')</span></a><a class="btn sm' + (tab === "pl" ? " primary" : "") + '" href="#kho-pl">Playlist <span class="num">(' + np + ')</span></a><a class="btn sm' + (tab === "luyen" ? " primary" : "") + '" href="#kho-luyen">Luyện</a></div>';
+      return '<div class="row" style="margin-bottom:6px"><h1 style="margin:0">Kho khó</h1><span class="spacer"></span><a class="btn sm' + (tab === "kho" ? " primary" : "") + '" href="#kho">Kho khó <span class="num">(' + nh + ')</span></a><a class="btn sm' + (tab === "dahoc" ? " primary" : "") + '" href="#kho-dahoc">Từ đã học</a><a class="btn sm' + (tab === "pl" ? " primary" : "") + '" href="#kho-pl">Playlist <span class="num">(' + np + ')</span></a><a class="btn sm' + (tab === "luyen" ? " primary" : "") + '" href="#kho-luyen">Luyện</a></div>';
     }
     function drawKho() {
       var all = HC.hardList(), cnt = { all: all.length, c: 0, w: 0, s: 0, r: 0 };
@@ -2892,12 +2958,41 @@
       h += '<div class="row kf" role="group" aria-label="Lọc">' + [["all", "Tất cả"], ["c", "Chữ"], ["w", "Từ"], ["s", "Câu"], ["r", "Bộ thủ"]].map(function (x) {
         return '<button type="button" class="btn sm' + (f === x[0] ? " primary" : "") + '" data-kf="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + ' <span class="num">' + cnt[x[0]] + "</span></button>";
       }).join("") + "</div>";
-      h += '<div class="card"><div class="list">' + (list.length ? list.map(function (it) { return khoRowHTML(it, '<button type="button" class="more kx" data-kx="' + it.id + '" aria-label="Bỏ khỏi kho khó" title="Bỏ khỏi kho khó">✕</button>'); }).join("")
+      h += '<div class="card"><div class="list">' + (list.length ? list.slice(0, kN).map(function (it) { return khoRowHTML(it, '<button type="button" class="more kx" data-kx="' + it.id + '" aria-label="Bỏ khỏi kho khó" title="Bỏ khỏi kho khó">✕</button>'); }).join("") + moreRow(list.length, kN, "k")
         : '<p class="sub" style="padding:8px">' + (all.length ? "Không có mục loại này trong kho." : "Kho đang trống. Bấm nút ⋯ cạnh một chữ, từ hay câu rồi chọn “☆ Thêm vào kho khó”.") + "</p>") + "</div></div>";
       var forget = HC.hard().filter(function (it) { return !isHard(it.id); });
       if (forget.length) h += '<div class="card"><h2>Chữ hay quên</h2><p class="sub">App tự gom ' + forget.length + " chữ / từ / câu / bộ thủ bạn quên từ 2 lần trở lên mà chưa có trong kho khó.</p><div class=\"minis\">" + forget.slice(0, 24).map(miniHTML).join("") + (forget.length > 24 ? '<span class="muted">… +' + (forget.length - 24) + "</span>" : "") + '</div><p style="margin-top:8px"><button type="button" class="btn sm" id="kaddf">Thêm cả ' + forget.length + " mục vào kho khó</button></p></div>";
       v.innerHTML = h;
       var b = $("#kaddf", v); if (b) b.onclick = function () { var t = Date.now(); forget.forEach(function (it) { S.hard[it.id] = t; }); save(); toast("Đã thêm " + forget.length + " mục vào kho khó"); drawKho(); };
+    }
+    // thẻ "Từ đã học": mọi chữ / từ / câu / bộ thủ đã học (có thẻ trong S.it), chia 4 tab con, nút ☆ thêm vào kho khó
+    function learned() {
+      return Object.keys(S.it).filter(function (id) { return ITEM[id]; })
+        .sort(function (a, b) { return (S.it[b][5] || 0) - (S.it[a][5] || 0) || (ITEM[a].rank || 0) - (ITEM[b].rank || 0); }).map(function (id) { return ITEM[id]; });
+    }
+    function drawDa() {
+      var all = learned(), cnt = { c: 0, w: 0, s: 0, r: 0 };
+      all.forEach(function (it) { if (cnt[it.type] != null) cnt[it.type]++; });
+      var h = head() + '<p class="sub">Mọi chữ, từ, câu, bộ thủ bạn đã học (mới học xếp trước). Bấm ☆ để thêm vào kho khó, bấm ★ để bỏ ra.</p>';
+      h += '<div class="row kf" role="group" aria-label="Loại mục">' + [["c", "Chữ"], ["w", "Từ"], ["s", "Câu"], ["r", "Bộ thủ"]].map(function (x) {
+        return '<button type="button" class="btn sm' + (dt === x[0] ? " primary" : "") + '" data-dt="' + x[0] + '" aria-pressed="' + (dt === x[0]) + '">' + x[1] + ' <span class="num">' + cnt[x[0]] + "</span></button>";
+      }).join("") + "</div>";
+      h += '<div class="card"><div class="field"><input type="search" id="dq" value="' + esc(dq) + '" placeholder="Tìm theo chữ Hán, âm (không dấu cũng được) hoặc nghĩa" aria-label="Tìm trong mục đã học"></div><div class="list" id="dl"></div></div>';
+      v.innerHTML = h;
+      drawDaList(all);
+      var t = null, inp = $("#dq", v);
+      inp.oninput = function () { clearTimeout(t); t = setTimeout(function () { dq = inp.value; dN = SHOW; drawDaList(); }, 150); };
+    }
+    function drawDaList(all) {
+      var box = $("#dl", v); if (!box) return;
+      all = all || learned();
+      var q = dq.trim(), qf = fold(q);
+      var list = all.filter(function (it) { return it.type === dt && (!q || it.key.indexOf(q) >= 0 || fold(it.am).indexOf(qf) >= 0 || fold(it.ns).indexOf(qf) >= 0 || fold(it.nb).indexOf(qf) >= 0); });
+      box.innerHTML = list.length ? list.slice(0, dN).map(function (it) {
+        var on = isHard(it.id);
+        return khoRowHTML(it, '<button type="button" class="more kstar' + (on ? " on" : "") + '" data-ks="' + it.id + '" aria-pressed="' + on + '" aria-label="' + (on ? "Bỏ khỏi kho khó" : "Thêm vào kho khó") + '" title="' + (on ? "Bỏ khỏi kho khó" : "Thêm vào kho khó") + '">' + (on ? "★" : "☆") + "</button>");
+      }).join("") + moreRow(list.length, dN, "d")
+        : '<p class="sub" style="padding:8px">' + (q ? "Không tìm thấy mục nào." : "Chưa học mục nào loại này.") + "</p>";
     }
     function drawPls() {
       var L = HC.plList();
@@ -2948,9 +3043,19 @@
       v.innerHTML = head() + '<div id="ksu"></div>';
       if (HC.khoSetup) HC.khoSetup($("#ksu", v)); else $("#ksu", v).innerHTML = '<p class="sub">Chưa tải xong trò chơi, hãy tải lại trang.</p>';
     }
-    function draw() { if (tab === "kho") drawKho(); else if (tab === "luyen") drawLuyen(); else if (plId) drawPl(); else drawPls(); }
+    function draw() { if (tab === "kho") drawKho(); else if (tab === "dahoc") drawDa(); else if (tab === "luyen") drawLuyen(); else if (plId) drawPl(); else drawPls(); }
     function onClick(e) {
-      var k = e.target.closest("[data-kf]"); if (k) { f = k.getAttribute("data-kf"); drawKho(); return; }
+      var k = e.target.closest("[data-kf]"); if (k) { f = k.getAttribute("data-kf"); kN = SHOW; drawKho(); return; }
+      var m = e.target.closest("[data-km]");
+      if (m) {
+        var mk = m.getAttribute("data-km").split(":"), up = mk[1] === "more";
+        if (mk[0] === "k") { kN = up ? kN + MORE : SHOW; drawKho(); } else { dN = up ? dN + MORE : SHOW; drawDaList(); }
+        if (!up) { var c = $(".kf", v); if (c) c.scrollIntoView({ block: "nearest" }); }
+        return;
+      }
+      var dk = e.target.closest("[data-dt]"); if (dk) { dt = dk.getAttribute("data-dt"); dN = SHOW; drawDa(); return; }
+      var st = e.target.closest("[data-ks]");
+      if (st) { var sid = st.getAttribute("data-ks"), son = !isHard(sid); if (!son && HC.plList().some(function (p) { return p.ids.indexOf(sid) >= 0; }) && !confirm("Bỏ “" + itemTitle(ITEM[sid]) + "” khỏi kho khó? Mục này cũng rời mọi playlist.")) return; HC.toggleHard(sid, son); refreshHard(sid); toast(son ? "Đã thêm vào kho khó" : "Đã bỏ khỏi kho khó"); return; }
       var x = e.target.closest("[data-kx]");
       if (x) { var id = x.getAttribute("data-kx"), it = ITEM[id]; if (!confirm("Bỏ “" + itemTitle(it) + "” khỏi kho khó? Mục này cũng rời mọi playlist.")) return; HC.toggleHard(id, false); refreshHard(id); toast("Đã bỏ khỏi kho khó"); return; }
       var r = e.target.closest("[data-kr]");
@@ -2992,7 +3097,7 @@
     sachSettings($("#sach-set", v));
     if (args && args[0] === "sach") HC.later(function () { var el = $("#sach-set", v); if (el) el.scrollIntoView(); }, 0);
     var e1 = $("#fbin3", v); if (e1) e1.onclick = HC.fbSignIn;
-    var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbSync().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
+    var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbNow().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
     var e3 = $("#fbout", v); if (e3) e3.onclick = function () { HC.fbSignOut(); toast("Đã đăng xuất trên máy này"); };
     var e4 = $("#fbbk", v); if (e4) e4.onclick = function () {
       $("#bklist", v).innerHTML = '<p class="sub">Đang tải…</p>';

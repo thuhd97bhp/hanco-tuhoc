@@ -1,5 +1,5 @@
 /* Hán cổ tự học — service worker: cho app mở và chạy được khi không có mạng */
-var VERSION = "hanco-v20261126192910";
+var VERSION = "hanco-v20261126201957";
 var SHELL = ["./", "./index.html", "./app.js", "./games.js", "./app-data.json", "./app-strokes.json"];
 var CDN = [
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
@@ -18,8 +18,30 @@ self.addEventListener("install", function (e) {
 self.addEventListener("activate", function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
     return Promise.all(keys.filter(function (k) { return k.indexOf("hanco-") === 0 && k !== VERSION; }).map(function (k) { return caches.delete(k); }));
-  }).then(function () { return self.clients.claim(); }));
+  }).then(hanCheck).then(function () { return self.clients.claim(); }));
 });
+
+// Ảnh chữ han/ (~3.700 ảnh, ~20 MB) lưu ở đệm RIÊNG HAN (tên không bắt đầu "hanco-" nên không bị xóa khi phát hành bản mới).
+// release.py sinh han-dau.json = {mã hex: dấu nội dung}; mỗi bản mới so với danh sách dấu đã lưu → chỉ xóa (để tải lại) ảnh đã vẽ lại.
+var HAN = "hanchu-v1", HAN_DAU = "./han-dau.json";
+function hanCheck() {
+  var nw;
+  var job = fetch(HAN_DAU, { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j) return;
+    nw = j;
+    return caches.open(HAN).then(function (c) {
+      return c.match(HAN_DAU).then(function (o) { return o ? o.json() : null; }).then(function (old) {
+        return c.keys().then(function (reqs) {
+          // chưa có danh sách cũ (đệm cũ không rõ bản nào) → bỏ hết ảnh trong đệm cho chắc
+          var del = reqs.filter(function (q) { var m = /\/han\/([0-9a-f]+)\.webp$/.exec(new URL(q.url).pathname); return m && (!old || !nw[m[1]] || old[m[1]] !== nw[m[1]]); });
+          return Promise.all(del.map(function (q) { return c.delete(q); }));
+        }).then(function () { return c.put(HAN_DAU, new Response(JSON.stringify(nw), { headers: { "Content-Type": "application/json" } })); });
+      });
+    });
+  }).catch(function () { });
+  // mạng chậm: không giữ app chờ quá 8 giây (lần phát hành sau so lại)
+  return Promise.race([job, new Promise(function (r) { setTimeout(r, 8000); })]);
+}
 
 function isData(url) {
   // dữ liệu tiến độ và đăng nhập: luôn đi thẳng ra mạng, không lưu đệm
@@ -32,10 +54,13 @@ self.addEventListener("fetch", function (e) {
   var url = new URL(req.url);
   var sameOrigin = url.origin === self.location.origin;
   if (sameOrigin && /\/han\/[0-9a-f]+\.webp$/.test(url.pathname)) {
-    // ảnh chữ MS Song: dùng bản đã lưu (mỗi bản phát hành đổi VERSION nên ảnh vẽ lại vẫn được tải mới), không có thì tải rồi lưu
-    e.respondWith(caches.match(req, { ignoreSearch: true }).then(function (hit) {
-      return hit || fetch(req).then(function (res) { if (res && res.ok) { var copy = res.clone(); caches.open(VERSION).then(function (c) { c.put(req, copy); }); } return res; });
-    }));
+    // ảnh chữ MS Song: dùng bản trong đệm riêng HAN (ảnh vẽ lại đã bị hanCheck xóa khỏi đệm), không có thì tải mới rồi lưu
+    var key = url.origin + url.pathname;
+    e.respondWith(caches.open(HAN).then(function (c) {
+      return c.match(key).then(function (hit) {
+        return hit || fetch(key, { cache: "no-cache" }).then(function (res) { if (res && res.ok) c.put(key, res.clone()); return res; });
+      });
+    }).catch(function () { return fetch(req); }));
     return;
   }
   if (sameOrigin || req.mode === "navigate") {
