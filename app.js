@@ -248,6 +248,74 @@
   }
   function fbMark() { try { if (fb.user) localStorage.setItem(FB_OK, fb.user.uid + "|" + (S.upd || 0)); } catch (e) { } }
   function fbClean() { var v = null; try { v = localStorage.getItem(FB_OK); } catch (e) { } return !!fb.user && v === fb.user.uid + "|" + (S.upd || 0); }
+  // ---- CHỦ của tiến độ trên máy (dùng chung 1 máy, 26/11/2026) — không thuộc S, không đổi khóa hanco-tuhoc-v1 ----
+  // localStorage OWN = uid tài khoản sở hữu bản hanco-tuhoc-v1 trên máy; "" = bản học khi chưa đăng nhập (khách); chưa có khóa = máy
+  // chạy bản app cũ. Tài khoản khác đăng nhập → KHÔNG gộp: cất bản đang có vào CAT + uid chủ ({s: tiến độ, ok: đã khớp tài khoản,
+  // t: ms cất}; khách = CAT + ""), nạp bản đã cất của người mới (nếu có), rồi đồng bộ với tài khoản như thường. Bản khách chỉ gộp vào
+  // tài khoản khi người học bấm "Gộp". sessionStorage DN = vừa bấm Đăng nhập (phân biệt với phiên đăng nhập tự khôi phục khi mở app).
+  var OWN = "hanco-chu", CAT = "hanco-cat-", DN = "hanco-dn";
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { } }
+  function sEmpty(s) { return !["it", "note", "hard", "pl", "lt", "log", "plans"].some(function (k) { return s[k] && Object.keys(s[k]).length; }) && !(s.xp > 0); }
+  function catList() { // các bản đã cất trên máy: [{uid, ok, t}]
+    var out = [], i, k, o;
+    try { for (i = 0; i < localStorage.length; i++) { k = localStorage.key(i); if (k && k.indexOf(CAT) === 0) { o = null; try { o = JSON.parse(localStorage.getItem(k)); } catch (e) { } out.push({ uid: k.slice(CAT.length), ok: !!(o && o.ok), t: (o && +o.t) || 0 }); } } } catch (e) { }
+    return out;
+  }
+  function catPut(uid, s, ok) {
+    var v = JSON.stringify({ s: s, ok: !!ok, t: Date.now() });
+    if (lsSet(CAT + uid, v)) return true;
+    // bộ nhớ trình duyệt đầy: bỏ bớt bản cất ĐÃ KHỚP tài khoản (còn nguyên trên tài khoản), cũ nhất trước, rồi thử lại
+    var old = catList().filter(function (c) { return c.ok && c.uid && c.uid !== uid; }).sort(function (a, b) { return a.t - b.t; });
+    for (var i = 0; i < old.length; i++) { lsDel(CAT + old[i].uid); if (lsSet(CAT + uid, v)) return true; }
+    return false;
+  }
+  function catTake(uid) { var o = null; try { o = JSON.parse(lsGet(CAT + uid)); } catch (e) { } return o && o.s && o.s.it ? o : null; }
+  // thay tiến độ trên máy bằng bản đã cất của uid (hoặc bản trống); trả cờ "còn phần chưa lên tài khoản"
+  function catLoad(uid) { var o = catTake(uid); S = normalize(o ? o.s : blank()); saveLocal(); lsDel(CAT + uid); return !!(o && !o.ok); }
+  // vừa đăng nhập u: xác định chủ tiến độ trên máy rồi go(dirty) — dirty undefined = tính như cũ (!fbClean)
+  function fbOwn(u, dn, go) {
+    var own = lsGet(OWN), email = u.email || "tài khoản này";
+    if (own === u.uid) return go();
+    if (own === null) { // máy chạy bản cũ: chưa ghi chủ
+      var okv = lsGet(FB_OK) || "", bk = lsGet("hanco-fb-backup") || "";
+      var prev = okv ? okv.split("|")[0] : bk.length > 10 ? bk.slice(0, -10) : ""; // tài khoản đã đồng bộ trên máy này trước đây
+      if (!dn || prev === u.uid || sEmpty(S)) { lsSet(OWN, u.uid); return go(); } // đăng nhập sẵn khi mở app → tự nhận
+      own = prev; // "" = học khi chưa đăng nhập; uid khác = tiến độ của tài khoản trước
+    }
+    if (own === "" && sEmpty(S)) { // máy trống (vd người trước đã đăng xuất): nạp bản đã cất của người này nếu có
+      var had = !!catTake(u.uid), d0 = had ? catLoad(u.uid) : false;
+      lsSet(OWN, u.uid); if (had) route();
+      return go(d0);
+    }
+    if (own === "") {
+      var n = Object.keys(S.it).length, done = false;
+      fb.ask = modal('<h2>Tiến độ học khi chưa đăng nhập</h2><p>Máy này có tiến độ học lúc chưa đăng nhập: <b>' + fmt(n) + '</b> mục đã học, <b>' + fmt(S.xp || 0) + ' XP</b>.</p><p>Gộp vào tài khoản <b>' + esc(email) + '</b>?</p><p class="sub">Nếu đây không phải tiến độ của bạn (máy dùng chung), chọn "Không" — tiến độ đó được cất riêng trên máy, không vào tài khoản của bạn.</p><div class="row acts"><button class="btn primary" data-gop>Gộp vào tài khoản</button><button class="btn" data-khong>Không, cất riêng</button></div>', function () { if (!done) pick(false); });
+      var pick = function (gop) {
+        if (done) return; done = true; var a = fb.ask; fb.ask = null; if (a) a.close();
+        if (fb.user !== u) return; // đã đăng xuất / đổi tài khoản trong lúc hỏi
+        if (gop) { // gộp cả bản đã cất của chính tài khoản này (nếu có) — không để sót phần chưa lên tài khoản
+          var o = catTake(u.uid); if (o) { S = normalize(merge(S, normalize(o.s))); saveLocal(); lsDel(CAT + u.uid); }
+          lsSet(OWN, u.uid); toast("Đã gộp tiến độ trên máy vào tài khoản"); return go(true);
+        }
+        if (!catPut("", S, false)) { toast("Bộ nhớ trình duyệt đầy, chưa cất được tiến độ trên máy. Đã đăng xuất để không gộp nhầm."); fb.auth.signOut(); return; }
+        var d = catLoad(u.uid); lsSet(OWN, u.uid); route(); go(d);
+      };
+      $("[data-gop]", fb.ask.el).onclick = function () { pick(true); };
+      $("[data-khong]", fb.ask.el).onclick = function () { pick(false); };
+      return;
+    }
+    // tiến độ trên máy là của tài khoản khác: cất riêng (không gộp), nạp bản của người mới
+    var ok = lsGet(FB_OK) === own + "|" + (S.upd || 0);
+    if (!catPut(own, S, ok) && !ok) { toast("Máy còn tiến độ chưa đồng bộ của tài khoản khác mà bộ nhớ trình duyệt đầy. Đã đăng xuất để không làm mất tiến độ đó."); fb.auth.signOut(); return; }
+    var d2 = catLoad(u.uid); lsSet(OWN, u.uid); route();
+    toast("Đang dùng tiến độ của " + email);
+    go(d2);
+  }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { } }
+  function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) { } }
   // s (đã gộp với r) có gì mới hơn r không — chỉ so "lớn hơn hẳn" trên các trường gộp theo max/thời điểm nên 2 máy không ghi qua lại mãi
   function fbAhead(s, r) {
     var k, j, a, b;
@@ -332,12 +400,38 @@
   HC.fbSignIn = function () {
     if (!fb.on) return;
     var p = new firebase.auth.GoogleAuthProvider();
+    ssSet(DN, "1"); // vừa bấm Đăng nhập (giữ được qua kiểu đăng nhập redirect)
     fb.auth.signInWithPopup(p).catch(function (e) {
       if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-environment" || e.code === "auth/cancelled-popup-request")) fb.auth.signInWithRedirect(p);
-      else if (e && e.code !== "auth/popup-closed-by-user") toast("Chưa đăng nhập được (" + (e.code || "lỗi") + ")");
+      else { ssDel(DN); if (e && e.code !== "auth/popup-closed-by-user") toast("Chưa đăng nhập được (" + (e.code || "lỗi") + ")"); }
     });
   };
-  HC.fbSignOut = function () { if (fb.auth) fb.auth.signOut(); };
+  // đồng bộ ngay và chờ lần ghi đang chạy xong (tối đa ~10 giây); trả true nếu tài khoản đã có đủ phần học trên máy
+  function fbFlush() {
+    return fbNow().then(function () {
+      return new Promise(function (res) { var n = 0; (function w() { if (!fb.busy || ++n > 100) res(); else setTimeout(w, 100); })(); });
+    }).then(function () { return !!fb.ref && fb.remOk && !fb.dirty && !fb.busy; });
+  }
+  // Đăng xuất (dùng chung máy): đồng bộ ngay; wipe = false → cất tiến độ của mình riêng trên máy (lần sau đăng nhập có ngay);
+  // wipe = true → xóa tiến độ của mình khỏi máy (vẫn còn trên tài khoản; còn phần chưa lên được thì hỏi lại). Màn trở về bản học khi
+  // chưa đăng nhập đã cất (nếu có) hoặc bản trống. Trả Promise<true nếu đã đăng xuất>.
+  HC.fbSignOut = function (wipe) {
+    if (!fb.auth) return Promise.resolve(false);
+    if (!fb.user) { fb.auth.signOut(); return Promise.resolve(true); }
+    var u = fb.user;
+    return fbFlush().then(function (ok) {
+      if (fb.user !== u) return false;
+      if (wipe && !ok && !confirm("Còn phần học chưa lên được tài khoản (có thể do mất mạng). Xóa khỏi máy thì phần đó sẽ MẤT. Vẫn đăng xuất và xóa?")) return false;
+      if (!wipe && !catPut(u.uid, S, ok) && !ok) { toast("Bộ nhớ trình duyệt đầy, chưa cất được phần học chưa đồng bộ. Hãy kết nối mạng rồi đăng xuất lại."); return false; }
+      if (wipe) { lsDel(CAT + u.uid); if ((lsGet(FB_OK) || "").indexOf(u.uid + "|") === 0) lsDel(FB_OK); }
+      // ngắt khỏi tài khoản TRƯỚC khi đổi tiến độ trên máy (không để bản khách/bản trống bị ghi lên tài khoản này)
+      if (fb.unsub) { fb.unsub(); fb.unsub = null; }
+      clearTimeout(fb.timer); fb.timer = null; fb.ref = null; fb.user = null; fb.dirty = false;
+      catLoad(""); lsSet(OWN, "");
+      fb.auth.signOut(); route();
+      return true;
+    });
+  };
   function fbInit() {
     if (!window.firebase || !firebase.initializeApp) return;
     try {
@@ -349,11 +443,17 @@
     fb.auth.onAuthStateChanged(function (u) {
       if (fb.unsub) { fb.unsub(); fb.unsub = null; }
       clearTimeout(fb.timer); fb.timer = null;
-      fb.user = u; fb.ref = u ? fb.db.collection("hanco_progress").doc(u.uid) : null;
+      if (fb.ask) { var a = fb.ask; fb.ask = null; a.close(); } // khung hỏi gộp của lần đăng nhập trước
+      fb.user = u; fb.ref = null; // chỉ gắn tài khoản sau khi xác định xong chủ tiến độ trên máy (fbOwn)
       fb.rem = null; fb.remOk = false; fb.myW = "";
       try { sachRefresh(); } catch (e) { }
       if (!u) { fb.status = "signedout"; renderStats(); softRefresh(); return; }
-      fb.dirty = !fbClean(); // máy có phần chưa lên tài khoản (học khi chưa đăng nhập / tắt app trước khi kịp ghi)
+      var dn = ssGet(DN); ssDel(DN);
+      fbOwn(u, dn, function (dirty) { if (fb.user === u && !fb.ref) fbAttach(u, dirty); });
+    });
+    function fbAttach(u, dirty) {
+      fb.ref = fb.db.collection("hanco_progress").doc(u.uid);
+      fb.dirty = dirty == null ? !fbClean() : dirty; // máy có phần chưa lên tài khoản (học khi chưa đăng nhập / tắt app trước khi kịp ghi)
       var ref = fb.ref, started = false;
       function start() { if (started || ref !== fb.ref) return; started = true; fbSync().then(softRefresh); }
       // nghe tài khoản theo thời gian thực: bản đầu tiên từ máy chủ = mốc để gộp (thay cho get), các bản sau = máy khác vừa ghi
@@ -366,7 +466,7 @@
         if (!started) start(); else { if (fb.dirty) scheduleFb(); renderStats(); }
       }, function () { if (ref === fb.ref) { fb.unsub = null; start(); } }); // nghe lỗi → đồng bộ kiểu get 1 lần
       setTimeout(start, 8000); // mạng chậm / chưa nhận bản nào: tự get
-    });
+    }
     document.addEventListener("visibilitychange", function () {
       if (!fb.ref) return;
       if (document.visibilityState === "hidden") fbNow();
@@ -3085,7 +3185,7 @@
   function vSettings(v, args) {
     var sync = remote.status === "synced" ? "Tiến độ đang được lưu vào tài khoản Claude của bạn, nên mở app trên máy tính hay điện thoại (cùng tài khoản) đều thấy cùng tiến độ." : remote.status === "error" ? "Chưa lưu được lên tài khoản lúc này; tiến độ vẫn được giữ trên trình duyệt này và sẽ thử lưu lại." : "Tiến độ đang lưu trên trình duyệt này. Hãy sao lưu thường xuyên bằng mã bên dưới.";
     var last = Object.keys(S.log).map(Number).sort(function (a, b) { return b - a; }).slice(0, 14);
-    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="card" id="ky" style="margin-bottom:14px"></div><div class="card hero" id="lich" style="margin-bottom:14px"></div><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div><div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
+    v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="card" id="ky" style="margin-bottom:14px"></div><div class="card hero" id="lich" style="margin-bottom:14px"></div><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button><button class="btn ghost" id="fbwipe">Đăng xuất và xóa tiến độ khỏi máy này</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div>' + (fb.user ? '<p class="sub">Dùng chung máy với người khác: "Đăng xuất" cất tiến độ của bạn riêng trên máy này (lần sau đăng nhập có ngay); người khác đăng nhập sẽ dùng tiến độ của họ, không gộp với của bạn.</p>' : "") + '<div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Lộ trình từng kỳ chọn ở khung "Chọn kỳ học" phía trên. Hai ô dưới đây = số chữ, từ mới mỗi ngày khi bạn không học kỳ nào (hoặc các kỳ đã thi xong).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày khi không học kỳ nào</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày khi không học kỳ nào</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh (trả lời đúng / sai, cộng điểm, lên cấp)</label></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div><div class="card" id="sach-set"></div></div>';
@@ -3098,7 +3198,11 @@
     if (args && args[0] === "sach") HC.later(function () { var el = $("#sach-set", v); if (el) el.scrollIntoView(); }, 0);
     var e1 = $("#fbin3", v); if (e1) e1.onclick = HC.fbSignIn;
     var e2 = $("#fbnow", v); if (e2) e2.onclick = function () { fbNow().then(function () { toast(fb.status === "ok" ? "Đã đồng bộ" : "Chưa đồng bộ được, kiểm tra mạng"); }); };
-    var e3 = $("#fbout", v); if (e3) e3.onclick = function () { HC.fbSignOut(); toast("Đã đăng xuất trên máy này"); };
+    var e3 = $("#fbout", v); if (e3) e3.onclick = function () { e3.disabled = true; HC.fbSignOut(false).then(function (r) { if (r) toast("Đã đăng xuất. Tiến độ của bạn được cất riêng trên máy này"); else e3.disabled = false; }); };
+    var e5 = $("#fbwipe", v); if (e5) e5.onclick = function () {
+      if (!confirm("Đăng xuất và xóa tiến độ của bạn khỏi máy này? Tiến độ vẫn còn trên tài khoản: đăng nhập lại là có.")) return;
+      e5.disabled = true; HC.fbSignOut(true).then(function (r) { if (r) toast("Đã đăng xuất và xóa tiến độ của bạn khỏi máy này"); else e5.disabled = false; });
+    };
     var e4 = $("#fbbk", v); if (e4) e4.onclick = function () {
       $("#bklist", v).innerHTML = '<p class="sub">Đang tải…</p>';
       HC.fbBackups().then(function (list) {
