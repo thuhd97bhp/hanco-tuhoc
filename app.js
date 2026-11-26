@@ -1808,7 +1808,9 @@
     box.innerHTML = noteInner(id, mode);
     if (mode === "edit") {
       var ed = box.querySelector(".ned");
-      ed.addEventListener("input", function () { noteMark(ed); noteSched(box); });
+      ed.addEventListener("input", function (e) { noteMark(ed); if (!e.isComposing) sgEdit(ed); noteSched(box); });
+      ed.addEventListener("compositionend", function () { sgEdit(ed); }); // máy không có MS Song: chữ Hán vừa gõ → ảnh MS Song
+      sgEdit(ed);
       ed.addEventListener("blur", function () { if (noteCur === box) noteFlush(); });
       ed.addEventListener("paste", function (e) {
         var cd = e.clipboardData || window.clipboardData; if (!cd) return;
@@ -2390,7 +2392,7 @@
   // Mọi chữ Hán khác trên trang (danh sách, câu, trò chơi, chữ xen trong nghĩa…): bọc từng chữ thành <span class="sg">chữ</span>.
   // Chữ thật vẫn ở trong trang (textContent, chọn/chép, trò chơi chấm không đổi); khi ảnh tải xong thêm lớp "on": chữ trong suốt,
   // ảnh MS Song (mặt nạ, màu theo chữ) hiện đè lên. Ảnh lỗi/chưa có → chữ vẫn hiện bằng phông dự phòng như cũ.
-  var SG_SKIP = "script,style,textarea,input,select,option,svg,canvas,[contenteditable],.big,.sg,.songimg"; // ô soạn ghi chú: giữ chữ thật (ảnh sẽ bị lọc mất khi lưu)
+  var SG_SKIP = "script,style,textarea,input,select,option,svg,canvas,[contenteditable],.big,.sg,.songimg"; // ô soạn ghi chú: bọc riêng bằng sgEdit (giữ con trỏ); input/textarea: lớp đè inOv
   function sgChar(ch) {
     var o = ch.codePointAt(0);
     return isHan(ch) || (o >= 0x20000 && o <= 0x3FFFF) || (o >= 0x3001 && o <= 0x3003) || (o >= 0x3008 && o <= 0x3011) || o === 0xFF01 || o === 0xFF08 || o === 0xFF09 || o === 0xFF0C || o === 0xFF0E || o === 0xFF1A || o === 0xFF1B || o === 0xFF1F;
@@ -2405,23 +2407,28 @@
   function sgText(tn) {
     var t = tn.nodeValue, p = tn.parentNode;
     if (!t || !p || p.nodeType !== 1 || tn._sg === t || !/[^\x00-⹿]/.test(t) || (p.closest && p.closest(SG_SKIP))) return;
-    var cs = chars(t); if (!cs.some(sgChar)) return;
+    sgWrap(tn);
+  }
+  function sgWrap(tn) { // bọc từng chữ Hán của 1 nút chữ thành .sg; trả về true nếu đã thay nút
+    var t = tn.nodeValue, p = tn.parentNode;
+    var cs = chars(t); if (!cs.some(sgChar)) return false;
     var f = document.createDocumentFragment(), buf = "", made = 0;
     var flush = function () { if (buf) { var x = document.createTextNode(buf); x._sg = buf; f.appendChild(x); buf = ""; } }; // _sg: chữ do mình tạo, không xử lý lại
     cs.forEach(function (ch) {
       if (!sgChar(ch)) { buf += ch; return; }
       var k = hanKey(ch), h = HIMG[k];
-      if (h && h.bad) { buf += ch; return; } // chữ không có ảnh (vd 查 設 ⺗): giữ nguyên chữ
       flush(); made++;
-      var s = document.createElement("span"); s.className = h && h.ok ? "sg on" : "sg"; s.setAttribute("data-k", k);
-      s.style.setProperty("--sg", "url(han/" + k + ".webp)"); s.textContent = ch; f.appendChild(s);
+      var s = document.createElement("span"); s.className = h && h.ok ? "sg on" : "sg"; s.setAttribute("data-k", k); s.textContent = ch; f.appendChild(s);
+      if (h && h.bad) return; // chữ không có ảnh (chữ ngoài dữ liệu, gõ trong ghi chú / ô tìm): vẫn bọc .sg → phông Tống dự phòng (CSS), không hẹn tải ảnh
+      s.style.setProperty("--sg", "url(han/" + k + ".webp)");
       if (!(h && h.ok) && !(h && h.sgw)) { hanImg(ch, sgLoaded); HIMG[k].sgw = 1; } // mỗi chữ chỉ hẹn 1 lần
     });
     // Không có chữ nào đổi sang ảnh → KHÔNG thay nút chữ. (Lỗi đơ app: thay bằng nút chữ y hệt → MutationObserver thấy nút mới
     // → lại thay → lặp vô tận, trình duyệt treo cứng trên máy không có MS Song, gặp chữ không có ảnh như ký hiệu thanh mục 查 設.)
-    if (!made) { tn._sg = t; return; }
+    if (!made) { tn._sg = t; return false; }
     flush();
     p.replaceChild(f, tn);
+    return true;
   }
   function sgScan(n) {
     if (n.nodeType === 3) return sgText(n);
@@ -2442,6 +2449,93 @@
       });
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
     scan(document.body); sgScan(document.body);
+    inWatch();
+  }
+  // ---- ô soạn ghi chú (contenteditable) trên máy không có MS Song: bọc chữ Hán thành .sg ngay trong ô (chữ thật vẫn ở trong,
+  // noteClean bỏ lớp span khi lưu). Chỉ chạy khi bộ gõ đã chốt chữ (không đụng chữ đang soạn của Telex / Pinyin), giữ vị trí con trỏ.
+  function edOff(ed, node, off) { var r = document.createRange(); r.setStart(ed, 0); r.setEnd(node, off); return r.toString().length; }
+  function edAt(ed, pos) { // vị trí con trỏ theo số ký tự → [nút, offset]; đứng ở mép chữ .sg thì đặt NGOÀI span (gõ tiếp không lọt vào span)
+    var w = document.createTreeWalker(ed, NodeFilter.SHOW_TEXT, null, false), x, cum = 0, r = document.createRange();
+    while ((x = w.nextNode())) {
+      var n = x.nodeValue.length, sg = x.parentNode.closest ? x.parentNode.closest(".sg") : null;
+      if (pos <= cum + n) {
+        if (sg && pos === cum + n) r.setStartAfter(sg); else if (sg && pos === cum) r.setStartBefore(sg); else r.setStart(x, pos - cum);
+        return r;
+      }
+      cum += n;
+    }
+    r.selectNodeContents(ed); r.collapse(false); return r;
+  }
+  function sgEdit(ed) {
+    if (!ed || localSong()) return;
+    var sel = window.getSelection(), a = -1, f = -1, ch = 0;
+    if (sel && sel.rangeCount && ed.contains(sel.anchorNode) && ed.contains(sel.focusNode)) { a = edOff(ed, sel.anchorNode, sel.anchorOffset); f = edOff(ed, sel.focusNode, sel.focusOffset); }
+    // xóa chữ .sg rồi gõ tiếp → trình duyệt chép kiểu của nó sang chữ mới (font face=…, span style="-webkit-text-fill-color: transparent" → chữ vô hình): gỡ
+    $$("font[face], [style]", ed).forEach(function (x) {
+      if (x.classList.contains("sg")) return;
+      if (x.tagName === "FONT") x.removeAttribute("face");
+      else { x.style.removeProperty("-webkit-text-fill-color"); x.style.removeProperty("font-family"); if (!x.getAttribute("style")) x.removeAttribute("style"); }
+      if (!x.attributes.length && (x.tagName === "FONT" || x.tagName === "SPAN")) { while (x.firstChild) x.parentNode.insertBefore(x.firstChild, x); x.parentNode.removeChild(x); }
+      ch++;
+    });
+    $$(".sg", ed).forEach(function (s) { // span chỉ được chứa đúng 1 chữ Hán: gõ lọt vào / xóa hết chữ → gỡ span, chữ (nếu còn) bọc lại bên dưới
+      var t = s.textContent, cs = chars(t);
+      if (cs.length === 1 && sgChar(t) && s.childNodes.length === 1 && s.firstChild.nodeType === 3) return;
+      while (s.firstChild) s.parentNode.insertBefore(s.firstChild, s);
+      s.parentNode.removeChild(s); ch++;
+    });
+    var w = document.createTreeWalker(ed, NodeFilter.SHOW_TEXT, null, false), list = [], x;
+    while ((x = w.nextNode())) if (!x.parentNode.closest(".sg") && chars(x.nodeValue).some(sgChar)) list.push(x);
+    list.forEach(function (tn) { if (sgWrap(tn)) ch++; });
+    if (!ch || a < 0) return;
+    var ra = edAt(ed, a), rf = edAt(ed, f);
+    try { sel.removeAllRanges(); if (sel.setBaseAndExtent) sel.setBaseAndExtent(ra.startContainer, ra.startOffset, rf.startContainer, rf.startOffset); else sel.addRange(ra); } catch (e) { }
+  }
+  HC.sgEdit = sgEdit;
+  // ---- ô gõ (input chữ / tìm, textarea) trên máy không có MS Song: chữ thật trong ô trong suốt, lớp .inov ngay sau ô hiện cùng nội dung
+  // (MutationObserver ở trên tự đổi chữ Hán của lớp này sang ảnh), canh đúng vị trí, cỡ chữ, cuộn ngang/dọc của ô.
+  var INOV = [], inTm = 0;
+  function inOk(el) { return !!el && ((el.tagName === "INPUT" && (el.type === "text" || el.type === "search")) || el.tagName === "TEXTAREA"); }
+  function inOv(el) {
+    var ov = el._ov, i = INOV.indexOf(el);
+    if (!el.isConnected || !el.offsetParent || !chars(el.value).some(sgChar)) {
+      if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      el._ov = null; el.classList.remove("inhan"); if (i >= 0) INOV.splice(i, 1);
+      if (!INOV.length) { clearInterval(inTm); inTm = 0; }
+      return;
+    }
+    if (!ov) { ov = el._ov = document.createElement("div"); ov.className = "inov"; ov.setAttribute("aria-hidden", "true"); ov.appendChild(document.createElement("span")); }
+    if (ov.previousSibling !== el) el.parentNode.insertBefore(ov, el.nextSibling);
+    el.classList.add("inhan");
+    if (i < 0) { INOV.push(el); if (!inTm) inTm = setInterval(inAll, 150); } // đổi giá trị bằng mã / bố cục đổi → tự canh lại
+    var cs = getComputedStyle(el), ta = el.tagName === "TEXTAREA", sp = ov.firstChild;
+    var px = function (k) { return parseFloat(cs[k]) || 0; };
+    var r = el.getBoundingClientRect();
+    var sb = Math.max(0, el.offsetWidth - el.clientWidth - px("borderLeftWidth") - px("borderRightWidth")); // thanh cuộn của textarea
+    if (el.type === "search") sb += px("fontSize") * 1.1; // nút ✕ xóa của ô tìm chiếm chỗ cuối ô: đừng vẽ chữ đè lên
+    var ch = el.clientHeight - px("paddingTop") - px("paddingBottom");
+    var st = "width:" + r.width + "px;height:" + r.height + "px;" +
+      "font:" + cs.font + ";letter-spacing:" + cs.letterSpacing + ";text-align:" + cs.textAlign + ";text-indent:" + cs.textIndent + ";" +
+      "padding:" + cs.paddingTop + " " + (px("paddingRight") + sb) + "px " + cs.paddingBottom + " " + cs.paddingLeft + ";border-width:" + cs.borderTopWidth + " " + cs.borderRightWidth + " " + cs.borderBottomWidth + " " + cs.borderLeftWidth + ";border-radius:" + cs.borderRadius + ";" +
+      (ta ? "white-space:pre-wrap;overflow-wrap:" + (cs.overflowWrap || "break-word") + ";line-height:" + cs.lineHeight : "white-space:pre;line-height:" + Math.max(0, ch) + "px");
+    if (ov._st !== st) { ov.style.cssText = st + ";left:" + (ov._x || 0) + "px;top:" + (ov._y || 0) + "px"; ov._st = st; }
+    // vị trí: đo lệch giữa lớp đè và ô rồi bù (khung chứa có thể là khối có transform/contain — offsetParent không cho biết)
+    var o = ov.getBoundingClientRect(), dx = r.left - o.left, dy = r.top - o.top;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) { ov._x = (ov._x || 0) + dx; ov._y = (ov._y || 0) + dy; ov.style.left = ov._x + "px"; ov.style.top = ov._y + "px"; }
+    if (sp.textContent !== el.value) sp.textContent = el.value;
+    var tf = "translate(" + -el.scrollLeft + "px," + -el.scrollTop + "px)";
+    if (sp.style.transform !== tf) sp.style.transform = tf;
+  }
+  function inAll() { INOV.slice().forEach(inOv); }
+  function inFind(n) { if (n.nodeType !== 1) return; if (inOk(n)) { if (n.value) inOv(n); return; } if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll("input,textarea"), function (x) { if (inOk(x) && x.value) inOv(x); }); }
+  function inWatch() {
+    var on = function (e) { var t = e.target; if (inOk(t)) inOv(t); };
+    ["input", "focusin", "keyup", "click", "select", "change"].forEach(function (k) { document.addEventListener(k, on, true); });
+    document.addEventListener("scroll", on, true); // cuộn chữ trong ô
+    window.addEventListener("resize", inAll);
+    new MutationObserver(function (ms) { ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) { if (!(n.classList && (n.classList.contains("sg") || n.classList.contains("inov")))) inFind(n); }); }); })
+      .observe(document.body, { childList: true, subtree: true });
+    inFind(document.body);
   }
 
   // ---------- hoạt hình thứ tự nét (thay chữ to ở thẻ học / khung chi tiết) ----------

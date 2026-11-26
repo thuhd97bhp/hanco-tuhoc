@@ -13,6 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Noto+Serif+TC:wght@400;600&display=swap">
 <style>
+/* "HanS" = MS Song đã cài trên máy, CHỈ cho chữ Hán (unicode-range) → chữ Hán xen trong chữ giao diện / ô gõ hiện MS Song, ký hiệu
+   khác (※ ★ ✓ ←) giữ phông cũ. Máy không có MS Song: bỏ qua, chữ Hán được đổi sang ảnh (sgText / inOv trong app.js). */
+@font-face { font-family: "HanS"; src: local("MS Song"), local("MSSong"); unicode-range: U+2E80-2FDF, U+3001-3003, U+3005-3007, U+3008-3011, U+3021-3029, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF01, U+FF08-FF09, U+FF0C, U+FF0E, U+FF1A-FF1B, U+FF1F, U+20000-3FFFF; }
 /* Layout: ứng dụng một cột — thanh trên (tên app, cấp độ, chuỗi ngày) + thanh chọn mục dính; mỗi mục là một màn hình riêng */
 :root {
   --bg: #f3f5f7;
@@ -33,7 +36,7 @@
   --warn-soft: #fbefdc;
   --gold: #b7860b;
   --nt-purple: #7a3fa6; --nt-yel: #fff1a6;
-  --f-ui: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --f-ui: "Be Vietnam Pro", "Segoe UI", "HanS", system-ui, sans-serif;
   --f-han: "MS Song", "MSSong", "SimSun", "宋体", "PMingLiU", "MingLiU", "Noto Serif TC", serif;
   --r: 12px;
 }
@@ -310,7 +313,12 @@ a.lk { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--mu
 .songimg { display: inline-block; width: 1.25em; height: 1.25em; margin: -0.125em; vertical-align: -0.24em; background: currentColor; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
 /* chữ Hán đổi sang ảnh MS Song (app.js sgText): !important để các luật kiểu ".x span {…}" không đè lên ô chữ */
 .sg { display: inline-block !important; position: relative !important; width: 1em !important; height: 1em !important; line-height: 1 !important; vertical-align: -0.12em !important; margin: 0 !important; padding: 0 !important; border: 0 !important; background: none !important; color: inherit !important; font-size: inherit !important; overflow: visible !important; text-indent: 0; }
+.sg { font-family: var(--f-han) !important; } /* chữ chưa / không có ảnh (chữ ngoài dữ liệu) → phông Tống dự phòng (SimSun / Noto Serif TC) */
 .sg.on { -webkit-text-fill-color: transparent; }
+/* ô gõ có chữ Hán trên máy không có MS Song: chữ thật trong ô trong suốt (vẫn có con trỏ), lớp .inov đè lên hiện ảnh MS Song (inOv trong app.js) */
+.inhan { color: transparent !important; -webkit-text-fill-color: transparent !important; caret-color: var(--ink); }
+.inov { position: absolute; pointer-events: none; overflow: hidden; box-sizing: border-box; border-color: transparent !important; border-style: solid; background: none !important; color: var(--ink); z-index: 1; margin: 0; }
+.inov > span { display: block; }
 .sg.on::before { content: ""; position: absolute; left: -0.125em; top: -0.125em; width: 1.25em; height: 1.25em; background: currentColor; -webkit-mask: var(--sg) center / 100% 100% no-repeat; mask: var(--sg) center / 100% 100% no-repeat; pointer-events: none; }
 .gfb { width: min(560px, 100%); display: grid; gap: 4px; font-size: 0.92rem; }
 .gfb .han { font-size: 1.3rem; margin-right: 4px; }
