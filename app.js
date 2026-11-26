@@ -340,6 +340,7 @@
   function fbGot(d, own) {
     var first = !fb.remOk; fb.remOk = true;
     fb.rem = d && d.data ? d.data : null;
+    setTimeout(planGate, 0); // đã biết bản tiến độ của tài khoản: người mới chưa có lộ trình → hộp thoại bắt buộc chọn
     if (!fb.rem) { fb.dirty = true; return; } // tài khoản chưa có bản nào
     if (own) return; // tiếng vọng lần ghi của chính máy này: S đã chứa sẵn
     applyRemote(fb.rem, first);
@@ -350,7 +351,7 @@
     if (!fb.ref) return Promise.resolve();
     if (fb.busy) { fb.again = true; return Promise.resolve(); }
     if (navigator.onLine === false) { fb.status = "offline"; renderStats(); return Promise.resolve(); }
-    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); return Promise.resolve(); } // không có gì mới: không ghi
+    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); tkSend(); return Promise.resolve(); } // không có gì mới: không ghi
     fb.busy = true; fb.status = "syncing"; renderStats();
     var ref = fb.ref;
     var got = fb.remOk ? Promise.resolve() : ref.get({ source: "server" }).then(function (snap) { if (ref === fb.ref) fbGot(snap.exists ? snap.data() : null, false); });
@@ -366,7 +367,7 @@
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () {
-        fb.busy = false; renderStats();
+        fb.busy = false; renderStats(); tkSend();
         if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
       });
   }
@@ -553,7 +554,7 @@
     var u = tk.u;
     if (!u || fb.user !== u || fb.ref || tk.going) return;
     tk.going = true;
-    fbOwn(u, tk.dn, function (dirty) { tk.going = false; tk.dn = null; if (fb.user === u && !fb.ref && tk.st === "ok") fb.attach(u, dirty); });
+    fbOwn(u, tk.dn, function (dirty) { tk.going = false; tk.dn = null; if (fb.user === u && !fb.ref && tk.st === "ok") { fb.attach(u, dirty); chungLoad(); } });
   }
   // bị khóa / bị xóa: ngắt đồng bộ ngay (tiến độ trên máy giữ nguyên)
   function tkDetach() {
@@ -565,7 +566,10 @@
     tk.u = u; tk.dn = dn;
     if (!TK_GATE || u.uid === ADMIN_UID) {
       if (u.uid === ADMIN_UID) { lsSet(TK_LS, JSON.stringify({ uid: u.uid, st: "ok" })); qtCfgEnsure(); }
-      tkSet("ok"); tkGo(); return;
+      var was = tk.st === "ok";
+      tkSet("ok"); tkGo();
+      if (was && u.uid === ADMIN_UID) { renderMenu(); if (/^qt/.test(cur || "")) route(); } // tab Quản trị chỉ hiện khi đã biết là quản trị
+      return;
     }
     if (!u.emailVerified) { tkSet("xac", ""); return; }
     var c = tkCache();
@@ -2710,7 +2714,7 @@
     }).join("") + '<hr><button type="button" role="menuitem" data-msort>⇅ Sắp xếp vị trí các mục…</button>';
     pop = document.createElement("div");
     pop.className = "pop"; pop.setAttribute("role", "menu"); pop.setAttribute("data-for", "#menu"); pop.innerHTML = h;
-    pop.style.maxHeight = "calc(100vh - 16px)"; pop.style.overflowY = "auto";
+    pop.style.maxHeight = (window.innerHeight - 16) + "px"; pop.style.overflowY = "auto"; // không dùng vh: Chrome Android tính vh theo cả màn hình
     document.body.appendChild(pop);
     var r = btn.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight, pw = pop.offsetWidth, ph = pop.offsetHeight;
     var x = Math.max(8, Math.min(r.right - pw, W - pw - 8)), y = r.bottom + 6;
