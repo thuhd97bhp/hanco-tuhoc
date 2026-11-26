@@ -8,7 +8,7 @@
 
   // ---------- shared game shell ----------
   function head(g, preview) {
-    return '<div class="ghead"><a class="btn sm ghost" href="#choi">← Trò chơi</a><h1 style="margin:0;font-size:1.25rem">' + esc(g.name) + '</h1><div class="score"><span class="pill num" id="gs">Điểm 0</span><span class="pill num" id="gt"></span></div></div>' +
+    return '<div class="ghead"><a class="btn sm ghost" href="' + (g.back || "#choi") + '">' + esc(g.backLabel || "← Trò chơi") + '</a><h1 style="margin:0;font-size:1.25rem">' + esc(g.name) + '</h1><div class="score"><span class="pill num" id="gs">Điểm 0</span><span class="pill num" id="gt"></span></div></div>' +
       (preview ? '<p class="chip warn" style="margin-bottom:10px">Bạn mới học ít chữ nên trò chơi lấy thêm vài chữ sắp học.</p>' : "");
   }
   // trò chơi chỉ dùng mục đã học: chưa đủ thì khóa, mời học thêm
@@ -29,7 +29,7 @@
     var best = HC.setBest(g.id, score, opts.lowerBetter ? false : true);
     var bonus = opts.bonus != null ? opts.bonus : Math.max(2, Math.round(score / 2));
     HC.addXP(bonus); HC.after();
-    v.innerHTML = '<div class="card result pop"><div class="muted">' + esc(g.name) + '</div><div class="score-big">' + esc(opts.label || score) + "</div>" + (best ? '<span class="chip ok">Kỷ lục mới!</span>' : '<span class="muted">Kỷ lục: ' + esc(HC.state().best[g.id]) + "</span>") + "<p>" + esc(opts.msg || "") + "</p>" + recHTML(opts.rec) + '<p class="muted">+' + bonus + ' XP thưởng</p><div class="row" style="justify-content:center"><button class="btn primary" id="again">Chơi lại</button><a class="btn" href="#choi">Trò khác</a><a class="btn" href="#home">Trang chính</a></div></div>';
+    v.innerHTML = '<div class="card result pop"><div class="muted">' + esc(g.name) + '</div><div class="score-big">' + esc(opts.label || score) + "</div>" + (best ? '<span class="chip ok">Kỷ lục mới!</span>' : '<span class="muted">Kỷ lục: ' + esc(HC.state().best[g.id]) + "</span>") + "<p>" + esc(opts.msg || "") + "</p>" + recHTML(opts.rec) + '<p class="muted">+' + bonus + ' XP thưởng</p><div class="row" style="justify-content:center"><button class="btn primary" id="again">Chơi lại</button><a class="btn" href="' + (g.back || "#choi") + '">' + (g.back ? "Bài ôn khác" : "Trò khác") + '</a><a class="btn" href="#home">Trang chính</a></div></div>';
     v.querySelector("#again").onclick = function () { HC.route(); };
   }
   function reg(g) { HC.games.push(g); }
@@ -223,6 +223,180 @@
         });
       }
       round();
+  }
+
+  // ---------- Ôn tập loại từ theo kỳ (màn Loại từ → #loaitu-<tab>-<bài>; người dùng yêu cầu 26/11/2026) ----------
+  // tab: hk1 | hk2 | gk3 = ltk trong app-data.json (đúng bảng loại từ đề cương kỳ đó) | all = Tổng hợp mọi kỳ (D.loaitu).
+  // Bài ôn hỏi MỌI từ của kỳ (kể cả chưa học — bảng từ nằm ngay trên trang); ghi nhận như trò chơi (HC.gameRec: chỉ mục đã học,
+  // sai → ôn lại sớm). Kỷ lục: S.best["lt-<tab>-<bài>"].
+  function ltTab(k) {
+    var D = HC.D, L = D.ltk || [], i;
+    if (k === "all") {
+      var am = {}, ky = {};
+      L.forEach(function (K) {
+        Object.keys(K.g).forEach(function (g) { K.g[g].forEach(function (t) { (ky[t] = ky[t] || []).push(K.name); }); });
+        Object.keys(K.am || {}).forEach(function (t) { if (!am[t]) am[t] = K.am[t]; });
+      });
+      return { k: "all", name: "Tổng hợp", src: "gộp " + L.map(function (K) { return K.name; }).join(", "), g: D.loaitu, am: am, ky: ky, set: null };
+    }
+    for (i = 0; i < L.length; i++) if (L[i].k === k) return L[i];
+    return null;
+  }
+  HC.ltTab = ltTab;
+  HC.ltTabKeys = function () { return (HC.D.ltk || []).map(function (K) { return K.k; }).concat(["all"]); };
+  function ltAm(T, x, it) { return (T.am || {})[x] || (it ? HC.firstAm(it.am) : ""); }
+  HC.ltAm = ltAm;
+  // danh sách mục của tab: { id, x, g, it, am } (id để ưu tiên mục chưa thuộc)
+  function ltList(T) {
+    var out = [];
+    Object.keys(T.g).forEach(function (g) { T.g[g].forEach(function (x) { var it = ltItem(x); out.push({ id: it ? it.id : "lt:" + x, x: x, g: g, it: it, am: ltAm(T, x, it) }); }); });
+    return out;
+  }
+  // câu ví dụ có chữ gạch chân (câu đề cương / đề thi của kỳ đó; Tổng hợp: mọi kỳ)
+  function ltCtx(T, x) {
+    var Q = HC.D.ltq || {}, ss = T.set ? (Q[T.set] || {})[x] || [] : [].concat((Q.hk12 || {})[x] || [], (Q.gk3 || {})[x] || []);
+    if (!ss.length) return '<span class="hl">' + esc(x) + "</span>";
+    var s = ss[Math.floor(Math.random() * ss.length)], at = s.indexOf(x);
+    return esc(s.slice(0, at)) + '<span class="hl">' + esc(x) + "</span>" + esc(s.slice(at + x.length));
+  }
+  // n mục, ưu tiên mục chưa thuộc; danh sách ngắn hơn n thì lặp lại (không 2 mục giống nhau liền nhau)
+  function ltDeck(list, n) {
+    var out = [];
+    while (out.length < n) { var d = HC.pickWeak(list, Math.min(n - out.length, list.length)); if (out.length && d.length > 1 && d[0] === out[out.length - 1]) d.push(d.shift()); out = out.concat(d); }
+    return out;
+  }
+  function ltOpts(GG) { return '<div class="ltopts">' + GG.map(function (n, k) { return '<button class="btn" data-g="' + esc(n) + '">' + String.fromCharCode(65 + k) + ". " + esc(n) + "</button>"; }).join("") + "</div>"; }
+  function ltRec(rec, q, ok) { if (q.it) rec[ok ? "ok" : "bad"](q.it); }
+  function ltSay(q) { return q.x + (q.am ? " (" + q.am + ")" : "") + " là " + q.g + "."; }
+  var LT_DRILLS = [
+    { id: "de", icon: "試", name: "Làm như đề thi", desc: "20 câu: chữ gạch chân trong câu thuộc loại từ nào? Chọn trong các loại của kỳ này." },
+    { id: "nhanh", icon: "速", name: "Nhanh tay 60 giây", desc: "Hiện từng chữ: bấm đúng loại càng nhiều càng tốt trong 60 giây." },
+    { id: "gom", icon: "籃", name: "Gom rổ", desc: "Cho một loại từ: chọn hết các chữ thuộc loại đó trong lưới 12 chữ." },
+    { id: "am", icon: "音", name: "Âm Hán Việt", desc: "Nhìn chữ, chọn âm Hán Việt đúng (âm theo đề cương) trong 4 âm." },
+    { id: "the", icon: "讀", name: "Lật thẻ", desc: "Nhìn chữ, tự nhớ loại từ + âm rồi lật thẻ, tự chấm Nhớ / Quên." }
+  ];
+  HC.LT_DRILLS = LT_DRILLS;
+  HC.ltDrill = function (v, tab, id) {
+    var T = ltTab(tab), D0 = null;
+    LT_DRILLS.forEach(function (d) { if (d.id === id) D0 = d; });
+    if (!T || !D0) { HC.go("loaitu" + (T ? "-" + tab : "")); return; }
+    var g = { id: "lt-" + T.k + "-" + D0.id, name: D0.name + " · Loại từ " + T.name, back: "#loaitu-" + T.k, backLabel: "← Loại từ " + T.name };
+    var GG = Object.keys(T.g), list = ltList(T), rec = HC.gameRec();
+    ({ de: ltDe, nhanh: ltNhanh, gom: ltGom, am: ltAmQ, the: ltThe })[D0.id](v, g, T, GG, list, rec);
+  };
+  // 1. Làm như đề thi: 20 câu, chữ gạch chân trong câu
+  function ltDe(v, g, T, GG, list, rec) {
+    var N = 20, deck = ltDeck(list, N), i = 0, score = 0;
+    function round() {
+      var q = deck[i];
+      v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">Câu ' + (i + 1) + " / " + N + '</span></div><div class="card" style="width:min(680px,100%)"><div class="sent">' + ltCtx(T, q.x) + '</div><p class="sub" style="text-align:center">Chữ gạch chân thuộc loại từ nào?</p></div>' + ltOpts(GG) + '<div class="feedback" id="fb" role="status"></div></div>';
+      setScore(v, score);
+      U().$$(".ltopts .btn", v).forEach(function (b) {
+        b.onclick = function () {
+          var ok = b.dataset.g === q.g, fb = v.querySelector("#fb");
+          U().$$(".ltopts .btn", v).forEach(function (x) { x.disabled = true; if (x.dataset.g === q.g) x.classList.add("good"); });
+          if (ok) { score++; correct(b); } else { b.classList.add("bad"); wrong(); }
+          ltRec(rec, q, ok); setScore(v, score);
+          fb.className = "feedback " + (ok ? "ok" : "no"); fb.textContent = (ok ? "Đúng! " : "Chưa đúng. ") + ltSay(q);
+          HC.later(function () { i++; if (i < N) round(); else finish(v, g, score, { label: score + " / " + N, msg: "Như phần loại từ của đề thi: " + score + " / " + N + " câu đúng", rec: rec }); }, ok ? 900 : 2000);
+        };
+      });
+    }
+    round();
+  }
+  // 2. Nhanh tay 60 giây: chữ đứng riêng (không câu)
+  function ltNhanh(v, g, T, GG, list, rec) {
+    var left = 60, score = 0, tries = 0, deck = [], q = null, busy = false, over = false;
+    function nextQ() { if (!deck.length) deck = ltDeck(list, Math.min(list.length, 20)); var n = deck.shift(); if (q && n === q && deck.length) { deck.push(n); n = deck.shift(); } return n; }
+    function tick() { if (over) return; left--; var t = v.querySelector("#gt"); if (t) t.textContent = left + " giây"; if (left <= 0) end(); else HC.later(tick, 1000); }
+    function end() { over = true; finish(v, g, score, { label: score + " đúng", msg: "Trong 60 giây: " + score + " đúng / " + tries + " lần bấm", rec: rec }); }
+    function round() {
+      q = nextQ(); busy = false;
+      v.querySelector("#qbox").innerHTML = '<div class="big ' + U().lenCls(q.x) + '">' + esc(q.x) + "</div>";
+      var fb = v.querySelector("#fb"); fb.className = "feedback"; fb.textContent = "";
+      U().$$(".ltopts .btn", v).forEach(function (x) { x.disabled = false; x.classList.remove("good", "bad"); });
+    }
+    v.innerHTML = head(g) + '<div class="stage"><div class="fc ltq" id="qbox"></div><p class="sub" style="text-align:center;margin:0">Chữ này thuộc loại từ nào?</p>' + ltOpts(GG) + '<div class="feedback" id="fb" role="status"></div></div>';
+    setScore(v, 0, left + " giây");
+    U().$$(".ltopts .btn", v).forEach(function (b) {
+      b.onclick = function () {
+        if (busy || over) return; busy = true; tries++;
+        var ok = b.dataset.g === q.g, fb = v.querySelector("#fb");
+        U().$$(".ltopts .btn", v).forEach(function (x) { x.disabled = true; if (x.dataset.g === q.g) x.classList.add("good"); });
+        if (ok) { score++; correct(b); } else { b.classList.add("bad"); wrong(); }
+        ltRec(rec, q, ok); setScore(v, score);
+        fb.className = "feedback " + (ok ? "ok" : "no"); fb.textContent = (ok ? "Đúng! " : "Chưa đúng. ") + ltSay(q);
+        HC.later(function () { if (!over) round(); }, ok ? 350 : 1300);
+      };
+    });
+    round(); HC.later(tick, 1000);
+  }
+  // 3. Gom rổ: chọn hết chữ thuộc một loại trong lưới ≤ 12 chữ
+  function ltGom(v, g, T, GG, list, rec) {
+    var N = 8, i = 0, score = 0;
+    function round() {
+      var gi = GG[Math.floor(Math.random() * GG.length)], mem = list.filter(function (q) { return q.g === gi; }), oth = list.filter(function (q) { return q.g !== gi; });
+      var size = Math.min(12, list.length), nm = Math.min(mem.length, 2 + Math.floor(Math.random() * 4), size - 1);
+      var pickM = HC.pickWeak(mem, nm), tiles = U().shuffle(pickM.concat(HC.pickWeak(oth, size - pickM.length))), sel = {}, done = false;
+      v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">Lượt ' + (i + 1) + " / " + N + '</span></div><div class="card ltask" style="width:min(680px,100%);text-align:center"><b>Chọn HẾT các chữ thuộc <span style="color:var(--seal)">' + esc(gi) + '</span></b><p class="sub" style="margin:4px 0 0">Bấm để chọn / bỏ chọn, rồi bấm Kiểm tra.</p></div><div class="ltgrid">' + tiles.map(function (q, k) { return '<button class="lttile" data-k="' + k + '"><span class="han">' + esc(q.x) + '</span><small class="hide"></small></button>'; }).join("") + '</div><div class="row acts"><button class="btn primary" id="ok">Kiểm tra</button><button class="btn primary hide" id="nx">Lượt tiếp →</button></div><div class="feedback" id="fb" role="status"></div></div>';
+      setScore(v, score);
+      U().$$(".lttile", v).forEach(function (b) { b.onclick = function () { if (done) return; var k = b.dataset.k; sel[k] = !sel[k]; b.classList.toggle("on", !!sel[k]); }; });
+      v.querySelector("#ok").onclick = function () {
+        done = true; var bad = 0;
+        U().$$(".lttile", v).forEach(function (b) {
+          var q = tiles[+b.dataset.k], isM = q.g === gi, on = !!sel[b.dataset.k], sm = b.querySelector("small");
+          b.disabled = true; sm.textContent = q.am + " · " + q.g; sm.classList.remove("hide");
+          if (isM && on) { b.classList.add("good"); ltRec(rec, q, true); }
+          else if (isM || on) { b.classList.add(isM ? "miss" : "bad"); bad++; ltRec(rec, q, false); }
+        });
+        var fb = v.querySelector("#fb"), ok = !bad;
+        if (ok) { score++; correct(this); } else wrong();
+        setScore(v, score);
+        fb.className = "feedback " + (ok ? "ok" : "no"); fb.textContent = ok ? "Đúng hết!" : "Còn " + bad + " chữ chưa đúng: viền đỏ = chọn nhầm, viền vàng = còn sót.";
+        this.classList.add("hide"); var nx = v.querySelector("#nx"); nx.classList.remove("hide"); try { nx.focus(); } catch (e) { }
+      };
+      v.querySelector("#nx").onclick = function () { i++; if (i < N) round(); else finish(v, g, score, { label: score + " / " + N, msg: "Gom đúng hết " + score + " / " + N + " lượt", rec: rec }); };
+    }
+    round();
+  }
+  // 4. Âm Hán Việt: chữ → chọn 1 trong 4 âm (âm đề cương ghi)
+  function ltAmQ(v, g, T, GG, list, rec) {
+    var N = 15, deck = ltDeck(list, N), i = 0, score = 0, ams = [];
+    list.forEach(function (q) { if (q.am && ams.indexOf(q.am) < 0) ams.push(q.am); });
+    function round() {
+      var q = deck[i], opts = U().shuffle([q.am].concat(U().pick(ams.filter(function (a) { return a !== q.am; }), 3)));
+      v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">Câu ' + (i + 1) + " / " + N + '</span></div><div class="fc ltq"><div class="big ' + U().lenCls(q.x) + '">' + esc(q.x) + '</div><div class="muted">' + esc(q.g) + ' — âm Hán Việt là gì?</div></div><div class="choices">' + opts.map(function (o) { return '<button class="choice" data-a="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + '</div><div class="feedback" id="fb" role="status"></div></div>';
+      setScore(v, score);
+      U().$$(".choice", v).forEach(function (b) {
+        b.onclick = function () {
+          var ok = b.dataset.a === q.am, fb = v.querySelector("#fb");
+          U().$$(".choice", v).forEach(function (x) { x.disabled = true; if (x.dataset.a === q.am) x.classList.add("right"); });
+          if (ok) { score++; correct(b); } else { b.classList.add("wrong"); wrong(); }
+          ltRec(rec, q, ok); setScore(v, score);
+          fb.className = "feedback " + (ok ? "ok" : "no"); fb.textContent = (ok ? "Đúng! " : "Chưa đúng. ") + ltSay(q);
+          HC.later(function () { i++; if (i < N) round(); else finish(v, g, score, { label: score + " / " + N, rec: rec }); }, ok ? 900 : 1900);
+        };
+      });
+    }
+    round();
+  }
+  // 5. Lật thẻ: tự nhớ loại + âm, lật, tự chấm; thẻ Quên được hỏi lại 1 lần cuối lượt
+  function ltThe(v, g, T, GG, list, rec) {
+    var N = Math.min(20, list.length), deck = ltDeck(list, N), i = 0, nho = 0, again = {};
+    function round(show) {
+      var q = deck[i], mean = q.it ? HC.meaningShort(q.it) : "";
+      v.innerHTML = head(g) + '<div class="stage"><div class="row"><span class="chip num">Thẻ ' + (i + 1) + " / " + deck.length + '</span></div><div class="fc ltq"><div class="big ' + U().lenCls(q.x) + '">' + esc(q.x) + '</div><div class="ans' + (show ? "" : " hide") + '"><div style="font-weight:700;font-size:1.2rem;color:var(--seal)">' + esc(q.g) + '</div><div style="font-weight:600">' + esc(q.am) + "</div>" + (mean ? '<div class="muted">' + esc(mean) + "</div>" : "") + (T.ky && T.ky[q.x] ? '<div class="muted" style="font-size:0.85rem">Có ở: ' + esc(T.ky[q.x].join(", ")) + "</div>" : "") + '</div></div><div class="row acts">' + (show ? '<button class="btn bad" id="quen">Quên</button><button class="btn good" id="nho">Nhớ</button>' : '<button class="btn primary" id="lat">Lật thẻ</button>') + "</div></div>";
+      setScore(v, nho, "Nhớ " + nho + " / " + N);
+      if (!show) { v.querySelector("#lat").onclick = function () { round(true); }; return; }
+      function go(ok, b) {
+        if (ok) { if (!again[q.x]) nho++; correct(b); } else { wrong(); if (!again[q.x]) { again[q.x] = 1; deck.push(q); } }
+        ltRec(rec, q, ok); i++;
+        if (i < deck.length) round(false); else finish(v, g, Math.min(nho, N), { label: "Nhớ " + Math.min(nho, N) + " / " + N, msg: nho >= N ? "Nhớ hết các thẻ!" : "Thẻ quên được hỏi lại một lần cuối lượt", rec: rec });
+      }
+      v.querySelector("#quen").onclick = function () { go(false, this); };
+      v.querySelector("#nho").onclick = function () { go(true, this); };
+    }
+    round(false);
   }
 
   // 6. Truy tìm bộ thủ

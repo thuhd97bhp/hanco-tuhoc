@@ -396,6 +396,7 @@ a.li.pli { color: inherit; text-decoration: none; }
 .modal.sheet { z-index: 60; } /* nằm trên khung chi tiết, dưới menu ⋯ */
 /* trò chơi kho khó (games.js: HC.khoSetup, khoam, khohan) */
 .ksu { width: min(760px, 100%); margin: 0 auto 12px; }
+.ksu #ksmsg { white-space: normal; border-radius: 10px; padding: 3px 10px; line-height: 1.45; max-width: 100%; } /* câu báo dài (vd kho trống) phải xuống dòng, không tràn ngang trên điện thoại */
 .ksg { margin: 10px 0; }
 .ksopts { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .ksopts .plck { grid-template-columns: auto auto; }
@@ -471,6 +472,54 @@ ruby.rk:hover { background: var(--accent-soft); }
 .rad small { font-size: 0.72rem; color: var(--muted); }
 .rad.known { border-color: var(--good); }
 .ltgroup .chars { display: flex; flex-wrap: wrap; gap: 6px; }
+.ltgroup .ltky { margin-left: 4px; font-size: 0.7rem; color: var(--accent); font-weight: 600; }
+/* Loại từ: tab theo kỳ + ôn tập */
+.lttabs { margin: 4px 0 8px; gap: 6px; }
+.lttabs .ltfoc { font-size: 0.7rem; font-weight: 500; opacity: 0.85; }
+.ltdrills { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+.ltdrill { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--surface-2); text-decoration: none; color: inherit; min-width: 0; }
+.ltdrill:hover { border-color: var(--accent); }
+.ltdrill .gi { font-size: 28px; color: var(--seal); line-height: 1; }
+.ltdrill .t { display: grid; gap: 2px; min-width: 0; }
+.ltdrill small { color: var(--muted); font-size: 0.78rem; line-height: 1.3; }
+.ltdrill small.best { color: var(--accent); font-weight: 600; }
+.ltopts { display: grid; gap: 6px; width: min(720px, 100%); grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+.ltopts .btn { min-height: 48px; white-space: normal; line-height: 1.2; justify-content: flex-start; text-align: left; }
+.ltgrid { display: grid; gap: 8px; width: min(720px, 100%); grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.lttile { border: 2px solid var(--line); border-radius: 10px; background: var(--surface); padding: 6px 4px; display: grid; justify-items: center; gap: 2px; cursor: pointer; color: inherit; min-height: 72px; align-content: center; }
+.lttile .han { font-size: 30px; line-height: 1.15; }
+.lttile small { font-size: 0.68rem; color: var(--muted); line-height: 1.2; text-align: center; }
+.lttile.on { border-color: var(--accent); background: var(--accent-soft); }
+.lttile.good { border-color: var(--good); background: var(--good-soft); }
+.lttile.bad { border-color: var(--seal); background: var(--seal-soft); }
+.lttile.miss { border-color: var(--warn); background: var(--warn-soft); }
+.lttile:disabled { cursor: default; opacity: 1; }
+.fc.ltq { min-height: 170px; }
+@media (max-width: 600px) {
+  .ltdrills { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ltdrill { padding: 8px; gap: 8px; }
+  .ltdrill .gi { font-size: 22px; }
+  .ltdrill small:not(.best) { display: none; }
+  .fc.ltq { min-height: 0; padding: 12px; gap: 6px; }
+  .fc.ltq .big { font-size: clamp(48px, 15vw, 80px); }
+  .ltopts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .ltopts .btn { min-height: 40px; padding: 6px 10px; font-size: 0.88rem; }
+  .ltgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .lttile { min-height: 54px; padding: 4px 2px; }
+  .lttile .han { font-size: 24px; }
+  .ltask { padding: 10px 12px; }
+  .ltask .sub { display: none; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .fc.ltq { min-height: 0; padding: 10px; gap: 4px; }
+  .fc.ltq .big { font-size: clamp(40px, 16vh, 72px); }
+  .ltopts .btn { min-height: 36px; padding: 5px 10px; }
+  .ltgrid { gap: 5px; }
+  .lttile { min-height: 46px; padding: 2px; }
+  .lttile .han { font-size: 22px; }
+  .ltask { padding: 8px 12px; }
+  .ltask .sub { display: none; }
+}
 .field { display: grid; gap: 4px; }
 .field input, .field select, textarea, input[type="search"], input[type="text"] { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; width: 100%; }
 input.answer { font-size: 1.15rem; text-align: center; max-width: 420px; }

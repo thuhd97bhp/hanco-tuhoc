@@ -2367,13 +2367,40 @@
   }
 
   // ---------- LOẠI TỪ ----------
-  function vLT(v) {
-    var G = D.loaitu, names = Object.keys(G);
-    var h = '<h1>Loại từ</h1><p class="sub">Đề cương HK1 hỏi 3 loại (Số từ, Phương vị từ, Phó từ); đề cương kỳ 2 hỏi 5 loại; đề cương giữa kỳ 3 có 38 từ ngữ pháp chia 7 loại (thêm Trợ từ kết cấu, Trợ động từ). Cách làm bài theo đề cương: ① gạch chữ đề bài hỏi; ② nhớ mặt chữ thuộc loại nào; ③ khoanh đáp án. Không cần dịch hết câu.</p><div class="row" style="margin:10px 0 14px"><a class="btn primary" href="#choi-basket7">Luyện đề giữa kỳ 3: Bảy rổ loại từ</a><a class="btn" href="#choi-basket">Năm rổ loại từ (HK1, kỳ 2)</a></div><div class="cols2">';
-    names.forEach(function (g) {
-      h += '<div class="card ltgroup"><h2>' + esc(g) + ' <span class="muted num" style="font-weight:500;font-size:0.9rem">(' + G[g].length + ")</span></h2><div class=\"chars\">" + G[g].map(function (x) { var it = chars(x).length > 1 ? WORD[x] : CHAR[x]; return it ? miniHTML(it) : '<span class="mini"><span class="han">' + esc(x) + "</span></span>"; }).join("") + "</div></div>";
+  // tab theo kỳ (ltk trong app-data.json = bảng loại từ đề cương kỳ đó) + Tổng hợp; mỗi tab có Ôn tập (5 bài: HC.ltDrill ở games.js)
+  // #loaitu → tab kỳ đang ôn thi; #loaitu-<hk1|hk2|gk3|all>; #loaitu-<tab>-<bài>
+  var LT_HL = function (s, x) { var at = s.indexOf(x); return esc(s.slice(0, at)) + '<span style="color:var(--seal);border-bottom:2px solid var(--seal)">' + esc(x) + "</span>" + esc(s.slice(at + x.length)); };
+  var LT_EX = {
+    hk1: '<p><span class="han" style="font-size:1.4rem">' + LT_HL("在家中孝父母。", "中") + '</span> — đề K10: chữ <span class="han">中</span> thuộc loại từ nào? A. Số từ · <b>B. Phương vị từ</b> · C. Phó từ. Có thể nhìn thêm vị trí: <span class="han">中</span> đứng sau <span class="han">家</span>, theo mẫu “danh từ + nơi chốn”.</p>',
+    hk2: '<p class="sub">Phạm vi kỳ 2: chỉ chọn Liên từ, Lượng từ, Phó từ, Số từ và Phương vị từ; không chọn Giới từ, Trợ từ hoặc Tính từ.</p>',
+    gk3: '<p><span class="han" style="font-size:1.4rem">' + LT_HL("佛者，佛陀之省稱。", "之") + '</span> — đề K10 giữa kỳ 3: chữ <span class="han">之</span> là: a/ Liên từ · b/ Trợ từ · c/ Phó từ · <b>d/ Trợ từ kết cấu</b>.</p><p class="sub">Phạm vi giữa kỳ 3: 7 loại trong đề cương (Trợ từ kết cấu, Trợ động từ, Lượng từ, Phương vị từ, Liên từ, Phó từ, Số từ). Mẹo nhớ (suy từ đề K10, đề cương không ghi): đáp án Giới từ, Trợ từ, Tính từ không thuộc 7 loại này.</p>'
+  };
+  var LT_SUB = {
+    hk1: "Đề cương HK1 hỏi 3 loại: Số từ, Phương vị từ, Phó từ.",
+    hk2: "Đề cương cuối kỳ 2 hỏi 5 loại: Lượng từ, Số từ, Liên từ, Phó từ, Phương vị từ.",
+    gk3: "Đề cương giữa kỳ 3 có 38 từ ngữ pháp chia 7 loại (thêm Trợ từ kết cấu, Trợ động từ).",
+    all: "Mọi loại từ của các kỳ gộp lại. Số nhỏ sau âm = kỳ có từ đó: 1 = HK1 · 2 = kỳ 2 · 3 = giữa kỳ 3."
+  };
+  function vLT(v, args) {
+    var keys = HC.ltTabKeys ? HC.ltTabKeys() : [];
+    var foc = String(PL.focus || "").toLowerCase(); if (keys.indexOf(foc) < 0) foc = keys[0];
+    var k = keys.indexOf(args[0]) >= 0 ? args[0] : foc;
+    if (args[0] && args[1]) return HC.ltDrill(v, k, args[1]);
+    var T = HC.ltTab(k), G = T.g, KN = { hk1: "1", hk2: "2", gk3: "3" }, NK = {};
+    (D.ltk || []).forEach(function (K) { NK[K.name] = KN[K.k] || K.name; });
+    var h = '<h1>Loại từ</h1><div class="row lttabs" role="tablist" aria-label="Chọn kỳ">' + keys.map(function (x) { var t = HC.ltTab(x); return '<a class="btn' + (x === k ? " primary" : "") + '" role="tab" aria-selected="' + (x === k) + '" href="#loaitu-' + x + '">' + esc(t.name) + (x === foc ? ' <small class="ltfoc">đang ôn thi</small>' : "") + "</a>"; }).join("") + "</div>";
+    h += '<p class="sub">' + esc(LT_SUB[k] || "") + " Cách làm bài theo đề cương: ① gạch chữ đề bài hỏi; ② nhớ mặt chữ thuộc loại nào; ③ khoanh đáp án. Không cần dịch hết câu.</p>";
+    h += '<div class="card ltdrillbox"><h2>Ôn tập loại từ ' + esc(T.name) + ' <span class="muted num" style="font-weight:500;font-size:0.9rem">(' + Object.keys(G).length + " loại · " + Object.keys(G).reduce(function (n, g) { return n + G[g].length; }, 0) + ' mục)</span></h2><div class="ltdrills">' + HC.LT_DRILLS.map(function (d) { var b = S.best["lt-" + k + "-" + d.id]; return '<a class="ltdrill" href="#loaitu-' + k + "-" + d.id + '"><span class="gi han">' + d.icon + "</span><span class=\"t\"><b>" + esc(d.name) + "</b><small>" + esc(d.desc) + '</small><small class="best">' + (b != null ? "Kỷ lục: " + esc(b) : "Chưa làm") + "</small></span></a>"; }).join("") + "</div></div>";
+    h += '<div class="cols2" style="margin-top:14px">';
+    Object.keys(G).forEach(function (g) {
+      h += '<div class="card ltgroup"><h2>' + esc(g) + ' <span class="muted num" style="font-weight:500;font-size:0.9rem">(' + G[g].length + ")</span></h2><div class=\"chars\">" + G[g].map(function (x) {
+        var it = chars(x).length > 1 ? WORD[x] : CHAR[x], am = HC.ltAm(T, x, it), ky = T.ky && T.ky[x] ? '<small class="ltky">' + T.ky[x].map(function (n) { return NK[n] || n; }).join("·") + "</small>" : "";
+        return '<span class="mini"' + (it ? ' data-open="' + it.id + '"' : "") + '><span class="han">' + esc(x) + "</span>" + esc(am) + ky + "</span>";
+      }).join("") + "</div></div>";
     });
-    h += '</div><div class="card" style="margin-top:14px"><h2>Ví dụ trong đề K10</h2><p><span class="han" style="font-size:1.4rem">在家<span style="color:var(--seal);border-bottom:2px solid var(--seal)">中</span>孝父母。</span> — chữ <span class="han">中</span> thuộc loại từ nào? A. Số từ · <b>B. Phương vị từ</b> · C. Phó từ. Có thể nhìn thêm vị trí: <span class="han">中</span> đứng sau <span class="han">家</span>, theo mẫu “danh từ + nơi chốn”.</p><p class="sub">Phạm vi kỳ 2: chỉ chọn Liên từ, Lượng từ, Phó từ, Số từ và Phương vị từ; không chọn Giới từ, Trợ từ hoặc Tính từ.</p><p style="margin-top:10px"><span class="han" style="font-size:1.4rem">佛者，佛陀<span style="color:var(--seal);border-bottom:2px solid var(--seal)">之</span>省稱。</span> — đề K10 giữa kỳ 3: chữ <span class="han">之</span> là: a/ Liên từ · b/ Trợ từ · c/ Phó từ · <b>d/ Trợ từ kết cấu</b>.</p><p class="sub">Phạm vi giữa kỳ 3: 7 loại trong đề cương (Trợ từ kết cấu, Trợ động từ, Lượng từ, Phương vị từ, Liên từ, Phó từ, Số từ). Mẹo nhớ (suy từ đề K10, đề cương không ghi): đáp án Giới từ, Trợ từ, Tính từ không thuộc 7 loại này.</p></div>';
+    h += "</div>";
+    var ex = k === "all" ? LT_EX.hk1 + LT_EX.hk2 + LT_EX.gk3 : LT_EX[k];
+    if (ex) h += '<div class="card" style="margin-top:14px"><h2>Ví dụ trong đề</h2>' + ex + "</div>";
     v.innerHTML = h;
   }
 
