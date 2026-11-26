@@ -230,6 +230,7 @@
   }
   HC.merge = merge;
   function softRefresh() {
+    if (tk.st !== "ok") return; // đang ở màn tài khoản: tkSet tự vẽ lại
     var c = cur || "home", name = c.split("-")[0];
     if (c.indexOf("-") < 0 && ["home", "caidat", "tra", "bo", "loaitu", "cau", "choi", "thi", "on", "viet"].indexOf(name) >= 0 && !document.querySelector(".fc, canvas.pad, .modal")) route();
     else { renderStats(); renderMenu(name); }
@@ -398,7 +399,7 @@
   }
   function fbNow() { clearTimeout(fb.timer); fb.timer = null; return fbSync(); }
   HC.fbSignIn = function () {
-    if (!fb.on) return;
+    if (!fb.on) return toast("Chưa tải được phần đăng nhập. Kiểm tra mạng rồi tải lại trang.");
     var p = new firebase.auth.GoogleAuthProvider();
     ssSet(DN, "1"); // vừa bấm Đăng nhập (giữ được qua kiểu đăng nhập redirect)
     fb.auth.signInWithPopup(p).catch(function (e) {
@@ -433,13 +434,15 @@
     });
   };
   function fbInit() {
-    if (!window.firebase || !firebase.initializeApp) return;
+    if (!window.firebase || !firebase.initializeApp) return tkNoFb();
     try {
       var app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_CONFIG);
       fb.auth = firebase.auth(); fb.db = firebase.firestore(); fb.on = true;
-    } catch (e) { return; }
+      fb.auth.languageCode = "vi"; // email xác nhận / đặt lại mật khẩu + trang bấm link bằng tiếng Việt
+      if (TK_EMU) { fb.auth.useEmulator("http://127.0.0.1:9099", { disableWarnings: true }); fb.db.useEmulator("127.0.0.1", 8080); }
+    } catch (e) { return tkNoFb(); }
     fb.status = "signedout";
-    fb.auth.getRedirectResult().catch(function () { });
+    fb.auth.getRedirectResult().catch(function (e) { if (e && e.code && e.code !== "auth/popup-closed-by-user") toast(tkErr(e)); });
     fb.auth.onAuthStateChanged(function (u) {
       if (fb.unsub) { fb.unsub(); fb.unsub = null; }
       clearTimeout(fb.timer); fb.timer = null;
@@ -447,10 +450,12 @@
       fb.user = u; fb.ref = null; // chỉ gắn tài khoản sau khi xác định xong chủ tiến độ trên máy (fbOwn)
       fb.rem = null; fb.remOk = false; fb.myW = "";
       try { sachRefresh(); } catch (e) { }
-      if (!u) { fb.status = "signedout"; renderStats(); softRefresh(); return; }
+      tkStop();
+      if (!u) { fb.status = "signedout"; lsDel(TK_LS); tkSet(TK_GATE ? "vao" : "ok"); renderStats(); softRefresh(); return; }
       var dn = ssGet(DN); ssDel(DN);
-      fbOwn(u, dn, function (dirty) { if (fb.user === u && !fb.ref) fbAttach(u, dirty); });
+      tkStart(u, dn); // tài khoản "ok" → tkGo → fbOwn → fbAttach như cũ
     });
+    fb.attach = fbAttach;
     function fbAttach(u, dirty) {
       fb.ref = fb.db.collection("hanco_progress").doc(u.uid);
       fb.dirty = dirty == null ? !fbClean() : dirty; // máy có phần chưa lên tài khoản (học khi chưa đăng nhập / tắt app trước khi kịp ghi)
@@ -474,6 +479,397 @@
     window.addEventListener("pagehide", function () { if (fb.ref) fbNow(); });
     window.addEventListener("online", function () { if (fb.ref) { var had = fb.dirty; fbNow().then(function () { if (had && fb.status === "ok") toast("Có mạng trở lại: đã đồng bộ phần học lúc ngoại tuyến"); }); } else renderStats(); });
     window.addEventListener("offline", function () { if (fb.ref) { fb.status = "offline"; } renderStats(); });
+  }
+
+  // ---------- TÀI KHOẢN (nhiều người dùng, Bước 3 — 26/11/2026) ----------
+  // Chưa đăng nhập / chưa xác nhận email / chưa đăng ký xong / bị khóa → KHÓA giao diện: route() chỉ hiện màn tài khoản (tkView).
+  // Firestore (luật ở firestore.rules): hanco_users/{uid} hồ sơ {ten, hoten, hk, email, st, tao, upd}; hanco_ten/{khóa họ tên}
+  // danh sách họ tên thật {ten, uid|null} (không ai liệt kê được trừ quản trị); hanco_cfg/dk {tran, dem, mo}. Đăng ký = 1 transaction:
+  // tạo hồ sơ + giữ tên + dem+1 (luật kiểm còn chỗ, tên còn trống, email đã xác nhận). Nghe hồ sơ theo thời gian thực → bị khóa là
+  // ra màn "Tài khoản đang tạm khóa" ngay, ngắt đồng bộ. localStorage TK_LS = trạng thái hồ sơ lần gần nhất (mở app ngoại tuyến được);
+  // DK_LS = thông tin đăng ký đang chờ xác nhận email. Không thuộc S. Quản trị viên (mã 000) = ADMIN_UID: luôn được phép.
+  var ADMIN_UID = "PoB9oWSF4WRAPkWYtKaXfAHSX7F3", TK_LS = "hanco-tk", DK_LS = "hanco-dk";
+  var TK_GATE = !(window.claude && typeof window.claude.use === "function"); // chạy trong Claude (bản cũ) thì không khóa
+  var TK_EMU = /[?&]emu\b/.test(location.search) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname); // thử ở máy với bộ giả lập
+  var tk = { st: "cho", prof: null, unsub: null, u: null, dn: null, going: false, view: "vao", msg: "", poll: null };
+  (function () { var c = tkCache(); tk.st = !TK_GATE ? "ok" : c && c.st === "ok" ? "ok" : "cho"; })(); // mở app: khỏi nháy màn chờ
+  HC.tk = tk;
+  function tkCache() { try { var c = JSON.parse(lsGet(TK_LS)); return c && c.uid ? c : null; } catch (e) { return null; } }
+  function isAdmin() { return !!(fb.user && fb.user.uid === ADMIN_UID); }
+  HC.isAdmin = isAdmin;
+  function tkSet(st, msg) {
+    if (msg != null) tk.msg = msg;
+    if (tk.st === st && st === "ok") return;
+    tk.st = st; route();
+  }
+  HC.tkSet = tkSet;
+  // chuẩn hóa họ tên: Unicode NFC, bỏ ký tự vô hình, gộp khoảng trắng. Khóa so khớp: + chữ thường, dấu thanh tách khỏi vị trí đặt
+  // (Hòa = Hoà, Thúy = Thuý — kiểu bỏ dấu cũ/mới) nhưng LOẠI dấu thanh + dấu mũ/trăng/móc + đ vẫn phải đúng.
+  function nameNorm(s) {
+    s = String(s == null ? "" : s); if (s.normalize) s = s.normalize("NFC");
+    return s.replace(/[​-‍⁠﻿]/g, "").replace(/[Ð]/g, "Đ").replace(/[ð]/g, "đ").replace(/\//g, " ").replace(/\s+/g, " ").trim();
+  }
+  var TONE = { "̀": "f", "́": "s", "̉": "r", "̃": "x", "̣": "j" };
+  function nameKey(s) {
+    s = nameNorm(s).toLowerCase();
+    return s.split(" ").map(function (w) {
+      var d = w.normalize ? w.normalize("NFD") : w, t = "";
+      d = d.replace(/[̣̀́̉̃]/g, function (m) { t += TONE[m]; return ""; });
+      if (d.normalize) d = d.normalize("NFC");
+      return d + (t ? "_" + t.split("").sort().join("") : "");
+    }).join(" ");
+  }
+  HC.nameKey = nameKey; HC.nameNorm = nameNorm;
+  function tkErr(e) {
+    var c = (e && e.code) || "";
+    var m = {
+      "auth/invalid-email": "Email chưa đúng dạng (vd ten@gmail.com).",
+      "auth/missing-password": "Hãy nhập mật khẩu.",
+      "auth/weak-password": "Mật khẩu phải có ít nhất 6 ký tự.",
+      "auth/email-already-in-use": "Email này đã có tài khoản. Hãy đăng nhập (đăng ký bằng Google thì bấm nút Google), hoặc bấm \"Quên mật khẩu?\".",
+      "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng. Nếu bạn đăng ký bằng Google, hãy bấm nút \"Đăng nhập bằng Google\".",
+      "auth/wrong-password": "Email hoặc mật khẩu chưa đúng.",
+      "auth/user-not-found": "Email hoặc mật khẩu chưa đúng.",
+      "auth/invalid-login-credentials": "Email hoặc mật khẩu chưa đúng.",
+      "auth/user-disabled": "Tài khoản này đã bị tắt. Liên hệ quản trị viên.",
+      "auth/too-many-requests": "Thử quá nhiều lần. Hãy chờ vài phút rồi thử lại (hoặc bấm \"Quên mật khẩu?\").",
+      "auth/network-request-failed": "Không có mạng. Kiểm tra kết nối rồi thử lại.",
+      "auth/popup-blocked": "Trình duyệt chặn cửa sổ đăng nhập. Hãy thử lại.",
+      "auth/requires-recent-login": "Hãy đăng nhập lại rồi thử lại.",
+      "auth/account-exists-with-different-credential": "Email này đã đăng ký bằng mật khẩu. Hãy đăng nhập bằng email + mật khẩu.",
+      "unavailable": "Không có mạng. Kiểm tra kết nối rồi thử lại."
+    }[c];
+    return m || "Chưa làm được (" + (c || (e && e.message) || "lỗi") + "). Hãy thử lại.";
+  }
+  function tkActs() { return { url: location.origin + location.pathname }; } // bấm link trong email xong → nút "Tiếp tục" về app
+  // không có Firebase (mất mạng lần đầu, bị chặn): còn nhớ tài khoản "ok" thì học ngoại tuyến được, không thì báo cần mạng
+  function tkNoFb() { if (!TK_GATE) return; var c = tkCache(); tkSet(c && c.st === "ok" ? "ok" : "mang"); }
+  function tkStop() {
+    if (tk.unsub) { tk.unsub(); tk.unsub = null; }
+    tk.u = null; tk.prof = null; tk.going = false;
+  }
+  // tài khoản "ok": gắn tiến độ như Bước 2 (xác định chủ tiến độ trên máy → đồng bộ)
+  function tkGo() {
+    var u = tk.u;
+    if (!u || fb.user !== u || fb.ref || tk.going) return;
+    tk.going = true;
+    fbOwn(u, tk.dn, function (dirty) { tk.going = false; tk.dn = null; if (fb.user === u && !fb.ref && tk.st === "ok") fb.attach(u, dirty); });
+  }
+  // bị khóa / bị xóa: ngắt đồng bộ ngay (tiến độ trên máy giữ nguyên)
+  function tkDetach() {
+    if (fb.unsub) { fb.unsub(); fb.unsub = null; }
+    clearTimeout(fb.timer); fb.timer = null; fb.ref = null; tk.going = false;
+    if (fb.ask) { var a = fb.ask; fb.ask = null; a.close(); }
+  }
+  function tkStart(u, dn) {
+    tk.u = u; tk.dn = dn;
+    if (!TK_GATE || u.uid === ADMIN_UID) {
+      if (u.uid === ADMIN_UID) { lsSet(TK_LS, JSON.stringify({ uid: u.uid, st: "ok" })); qtCfgEnsure(); }
+      tkSet("ok"); tkGo(); return;
+    }
+    if (!u.emailVerified) { tkSet("xac", ""); return; }
+    var c = tkCache();
+    if (c && c.uid === u.uid) tkApply(c.st); else tkSet("cho", "");
+    tkListen(u);
+  }
+  function tkApply(st) {
+    if (st === "ok") { tkSet("ok"); tkGo(); return; }
+    tkDetach(); tkSet(st === "xoa" ? "xoa" : "khoa");
+  }
+  // nghe hồ sơ của mình theo thời gian thực (khóa / mở khóa có hiệu lực ngay)
+  function tkListen(u) {
+    var ref = fb.db.collection("hanco_users").doc(u.uid);
+    tk.unsub = ref.onSnapshot(function (snap) {
+      if (fb.user !== u || tk.u !== u) return;
+      if (!snap.exists) {
+        tk.prof = null; lsDel(TK_LS);
+        if (tk.st === "ok") tkDetach();
+        tkSet("dk"); tkAutoClaim(u); return;
+      }
+      var d = snap.data(); tk.prof = d;
+      lsSet(TK_LS, JSON.stringify({ uid: u.uid, st: d.st, ten: d.ten, hoten: d.hoten, email: d.email }));
+      tkApply(d.st);
+    }, function () { if (tk.u === u && tk.st === "cho") tkSet("cho", "Chưa kiểm tra được tài khoản. Kiểm tra mạng rồi bấm Thử lại."); });
+  }
+  // kiểm tra trước khi đăng ký: còn chỗ + đang mở + họ tên có trong danh sách và còn trống. Trả {ten: họ tên đúng như danh sách}
+  function tkCheck(hoten) {
+    var k = nameKey(hoten);
+    if (k.length < 2) return Promise.reject(new Error("Hãy nhập họ tên đầy đủ của bạn."));
+    var db = fb.db;
+    return db.collection("hanco_cfg").doc("dk").get().then(function (c) {
+      var d = c.exists ? c.data() : null;
+      if (!d || !d.mo) throw new Error("Đăng ký đang tạm đóng. Liên hệ quản trị viên.");
+      if (!((+d.dem || 0) < (+d.tran || 0))) throw new Error("App đã đủ người");
+      return db.collection("hanco_ten").doc(k).get().then(function (n) {
+        if (!n.exists) throw new Error("Đây không phải tên thật hoặc chưa đúng họ tên đầy đủ của bạn");
+        return { k: k, ten: n.data().ten, dem: +d.dem || 0 };
+      }, function (e) {
+        if (e && e.code === "permission-denied") throw new Error("Họ tên này đã có tài khoản, liên hệ quản trị viên");
+        throw e;
+      });
+    });
+  }
+  // hoàn tất đăng ký (email đã xác nhận / Google): tạo hồ sơ + giữ tên + dem+1 trong 1 transaction (luật kiểm lại tất cả)
+  function tkClaim(u, ten, hoten) {
+    ten = nameNorm(ten);
+    if (ten.length < 2 || ten.length > 30) return Promise.reject(new Error("Tên hiển thị dài 2–30 ký tự."));
+    var db = fb.db, FV = firebase.firestore.FieldValue;
+    return u.getIdToken(true).then(function () { return tkCheck(hoten); }).then(function (r) {
+      var cref = db.collection("hanco_cfg").doc("dk"), nref = db.collection("hanco_ten").doc(r.k), uref = db.collection("hanco_users").doc(u.uid);
+      return db.runTransaction(function (tx) {
+        return tx.get(cref).then(function (c) {
+          var d = c.exists ? c.data() : {};
+          if (!d.mo) throw new Error("Đăng ký đang tạm đóng. Liên hệ quản trị viên.");
+          if (!((+d.dem || 0) < (+d.tran || 0))) throw new Error("App đã đủ người");
+          tx.set(uref, { ten: ten, hoten: r.ten, hk: r.k, email: u.email, st: "ok", tao: FV.serverTimestamp(), upd: Date.now() });
+          tx.update(nref, { uid: u.uid, t: FV.serverTimestamp() });
+          tx.update(cref, { dem: (+d.dem || 0) + 1 });
+        });
+      }).catch(function (e) {
+        if (e && e.code === "permission-denied") return tkCheck(hoten).then(function () { throw new Error("Chưa đăng ký được. Hãy thử lại."); });
+        throw e;
+      });
+    }).then(function () { lsDel(DK_LS); toast("Đăng ký xong! Chào mừng " + ten); });
+  }
+  function tkPending(u) { try { var p = JSON.parse(lsGet(DK_LS)); return p && u && u.email && String(p.email).toLowerCase() === u.email.toLowerCase() ? p : null; } catch (e) { return null; } }
+  // vừa xác nhận email: tự hoàn tất bằng thông tin đã điền lúc đăng ký (không bắt điền lại)
+  function tkAutoClaim(u) {
+    var p = tkPending(u); if (!p || tk.busy) return;
+    tk.busy = true; tk.msg = "Đang hoàn tất đăng ký…"; route();
+    tkClaim(u, p.ten, p.hoten).then(function () { tk.busy = false; tk.msg = ""; }, function (e) { tk.busy = false; tk.msg = e.message && !e.code ? e.message : tkErr(e); if (tk.st === "dk") route(); });
+  }
+  function tkOut() {
+    var u = fb.user;
+    if (u && lsGet(OWN) === u.uid) return HC.fbSignOut(false);
+    if (fb.auth) fb.auth.signOut();
+    return Promise.resolve(true);
+  }
+  // quản trị: tạo cấu hình đăng ký mặc định nếu chưa có (trần 120, đang mở)
+  function qtCfgEnsure() {
+    var ref = fb.db.collection("hanco_cfg").doc("dk");
+    ref.get().then(function (c) { if (!c.exists) return ref.set({ tran: 120, dem: 0, mo: true }); }).catch(function () { });
+  }
+
+  // màn tài khoản (thay cho mọi màn khi chưa vào được app)
+  function tkView(v) {
+    var st = tk.st, u = fb.user, msg = tk.msg ? '<p class="tkmsg" role="alert">' + esc(tk.msg) + "</p>" : "";
+    var head = '<div class="tkhead"><span class="seal" aria-hidden="true">學</span><div><b>Hán cổ tự học</b><small>Khoa Phật học từ xa · Khóa XI</small></div></div>';
+    var eye = '<button type="button" class="btn sm ghost tkeye" data-eye aria-label="Hiện mật khẩu">Hiện</button>';
+    var h = "", cleanup = null;
+    if (st === "vao" && tk.view === "tao") {
+      h = '<h1>Tạo tài khoản</h1>' + msg + '<form class="tkf" data-f="tao" novalidate>' +
+        '<div class="field"><label for="tke">Email</label><input id="tke" type="email" autocomplete="email" inputmode="email" required></div>' +
+        '<div class="field"><label for="tkt">Tên hiển thị</label><input id="tkt" type="text" maxlength="30" autocomplete="nickname" required><small>Người khác thấy tên này (vd bảng xếp hạng).</small></div>' +
+        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required><small>Chỉ quản trị viên thấy. Gõ đúng họ tên thật, có dấu.</small></div>' +
+        '<div class="field"><label for="tkp">Mật khẩu (ít nhất 6 ký tự)</label><div class="tkpw"><input id="tkp" type="password" autocomplete="new-password" minlength="6" required>' + eye + '</div></div>' +
+        '<p class="sub">Quản trị viên xem được thống kê học của bạn. Sau khi bấm "Tạo tài khoản", mở email để xác nhận địa chỉ.</p>' +
+        '<div class="row acts"><button class="btn primary" type="submit">Tạo tài khoản</button></div></form>' +
+        '<p class="tklinks"><a href="#" data-to="vao">Đã có tài khoản? Đăng nhập</a></p>';
+    } else if (st === "vao" && tk.view === "quen") {
+      h = '<h1>Quên mật khẩu</h1>' + msg + '<p class="sub">Nhập email đã đăng ký. App gửi một đường link để bạn đặt mật khẩu MỚI (không gửi lại được mật khẩu cũ).</p><form class="tkf" data-f="quen" novalidate>' +
+        '<div class="field"><label for="tke">Email</label><input id="tke" type="email" autocomplete="email" inputmode="email" required></div>' +
+        '<div class="row acts"><button class="btn primary" type="submit">Gửi link đặt mật khẩu mới</button></div></form>' +
+        '<p class="tklinks"><a href="#" data-to="vao">← Quay lại đăng nhập</a></p>';
+    } else if (st === "vao") {
+      h = '<h1>Đăng nhập để học</h1>' + msg + '<div class="row"><button class="btn primary tkg" type="button" data-google>Đăng nhập bằng Google</button></div>' +
+        '<div class="tkor"><span>hoặc dùng email</span></div><form class="tkf" data-f="vao" novalidate>' +
+        '<div class="field"><label for="tke">Email</label><input id="tke" type="email" autocomplete="email" inputmode="email" required></div>' +
+        '<div class="field"><label for="tkp">Mật khẩu</label><div class="tkpw"><input id="tkp" type="password" autocomplete="current-password" required>' + eye + '</div></div>' +
+        '<div class="row acts"><button class="btn" type="submit">Đăng nhập</button></div></form>' +
+        '<p class="tklinks"><a href="#" data-to="quen">Quên mật khẩu?</a><a href="#" data-to="tao">Chưa có tài khoản? Tạo tài khoản</a></p>';
+    } else if (st === "xac") {
+      h = '<h1>Xác nhận email</h1>' + msg + '<p>App đã gửi thư xác nhận tới <b>' + esc(u && u.email) + '</b>. Mở thư, bấm vào đường link trong thư, rồi quay lại đây.</p><p class="sub">Không thấy thư? Xem cả mục Thư rác / Quảng cáo. Trang này tự kiểm tra mỗi vài giây.</p>' +
+        '<div class="row acts"><button class="btn primary" type="button" data-xn>Tôi đã xác nhận</button><button class="btn" type="button" data-gl>Gửi lại thư</button></div>' +
+        '<p class="tklinks"><a href="#" data-doi>Gõ sai email? Tạo lại</a><a href="#" data-out>Đăng xuất</a></p>';
+    } else if (st === "dk") {
+      var p = tkPending(u) || {}, isG = u && u.providerData.some(function (x) { return x.providerId === "google.com"; });
+      if (tk.busy) h = '<h1>Hoàn tất đăng ký</h1><p class="sub">Đang hoàn tất đăng ký…</p>';
+      else h = '<h1>Hoàn tất đăng ký</h1>' + msg + '<p class="sub">Tài khoản <b>' + esc(u && u.email) + '</b>' + (isG ? " (Google)" : "") + ' chưa đăng ký vào app. Điền 2 ô dưới đây.</p><form class="tkf" data-f="dk" novalidate>' +
+        '<div class="field"><label for="tkt">Tên hiển thị</label><input id="tkt" type="text" maxlength="30" autocomplete="nickname" required value="' + esc(p.ten || (u && u.displayName ? String(u.displayName).slice(0, 30) : "")) + '"><small>Người khác thấy tên này (vd bảng xếp hạng).</small></div>' +
+        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required value="' + esc(p.hoten || "") + '"><small>Chỉ quản trị viên thấy. Gõ đúng họ tên thật, có dấu.</small></div>' +
+        '<p class="sub">Quản trị viên xem được thống kê học của bạn.</p>' +
+        '<div class="row acts"><button class="btn primary" type="submit">Hoàn tất đăng ký</button></div></form>' +
+        '<p class="tklinks"><a href="#" data-out>Đăng xuất</a></p>';
+    } else if (st === "khoa") {
+      h = '<h1>Tài khoản đang tạm khóa</h1><p>Tài khoản <b>' + esc(u && u.email) + '</b> đang bị quản trị viên tạm khóa. Liên hệ quản trị viên để được mở lại.</p><p class="sub">Tiến độ học của bạn vẫn được giữ. Khi được mở khóa, app tự vào lại.</p><div class="row acts"><button class="btn" type="button" data-out>Đăng xuất</button></div>';
+    } else if (st === "xoa") {
+      h = '<h1>Tài khoản đã bị xóa khỏi app</h1><p>Tài khoản <b>' + esc(u && u.email) + '</b> không còn dùng được app. Liên hệ quản trị viên nếu có nhầm lẫn.</p><div class="row acts"><button class="btn" type="button" data-out>Đăng xuất</button></div>';
+    } else if (st === "mang") {
+      h = '<h1>Cần kết nối mạng</h1><p>Lần đầu mở app (hoặc chưa đăng nhập) cần có mạng để đăng nhập.</p><div class="row acts"><button class="btn primary" type="button" data-reload>Tải lại trang</button></div>';
+    } else { // cho
+      h = '<h1>Đang mở app…</h1>' + (tk.msg ? msg + '<div class="row acts"><button class="btn primary" type="button" data-reload>Thử lại</button>' + (u ? '<button class="btn" type="button" data-out>Đăng xuất</button>' : "") + "</div>" : '<p class="sub">Đang kiểm tra tài khoản…</p>');
+      if (!tk.msg) cleanup = (function () { var t = setTimeout(function () { if (tk.st === "cho" && !tk.msg) { tk.msg = "Chưa kết nối được. Kiểm tra mạng rồi bấm Thử lại."; route(); } }, 12000); return function () { clearTimeout(t); }; })();
+    }
+    v.innerHTML = '<div class="tkwrap"><div class="card tk">' + head + h + "</div></div>";
+    function busy(b, on) { if (b) { b.disabled = on; } }
+    function show(m) { tk.msg = m; var el = $(".tkmsg", v); if (el) el.textContent = m; else { var f = $("h1", v); if (f) f.insertAdjacentHTML("afterend", '<p class="tkmsg" role="alert">' + esc(m) + "</p>"); } }
+    function err(e) { return e && e.message && !e.code ? e.message : tkErr(e); }
+    $$("[data-to]", v).forEach(function (a) { a.onclick = function (e) { e.preventDefault(); var em = $("#tke", v); tk.view = a.getAttribute("data-to"); tk.msg = ""; route(); var e2 = $("#tke"); if (em && e2 && em.value) e2.value = em.value; }; });
+    $$("[data-eye]", v).forEach(function (b) { b.onclick = function () { var i = b.parentNode.querySelector("input"); var sh = i.type === "password"; i.type = sh ? "text" : "password"; b.textContent = sh ? "Ẩn" : "Hiện"; b.setAttribute("aria-label", sh ? "Ẩn mật khẩu" : "Hiện mật khẩu"); }; });
+    $$("[data-out]", v).forEach(function (b) { b.onclick = function (e) { e.preventDefault(); tk.msg = ""; tk.view = "vao"; tkOut(); }; });
+    $$("[data-reload]", v).forEach(function (b) { b.onclick = function () { location.reload(); }; });
+    var g = $("[data-google]", v); if (g) g.onclick = function () { tk.msg = ""; HC.fbSignIn(); };
+    var f = $("form.tkf", v);
+    if (f) f.onsubmit = function (e) {
+      e.preventDefault();
+      var kind = f.getAttribute("data-f"), btn = $("[type=submit]", f), val = function (id) { var i = $(id, f); return i ? i.value : ""; };
+      var email = val("#tke").trim(), pw = val("#tkp"), ten = nameNorm(val("#tkt")), hoten = nameNorm(val("#tkh"));
+      if (!fb.on) return show("Chưa tải được phần đăng nhập. Kiểm tra mạng rồi tải lại trang.");
+      if (kind === "vao") {
+        if (!email || !pw) return show("Hãy nhập email và mật khẩu.");
+        busy(btn, true); ssSet(DN, "1");
+        fb.auth.signInWithEmailAndPassword(email, pw).then(function () { tk.msg = ""; }, function (x) { ssDel(DN); busy(btn, false); show(tkErr(x)); });
+      } else if (kind === "quen") {
+        if (!/^\S+@\S+\.\S+$/.test(email)) return show("Hãy nhập đúng email đã đăng ký.");
+        busy(btn, true);
+        fb.auth.sendPasswordResetEmail(email, tkActs()).then(ok, function (x) { if (x && (x.code === "auth/user-not-found" || x.code === "auth/invalid-credential")) ok(); else { busy(btn, false); show(tkErr(x)); } });
+        function ok() { busy(btn, false); show("Nếu email này đã đăng ký, thư đặt mật khẩu mới đã được gửi tới " + email + ". Xem cả mục Thư rác. Đăng ký bằng Google thì không cần mật khẩu: bấm \"Đăng nhập bằng Google\"."); }
+      } else if (kind === "tao") {
+        if (!/^\S+@\S+\.\S+$/.test(email)) return show("Email chưa đúng dạng (vd ten@gmail.com).");
+        if (ten.length < 2) return show("Tên hiển thị dài 2–30 ký tự.");
+        if (nameKey(hoten).length < 2) return show("Hãy nhập họ tên đầy đủ của bạn.");
+        if (pw.length < 6) return show("Mật khẩu phải có ít nhất 6 ký tự.");
+        busy(btn, true); show("Đang kiểm tra…");
+        tkCheck(hoten).then(function () {
+          lsSet(DK_LS, JSON.stringify({ email: email, ten: ten, hoten: hoten, t: Date.now() }));
+          ssSet(DN, "1");
+          return fb.auth.createUserWithEmailAndPassword(email, pw);
+        }).then(function (cr) {
+          tk.msg = "";
+          return cr.user.sendEmailVerification(tkActs()).catch(function () { tk.msg = "Chưa gửi được thư xác nhận. Bấm \"Gửi lại thư\"."; if (tk.st === "xac") route(); });
+        }).catch(function (x) { ssDel(DN); busy(btn, false); show(err(x)); });
+      } else if (kind === "dk") {
+        if (ten.length < 2) return show("Tên hiển thị dài 2–30 ký tự.");
+        if (nameKey(hoten).length < 2) return show("Hãy nhập họ tên đầy đủ của bạn.");
+        busy(btn, true); show("Đang kiểm tra…");
+        tkClaim(u, ten, hoten).then(function () { tk.msg = ""; }, function (x) { busy(btn, false); show(err(x)); });
+      }
+    };
+    if (st === "xac" && u) {
+      var check = function (manual) {
+        var cu = fb.auth.currentUser; if (!cu || cu !== u) return;
+        cu.reload().then(function () {
+          if (fb.auth.currentUser === u && u.emailVerified && tk.st === "xac") { tk.msg = ""; tkStart(u, tk.dn); }
+          else if (manual) show("Chưa thấy xác nhận. Hãy bấm đường link trong thư rồi thử lại.");
+        }, function (x) { if (manual) show(tkErr(x)); });
+      };
+      $("[data-xn]", v).onclick = function () { check(true); };
+      var gl = $("[data-gl]", v);
+      gl.onclick = function () {
+        if (Date.now() - (tk.sent || 0) < 60000) return show("Vừa gửi xong. Chờ 1 phút rồi gửi lại.");
+        gl.disabled = true;
+        u.sendEmailVerification(tkActs()).then(function () { tk.sent = Date.now(); gl.disabled = false; show("Đã gửi lại thư xác nhận tới " + u.email + "."); }, function (x) { gl.disabled = false; show(tkErr(x)); });
+      };
+      var doi = $("[data-doi]", v); if (doi) doi.onclick = function (e) {
+        e.preventDefault(); tk.view = "tao"; tk.msg = "";
+        u.delete().catch(function () { return fb.auth.signOut(); });
+      };
+      var iv = setInterval(function () { if (document.visibilityState === "visible") check(false); }, 5000);
+      var vis = function () { if (document.visibilityState === "visible") check(false); };
+      document.addEventListener("visibilitychange", vis);
+      cleanup = function () { clearInterval(iv); document.removeEventListener("visibilitychange", vis); };
+    }
+    var first = $("form.tkf input:not([value]), form.tkf input[value='']", v);
+    if (first && matchMedia("(pointer: fine)").matches) try { first.focus({ preventScroll: true }); } catch (e) { }
+    return cleanup;
+  }
+
+  // thẻ Tài khoản trong Cài đặt (người học): tên hiển thị, email, họ tên, đổi mật khẩu
+  function tkCard(el) {
+    if (!el || !fb.user) return;
+    var u = fb.user, p = tk.prof || tkCache() || {}, adm = isAdmin();
+    var pw = u.providerData.some(function (x) { return x.providerId === "password"; });
+    el.innerHTML = '<h2>Tài khoản</h2>' + (adm ? '<p class="sub">Tài khoản quản trị viên (mã 000).</p>' : "") +
+      (u.email ? '<p>Email: <b>' + esc(u.email) + '</b></p>' : "") + (p.hoten ? '<p>Họ tên đầy đủ: <b>' + esc(p.hoten) + '</b> <span class="sub">(chỉ bạn và quản trị viên thấy)</span></p>' : "") +
+      (adm ? "" : '<div class="row" style="align-items:end"><div class="field" style="flex:1 1 200px"><label for="tkten">Tên hiển thị (người khác thấy)</label><input id="tkten" type="text" maxlength="30" value="' + esc(p.ten || "") + '"></div><button class="btn" type="button" id="tktenok">Lưu tên</button></div>') +
+      (pw ? '<div class="row" style="margin-top:8px"><button class="btn" type="button" id="tkpwr">Đổi mật khẩu (gửi link qua email)</button></div>' : "") +
+      (adm ? "" : '<p class="sub">Quản trị viên xem được thống kê học của bạn.</p>');
+    var b = $("#tktenok", el); if (b) b.onclick = function () {
+      var t = nameNorm($("#tkten", el).value);
+      if (t.length < 2 || t.length > 30) return toast("Tên hiển thị dài 2–30 ký tự");
+      b.disabled = true;
+      fb.db.collection("hanco_users").doc(u.uid).update({ ten: t, upd: Date.now() }).then(function () { b.disabled = false; toast("Đã đổi tên hiển thị"); }, function (e) { b.disabled = false; toast(tkErr(e)); });
+    };
+    var r = $("#tkpwr", el); if (r) r.onclick = function () {
+      r.disabled = true;
+      fb.auth.sendPasswordResetEmail(u.email, tkActs()).then(function () { toast("Đã gửi link đổi mật khẩu tới " + u.email); }, function (e) { r.disabled = false; toast(tkErr(e)); });
+    };
+  }
+
+  // thẻ "Quản trị (tạm)" trong Cài đặt — chỉ quản trị viên. Bước 4 chuyển sang tab Quản trị.
+  // Danh sách họ tên: mỗi dòng 1 họ tên (dán từ Excel được: bỏ cột STT / số thứ tự đầu dòng). Xem trước đúng từng tên sẽ lưu rồi mới ghi.
+  function qtParse(text) {
+    var out = [], seen = {}, dup = [], bad = [];
+    String(text || "").split(/\r?\n/).forEach(function (line) {
+      if (!line.trim()) return;
+      var cells = line.split("\t").map(function (c) { return c.trim(); }).filter(function (c) { return /[A-Za-zÀ-ɏḀ-ỿ]/.test(c) && !/^\d+$/.test(c); });
+      var s = nameNorm((cells[0] || "").replace(/^\s*\d+\s*[\.\)\-:]?\s+/, ""));
+      if (!s) { bad.push(line.trim()); return; }
+      if (/\d/.test(s) || s.length < 3 || s.indexOf(" ") < 0 || nameKey(s).length > 200) { bad.push(line.trim()); return; }
+      var k = nameKey(s);
+      if (seen[k]) { dup.push(s); return; }
+      seen[k] = 1; out.push({ k: k, ten: s });
+    });
+    return { list: out, dup: dup, bad: bad };
+  }
+  HC.qtParse = qtParse;
+  function qtCard(el) {
+    if (!el || !isAdmin()) return;
+    var db = fb.db, cref = db.collection("hanco_cfg").doc("dk");
+    el.innerHTML = '<h2>Quản trị (tạm)</h2><p class="sub">Chỉ tài khoản quản trị thấy thẻ này. Bước sau sẽ chuyển sang tab Quản trị.</p>' +
+      '<h3>Đăng ký tài khoản</h3><div id="qtdk"><p class="sub">Đang tải…</p></div>' +
+      '<h3>Danh sách họ tên thật</h3><p class="sub">Chỉ người có họ tên trong danh sách này mới đăng ký được (mỗi họ tên 1 tài khoản). Dán mỗi dòng 1 họ tên đầy đủ, có dấu (dán thẳng từ Excel được: app tự bỏ cột số thứ tự). Không ai ngoài quản trị đọc được danh sách.</p>' +
+      '<textarea id="qtten" aria-label="Danh sách họ tên" placeholder="Nguyễn Văn An&#10;Trần Thị Bình"></textarea><div class="row" style="margin-top:8px"><button class="btn" type="button" id="qtxem">Xem trước</button><button class="btn" type="button" id="qtds">Xem danh sách đã lưu</button></div><div id="qtkq"></div>';
+    function dk() {
+      cref.get().then(function (c) {
+        var d = c.exists ? c.data() : { tran: 120, dem: 0, mo: true };
+        $("#qtdk", el).innerHTML = '<p>Đã đăng ký: <b>' + fmt(d.dem || 0) + '</b> / ' + fmt(d.tran || 0) + ' người (không tính quản trị viên).</p>' +
+          '<div class="row" style="align-items:end"><div class="field" style="flex:0 1 160px"><label for="qttran">Trần số người</label><input id="qttran" type="number" min="0" max="1000" value="' + (+d.tran || 0) + '"></div>' +
+          '<button class="btn" type="button" id="qtluu">Lưu</button></div><label style="display:flex;gap:8px;align-items:center;min-height:40px;margin-top:6px"><input type="checkbox" id="qtmo"' + (d.mo ? " checked" : "") + '> Cho người mới đăng ký</label>' +
+          '<p class="sub">Bỏ chọn "Cho người mới đăng ký" = tạm không nhận thêm người mới dù còn chỗ (người đã có tài khoản vẫn học bình thường). Hết chỗ thì người mới thấy "App đã đủ người".</p>';
+        $("#qtluu", el).onclick = function () {
+          var t = Math.max(0, Math.min(1000, parseInt($("#qttran", el).value, 10) || 0)), mo = $("#qtmo", el).checked;
+          (c.exists ? cref.update({ tran: t, mo: mo }) : cref.set({ tran: t, dem: 0, mo: mo })).then(function () { toast("Đã lưu"); dk(); }, function (e) { toast(tkErr(e)); });
+        };
+      }, function (e) { $("#qtdk", el).innerHTML = '<p class="sub">' + esc(tkErr(e)) + "</p>"; });
+    }
+    dk();
+    function saved() { return db.collection("hanco_ten").get().then(function (qs) { var m = {}; qs.docs.forEach(function (d) { m[d.id] = d.data(); }); return m; }); }
+    var kq = $("#qtkq", el);
+    $("#qtxem", el).onclick = function () {
+      var r = qtParse($("#qtten", el).value);
+      if (!r.list.length && !r.bad.length) { kq.innerHTML = '<p class="sub">Chưa dán họ tên nào.</p>'; return; }
+      kq.innerHTML = '<p class="sub">Đang so với danh sách đã lưu…</p>';
+      saved().then(function (m) {
+        var neu = r.list.filter(function (x) { return !m[x.k]; }), co = r.list.filter(function (x) { return m[x.k]; });
+        kq.innerHTML = '<p><b>' + neu.length + '</b> họ tên mới sẽ được thêm, đúng như dưới đây (kiểm tra kỹ dấu):</p>' +
+          (neu.length ? '<ol class="qtl">' + neu.map(function (x) { return "<li>" + esc(x.ten) + "</li>"; }).join("") + "</ol>" : "") +
+          (co.length ? '<p class="sub">' + co.length + " họ tên đã có sẵn trong danh sách (bỏ qua): " + co.map(function (x) { return esc(m[x.k].ten); }).join(", ") + "</p>" : "") +
+          (r.dup.length ? '<p class="sub">Trùng trong ô dán (chỉ lấy 1 lần): ' + r.dup.map(esc).join(", ") + "</p>" : "") +
+          (r.bad.length ? '<p class="tkmsg">Dòng bị bỏ qua (có chữ số / chỉ 1 chữ / không phải họ tên) — sửa rồi dán lại: ' + r.bad.map(esc).join(" · ") + "</p>" : "") +
+          (neu.length ? '<div class="row"><button class="btn primary" type="button" id="qtghi">Thêm ' + neu.length + ' họ tên vào danh sách</button></div>' : "");
+        var ghi = $("#qtghi", el); if (ghi) ghi.onclick = function () {
+          ghi.disabled = true;
+          var chunks = []; for (var i = 0; i < neu.length; i += 400) chunks.push(neu.slice(i, i + 400));
+          chunks.reduce(function (pr, ch) {
+            return pr.then(function () { var b = db.batch(); ch.forEach(function (x) { b.set(db.collection("hanco_ten").doc(x.k), { ten: x.ten, uid: null }); }); return b.commit(); });
+          }, Promise.resolve()).then(function () { toast("Đã thêm " + neu.length + " họ tên"); $("#qtten", el).value = ""; kq.innerHTML = '<p>Đã thêm <b>' + neu.length + "</b> họ tên vào danh sách.</p>"; }, function (e) { ghi.disabled = false; toast(tkErr(e)); });
+        };
+      }, function (e) { kq.innerHTML = '<p class="tkmsg">' + esc(tkErr(e)) + "</p>"; });
+    };
+    $("#qtds", el).onclick = function () {
+      kq.innerHTML = '<p class="sub">Đang tải…</p>';
+      saved().then(function (m) {
+        var ks = Object.keys(m).sort(function (a, b) { return m[a].ten.localeCompare(m[b].ten, "vi"); }), n = ks.filter(function (k) { return m[k].uid; }).length;
+        kq.innerHTML = '<p>' + ks.length + ' họ tên trong danh sách: <b>' + n + '</b> đã có tài khoản, <b>' + (ks.length - n) + '</b> chưa.</p>' +
+          (ks.length ? '<table class="t"><tbody>' + ks.map(function (k) { return "<tr><td>" + esc(m[k].ten) + "</td><td>" + (m[k].uid ? "đã có tài khoản" : '<span class="muted">chưa</span>') + "</td><td>" + (m[k].uid ? "" : '<button class="btn sm ghost" type="button" data-qtx="' + esc(k) + '" aria-label="Xóa họ tên này">✕</button>') + "</td></tr>"; }).join("") + "</tbody></table>" : "");
+        $$("[data-qtx]", kq).forEach(function (bx) { bx.onclick = function () {
+          var k = bx.getAttribute("data-qtx");
+          if (!confirm("Xóa \"" + m[k].ten + "\" khỏi danh sách? Người này sẽ không đăng ký được.")) return;
+          db.collection("hanco_ten").doc(k).delete().then(function () { toast("Đã xóa"); $("#qtds", el).click(); }, function (e) { toast(tkErr(e)); });
+        }; });
+      }, function (e) { kq.innerHTML = '<p class="tkmsg">' + esc(tkErr(e)) + "</p>"; });
+    };
   }
 
   function normalize(s) {
@@ -2377,7 +2773,7 @@
   function renderStats() {
     if (!S) return;
     var L = lvl();
-    var sync = fb.on ? (fb.user ? "Đã đăng nhập Google (" + esc(fb.user.email || "") + "). Tiến độ tự lưu lên Firebase và tự đồng bộ với mọi máy bạn đăng nhập cùng tài khoản. Mỗi ngày tự sao lưu 1 bản, giữ 14 ngày." : "Chưa đăng nhập. Bấm Đăng nhập bằng Google (chỉ 1 lần trên máy này) để tự đồng bộ giữa các máy.") : remote.status === "synced" ? "Đã lưu vào tài khoản" : remote.status === "error" ? "Chưa đồng bộ được, đang lưu trên máy này" : remote.status === "full" ? "Bộ nhớ tài khoản đầy" : "Lưu trên trình duyệt này";
+    var sync = fb.on ? (fb.user ? "Đã đăng nhập (" + esc(fb.user.email || "") + "). Tiến độ tự lưu lên Firebase và tự đồng bộ với mọi máy bạn đăng nhập cùng tài khoản. Mỗi ngày tự sao lưu 1 bản, giữ 14 ngày." : "Chưa đăng nhập. Bấm Đăng nhập bằng Google (chỉ 1 lần trên máy này) để tự đồng bộ giữa các máy.") : remote.status === "synced" ? "Đã lưu vào tài khoản" : remote.status === "error" ? "Chưa đồng bộ được, đang lưu trên máy này" : remote.status === "full" ? "Bộ nhớ tài khoản đầy" : "Lưu trên trình duyệt này";
     var cloud = "";
     if (fb.on) {
       if (!fb.user) cloud = '<button class="pill cl" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ <span class="lb">Đăng nhập</span></button>';
@@ -2396,6 +2792,15 @@
     HC.epoch = (HC.epoch || 0) + 1;
     if (cleanup) { try { cleanup(); } catch (e) { } cleanup = null; }
     layer.innerHTML = "";
+    // KHÓA giao diện khi chưa vào được tài khoản (chưa đăng nhập / chưa xác nhận email / chưa đăng ký xong / bị khóa)
+    var gated = tk.st !== "ok";
+    document.documentElement.classList.toggle("gate", gated);
+    if (gated) {
+      var gv = $("#view"); gv.innerHTML = "";
+      cleanup = tkView(gv) || null;
+      window.scrollTo(0, 0);
+      return;
+    }
     var h = (cur || "home").split("-");
     var name = h[0]; if (!VIEWS.some(function (v) { return v[0] === name; })) name = "home";
     renderMenu(name); renderStats();
@@ -3189,6 +3594,10 @@
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Lộ trình từng kỳ chọn ở khung "Chọn kỳ học" phía trên. Hai ô dưới đây = số chữ, từ mới mỗi ngày khi bạn không học kỳ nào (hoặc các kỳ đã thi xong).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày khi không học kỳ nào</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày khi không học kỳ nào</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh (trả lời đúng / sai, cộng điểm, lên cấp)</label></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div><div class="card" id="sach-set"></div></div>';
+    if (fb.user) { // tài khoản (+ thẻ quản trị tạm) đứng đầu lưới thẻ
+      var cg0 = $(".cols2", v);
+      if (cg0) { cg0.insertAdjacentHTML("afterbegin", '<div class="card" id="tk-set"></div>' + (isAdmin() ? '<div class="card" id="qt-set"></div>' : "")); tkCard($("#tk-set", v)); qtCard($("#qt-set", v)); }
+    }
     var cg = $(".cols2", v); if (cg) cg.insertAdjacentHTML("beforeend", '<div class="card"><h2>Thanh mục</h2><p class="sub">Đổi vị trí các mục trên thanh menu cho hợp cách học của bạn (lưu riêng trên máy này). Ở màn hẹp, các mục đầu hiện trên thanh, các mục sau nằm trong nút ».</p><button class="btn" type="button" data-msort>⇅ Sắp xếp thanh mục</button></div>');
     var redraw = bindSched($("#lich", v));
     planPick($("#ky", v), function () { route(); });

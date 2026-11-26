@@ -1,16 +1,97 @@
 rules_version = '2';
+// Luật Firestore app Hán cổ tự học — nhiều người dùng (Bước 3, 26/11/2026). Bản luật cũ (chỉ chủ đọc/ghi tiến độ) cất ở
+// tools/backup/20261126-211811-buoc3/firestore.rules để quay lại được.
+// - Quản trị viên (mã 000) = uid ghi cứng dưới đây (giống ADMIN_UID trong app.js; uid không phải bí mật). Luôn được phép.
+// - hanco_users/{uid}: hồ sơ {ten (tên hiển thị), hoten (họ tên trong danh sách), hk (khóa họ tên), email, st "ok"|"khoa"|"xoa",
+//   tao, upd, tk}. Chỉ chính mình + quản trị đọc. Tự tạo khi đăng ký (đúng khuôn, email đã xác nhận, giữ tên + chỗ cùng lúc);
+//   tự sửa chỉ ten/tk/upd; st chỉ quản trị đổi.
+// - hanco_ten/{khóa họ tên}: {ten, uid|null, t}. Danh sách họ tên thật do quản trị dán. Không ai liệt kê được (trừ quản trị);
+//   đọc 1 tên đúng như mình gõ chỉ được khi tên đó không có / còn trống / của mình (đủ để báo lỗi, không lộ thêm).
+// - hanco_cfg/dk: {tran (trần số người), dem (số người đã đăng ký), mo (cho đăng ký mới)}. Ai cũng đọc; người đăng ký chỉ được
+//   +1 dem khi còn chỗ và đang mở, cùng lần tạo hồ sơ của mình. Quản trị ghi tự do.
+// - hanco_progress/{uid} (+ backups/, sach/): chỉ chủ tài khoản đang "ok"; quản trị đọc được mọi người, xóa được.
+// - hanco_qt/*: chỉ quản trị (mã số tài khoản, nhật ký quản trị…).
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Mỗi người chỉ đọc/ghi được tiến độ của chính mình
+    function signed() { return request.auth != null; }
+    function isAdmin() { return signed() && request.auth.uid == 'PoB9oWSF4WRAPkWYtKaXfAHSX7F3'; }
+    function me(uid) { return signed() && request.auth.uid == uid; }
+    function userPath(uid) { return /databases/$(database)/documents/hanco_users/$(uid); }
+    function tenPath(k) { return /databases/$(database)/documents/hanco_ten/$(k); }
+    function cfgPath() { return /databases/$(database)/documents/hanco_cfg/dk; }
+    // chủ tài khoản được dùng tiến độ: quản trị, hoặc hồ sơ đang "ok"
+    function owner(uid) { return me(uid) && (isAdmin() || (exists(userPath(uid)) && get(userPath(uid)).data.st == 'ok')); }
+    function tenOk(t) { return t is string && t.size() >= 2 && t.size() <= 30; }
+
     match /hanco_progress/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if owner(uid) || isAdmin();
+      allow create, update: if owner(uid);
+      allow delete: if owner(uid) || isAdmin();
       match /backups/{day} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read: if owner(uid) || isAdmin();
+        allow create, update: if owner(uid);
+        allow delete: if owner(uid) || isAdmin();
       }
-      // hình trang sách "Tìm về cội nguồn chữ Hán" (có bản quyền) — chỉ chủ tài khoản đọc/ghi
+      // hình trang sách — chỉ chủ tài khoản đang "ok" (Bước 6 chuyển sang kho chung hanco_sach)
       match /sach/{k} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if owner(uid);
       }
+    }
+
+    match /hanco_users/{uid} {
+      allow read: if me(uid) || isAdmin();
+      allow create: if isAdmin() || (me(uid) && regOk(uid));
+      allow update: if isAdmin() || (me(uid) && resource.data.st == 'ok'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ten', 'tk', 'upd'])
+        && tenOk(request.resource.data.ten));
+      allow delete: if isAdmin();
+
+      // đăng ký: email đã xác nhận, đúng khuôn, giữ đúng 1 tên còn trống trong danh sách, +1 số người khi còn chỗ — cùng 1 lần ghi
+      function regOk(uid) {
+        let d = request.resource.data;
+        let k = d.hk;
+        let c0 = get(cfgPath()).data;
+        return request.auth.token.email_verified == true
+          && d.keys().hasOnly(['ten', 'hoten', 'hk', 'email', 'st', 'tao', 'upd'])
+          && d.keys().hasAll(['ten', 'hoten', 'hk', 'email', 'st', 'tao', 'upd'])
+          && d.st == 'ok' && d.tao == request.time && d.upd is int
+          && d.email == request.auth.token.email
+          && tenOk(d.ten)
+          && k is string && k.size() >= 2 && k.size() <= 200
+          && exists(tenPath(k))
+          && get(tenPath(k)).data.uid == null
+          && getAfter(tenPath(k)).data.uid == uid
+          && d.hoten == get(tenPath(k)).data.ten
+          && c0.mo == true && c0.dem < c0.tran
+          && getAfter(cfgPath()).data.dem == c0.dem + 1;
+      }
+    }
+
+    match /hanco_ten/{k} {
+      allow get: if isAdmin() || resource == null || resource.data.uid == null || (signed() && resource.data.uid == request.auth.uid);
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (signed() && resource.data.uid == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 't'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.t == request.time
+        && !exists(userPath(request.auth.uid))
+        && getAfter(userPath(request.auth.uid)).data.hk == k);
+    }
+
+    match /hanco_cfg/{k} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (k == 'dk' && signed()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dem'])
+        && resource.data.mo == true && resource.data.dem < resource.data.tran
+        && request.resource.data.dem == resource.data.dem + 1
+        && !exists(userPath(request.auth.uid))
+        && getAfter(userPath(request.auth.uid)).data.hk is string);
+    }
+
+    match /hanco_qt/{doc=**} {
+      allow read, write: if isAdmin();
     }
   }
 }
