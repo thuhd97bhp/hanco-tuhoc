@@ -73,7 +73,7 @@
   - Sửa nghĩa/âm → sửa file trong `tools/work/` rồi chạy `cd tools && python build.py && python build_app.py && python check_update.py`.
   - `build_app.py` còn khai: loại từ theo kỳ + câu ví dụ (`ltq`, bỏ câu mà chữ mang nghĩa khác: EXCL), đề thi thử (`EXAMS`),
     lộ trình (`PLAN`). `check_update.py` = so id cũ / đối chiếu tài liệu (phải ĐẠT trước khi phát hành).
-  - `python tools/release.py` = kiểm tra (cú pháp, ảnh `han/`, `giai/` đủ mọi chữ, không có .pdf/.pack ngoài tools/, `sach.json` khớp khop.txt và không chứa hình) + đổi VERSION
+  - `python tools/release.py` = kiểm tra (cú pháp, ảnh `han/`, `giai/` đủ mọi chữ + đã soạn giải thích, không có .pdf/.pack ngoài tools/, `sach.json` khớp khop.txt và không chứa hình) + đổi VERSION
     trong sw.js + deploy hosting. `--check` = chỉ kiểm tra (không đổi sw.js, không deploy).
 
 ## Luật dữ liệu người học — BẮT BUỘC
@@ -154,6 +154,9 @@ Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 F
   File đó ghi những gì đã thống nhất (vd gõ âm PHẢI đúng dấu; trò kho khó KHÔNG đổi lịch SRS; từ/câu không có giải thích
   riêng mà bấm vào từng chữ), thiết kế 3 trường mới của `S` (`hard`, `pl`, `note`), các bước và nhật ký bước nào đã xong.
   Mỗi chat làm đúng MỘT bước, cập nhật nhật ký trong file đó; không làm trái điều đã thống nhất nếu người dùng chưa đổi.
+- Ghi chú (người dùng yêu cầu 26/11/2026): TỰ ĐỘNG LƯU + định dạng (đậm/nghiêng/gạch chân, màu, tô nền, cỡ chữ, link) với thanh công cụ GỌN 1 hàng.
+  `S.note[id][0]` = chữ thường (cũ) hoặc HTML đã lọc bằng `noteClean` (chỉ b/i/u/br/div, span lớp tc/hl/fs, a http/https) — LUÔN hiện qua `noteClean`,
+  không bao giờ gán innerHTML thô. Ô soạn là `[contenteditable]` (đã thêm vào SG_SKIP và các phím tắt bỏ qua).
 
 ## Luật "Mục mới phải đủ" (người dùng yêu cầu 25/11/2026)
 - Mỗi lần thêm tài liệu, chữ/từ/câu MỚI phải tự động có ĐỦ MỌI THỨ mục cũ cùng loại đang có, ở mọi phương diện: âm, nghĩa,
@@ -184,7 +187,7 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
    hình; có trang MỚI thì nhắc người dùng đưa lại gói ở Cài đặt → Hình trang sách — chỉ trang mới/đổi được ghi), `python build_giai.py` (mọi chữ mới có
    file giai/ với pinyin), rồi SOẠN giải thích cho MỌI chữ mới theo `tools/work/giai/README.txt` + yêu cầu trong
    `.claude/ke-hoach/kho-kho-giai-thich-ghi-chu.md` (tệp dot mới) và chạy lại `build_giai.py`. `check_update.py` cảnh báo chữ
-   chưa có giải thích / chưa dò sách; `release.py --check` dừng nếu thiếu file giai/.
+   chưa có giải thích / chưa dò sách; `release.py --check` DỪNG nếu thiếu file giai/ HOẶC còn chữ chưa soạn giải thích (đủ 1.324 từ 26/11/2026).
    CUỐI CÙNG (sau khi soạn xong giải thích, vì lời giải thích cũng có chữ Hán): vẽ ảnh `han/` cho MỌI chữ còn thiếu —
    `python tools/render_han.py --missing` + mở trang vẽ (theo luật "Ảnh chữ"; chỉ vẽ chữ thiếu, ảnh cũ giữ nguyên).
 8. Kiểm tra: node --check; chạy app ở máy (Học mới, Câu, Loại từ, Tra cứu chữ mới, Thi thử đề mới, bản điện thoại);

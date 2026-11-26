@@ -474,7 +474,13 @@
   var NOTE_MAX = 2000;
   function noteOf(id) { var n = S.note[id]; return n && n[0] ? String(n[0]) : ""; }
   HC.noteOf = noteOf;
-  HC.setNote = function (id, text) { S.note[id] = [String(text || "").slice(0, NOTE_MAX).replace(/\s+$/, ""), Date.now()]; save(); };
+  // văn bản ghi chú: chữ thường (ghi chú cũ) hoặc HTML đã lọc bằng noteClean (ô soạn có định dạng). Rỗng = đã xóa.
+  HC.setNote = function (id, text) {
+    var h = noteClean(text).replace(/(<br>|<div><br><\/div>|\s)+$/, "");
+    if (!noteTxt(h).replace(/[\s ]+/g, "")) h = "";
+    if (h.length > NOTE_HTML_MAX) return false;
+    S.note[id] = [h, Date.now()]; save(); return true;
+  };
 
   // ---------- XP, streak, log, badges ----------
   function addLog(k, n) { var t = today(); var l = S.log[t] || (S.log[t] = { n: 0, r: 0, x: 0 }); l[k] = (l[k] || 0) + n; }
@@ -942,33 +948,186 @@
   window.addEventListener("hashchange", closePop);
 
   // ---------- ghi chú (chỉ lưu trong tiến độ của người học) ----------
+  // Ô soạn có định dạng (contenteditable): đậm/nghiêng/gạch chân, màu chữ tc1–6, tô nền hl1–4, cỡ chữ fs1–4 (fs2 = thường),
+  // link http/https. Màu/cỡ lưu bằng LỚP (đổi theo chế độ sáng/tối), không lưu mã màu. Tự lưu sau khi ngừng gõ 0,7 giây.
+  var NOTE_HTML_MAX = 8000, NOTE_N = { tc: 6, hl: 4, fs: 4 }, NOTE_G = ["", "tc", "hl", "fs", "x"];
+  var NOTE_SKIP = { script: 1, style: 1, template: 1, noscript: 1, title: 1, head: 1, iframe: 1, object: 1, embed: 1, svg: 1, math: 1, img: 1, video: 1, audio: 1, input: 1, textarea: 1, select: 1, button: 1 };
+  function noteRich(t) { return /<\/?(b|i|u|br|div|span|a|p|font|strong|em)(\s[^>]*)?\/?>/i.test(t) || /&(amp|lt|gt|quot|nbsp|#\d+);/.test(t); }
+  function noteDoc(t) { try { return new DOMParser().parseFromString("<!doctype html><body>" + t, "text/html").body; } catch (e) { return null; } }
+  function noteTxt(t) { t = String(t || ""); if (!noteRich(t)) return t; var b = noteDoc(t); return b ? b.textContent : t; }
+  function noteClean(t) {
+    t = String(t || ""); if (!t) return "";
+    if (!noteRich(t)) return esc(t).replace(/\r?\n/g, "<br>");
+    var body = noteDoc(t); if (!body) return esc(t);
+    function okCls(c) { var m = /^(tc|hl|fs)(\d)$/.exec(c); return !!m && +m[2] <= NOTE_N[m[1]] && c !== "fs0"; }
+    function walk(n) {
+      var h = "";
+      for (var c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3) { h += esc(c.nodeValue); continue; }
+        if (c.nodeType !== 1) continue;
+        var tg = c.tagName.toLowerCase();
+        if (NOTE_SKIP[tg]) continue;
+        var w = walk(c);
+        if (tg === "br") h += "<br>";
+        else if (tg === "div" || tg === "p") h += "<div>" + (w || "<br>") + "</div>";
+        else if (!w) continue;
+        else if (tg === "b" || tg === "strong") h += "<b>" + w + "</b>";
+        else if (tg === "i" || tg === "em") h += "<i>" + w + "</i>";
+        else if (tg === "u") h += "<u>" + w + "</u>";
+        else if (tg === "a") { var hr = c.getAttribute("href") || ""; h += /^https?:\/\/[^\s"'<>]+$/i.test(hr) ? '<a href="' + esc(hr) + '" target="_blank" rel="noopener noreferrer">' + w + "</a>" : w; }
+        else if (tg === "span" || tg === "font") {
+          var st = c.style, cl = String(c.getAttribute("class") || "").split(/\s+/).filter(okCls);
+          if (st && /bold|^[6-9]00$/.test(st.fontWeight || "")) w = "<b>" + w + "</b>";
+          if (st && /italic/.test(st.fontStyle || "")) w = "<i>" + w + "</i>";
+          if (st && /underline/.test((st.textDecorationLine || "") + " " + (st.textDecoration || ""))) w = "<u>" + w + "</u>";
+          h += cl.length ? '<span class="' + cl.join(" ") + '">' + w + "</span>" : w;
+        }
+        else h += w;
+      }
+      return h;
+    }
+    return walk(body);
+  }
+  HC.noteClean = noteClean;
   function noteHTML(id) { return '<div class="note" data-note="' + id + '">' + noteInner(id, "view") + "</div>"; }
+  var NOTE_TB = '<div class="ntb" role="toolbar" aria-label="Định dạng ghi chú">' +
+    '<button type="button" data-ncmd="bold" title="In đậm (Ctrl+B)" aria-label="In đậm"><b>B</b></button>' +
+    '<button type="button" data-ncmd="italic" title="In nghiêng (Ctrl+I)" aria-label="In nghiêng"><i>I</i></button>' +
+    '<button type="button" data-ncmd="underline" title="Gạch chân (Ctrl+U)" aria-label="Gạch chân"><u>U</u></button>' +
+    '<button type="button" data-npop="tc" title="Màu chữ" aria-label="Màu chữ"><span class="tbA">A</span></button>' +
+    '<button type="button" data-npop="hl" title="Tô nền chữ" aria-label="Tô nền chữ"><span class="tbH">ab</span></button>' +
+    '<button type="button" data-npop="fs" title="Cỡ chữ" aria-label="Cỡ chữ"><small>a</small>A</button>' +
+    '<button type="button" data-npop="ln" title="Gắn link" aria-label="Gắn link">🔗</button>' +
+    '<button type="button" data-ncmd="clear" title="Xóa định dạng" aria-label="Xóa định dạng"><s>T</s></button>' +
+    "</div>";
+  function notePopHTML(k) {
+    var h = "", i;
+    if (k === "tc") { for (i = 1; i <= NOTE_N.tc; i++) h += '<button type="button" class="sw tc' + i + '" data-nset="tc' + i + '" aria-label="Màu ' + i + '">A</button>'; h += '<button type="button" class="sw" data-nset="tc0">Bỏ màu</button>'; }
+    else if (k === "hl") { for (i = 1; i <= NOTE_N.hl; i++) h += '<button type="button" class="sw hl' + i + '" data-nset="hl' + i + '" aria-label="Tô nền ' + i + '">ab</button>'; h += '<button type="button" class="sw" data-nset="hl0">Bỏ tô</button>'; }
+    else if (k === "fs") ["Nhỏ", "Thường", "To", "Rất to"].forEach(function (n, j) { h += '<button type="button" class="sw" data-nset="fs' + (j + 1) + '">' + n + "</button>"; });
+    else h = '<input type="url" inputmode="url" placeholder="https://…" aria-label="Địa chỉ link"><button type="button" class="sw" data-nlink="add">Gắn</button><button type="button" class="sw" data-nlink="del">Bỏ link</button>';
+    return h;
+  }
   function noteInner(id, mode) {
     var t = noteOf(id);
-    if (mode === "edit") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><textarea maxlength="' + NOTE_MAX + '" aria-label="Ghi chú" placeholder="Ví dụ: cách nhớ riêng, chỗ hay nhầm…">' + esc(t) + '</textarea><div class="row"><span class="muted nc">' + t.length + " / " + NOTE_MAX + '</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Hủy</button><button type="button" class="btn sm primary" data-nact="save">Lưu ghi chú</button></div>';
-    if (mode === "del") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + esc(t) + '</div><div class="row"><span>Xóa ghi chú này?</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Thôi</button><button type="button" class="btn sm bad" data-nact="delyes">Xóa</button></div>';
+    if (mode === "edit") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div>' + NOTE_TB + '<div class="ntpop hide"></div><div class="ned nt" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Ghi chú" data-ph="Ví dụ: cách nhớ riêng, chỗ hay nhầm…">' + noteClean(t) + '</div><div class="row nfoot"><span class="muted nc">Tự động lưu</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-nact="del">Xóa</button><button type="button" class="btn sm primary" data-nact="done">Xong</button></div>';
+    if (mode === "del") return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + noteClean(t) + '</div><div class="row"><span>Xóa ghi chú này?</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Thôi</button><button type="button" class="btn sm bad" data-nact="delyes">Xóa</button></div>';
     if (!t) return '<button type="button" class="btn sm ghost" data-nact="edit">✎ Thêm ghi chú</button>';
-    return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + esc(t) + '</div><div class="row"><span class="spacer"></span><button type="button" class="btn sm" data-nact="edit">Sửa</button><button type="button" class="btn sm ghost" data-nact="del">Xóa</button></div>';
+    return '<div class="facts"><span class="k">Ghi chú của bạn</span></div><div class="nt">' + noteClean(t) + '</div><div class="row"><span class="spacer"></span><button type="button" class="btn sm" data-nact="edit">Sửa</button><button type="button" class="btn sm ghost" data-nact="del">Xóa</button></div>';
+  }
+  // ---- tự lưu: box đang chờ lưu giữ lại cả khi khung đã đóng (đã tách khỏi trang) nên vẫn lưu được
+  var noteCur = null, noteTm = 0;
+  function noteStat(box, s, bad) { var n = box.querySelector(".nc"); if (n) { n.textContent = s; n.classList.toggle("bad", !!bad); } }
+  function noteSched(box) { noteCur = box; clearTimeout(noteTm); noteTm = setTimeout(noteFlush, 700); noteStat(box, "Đang lưu…"); }
+  function noteFlush() {
+    clearTimeout(noteTm); var box = noteCur; noteCur = null; if (!box) return true;
+    var ed = box.querySelector(".ned"); if (!ed) return true;
+    var id = box.getAttribute("data-note"), n = noteTxt(noteClean(ed.innerHTML)).length;
+    if (n > NOTE_MAX) { noteStat(box, "Dài " + n + " / " + NOTE_MAX + " ký tự — bớt lại mới lưu được", true); return false; }
+    if (!HC.setNote(id, ed.innerHTML)) { noteStat(box, "Quá nhiều định dạng — chưa lưu được", true); return false; }
+    noteStat(box, "Đã lưu" + (n > NOTE_MAX - 300 ? " · " + n + " / " + NOTE_MAX : ""));
+    refreshNotes(id, box);
+    return true;
+  }
+  window.addEventListener("pagehide", noteFlush);
+  document.addEventListener("visibilitychange", function () { if (document.hidden) noteFlush(); });
+  // ---- giữ vùng chữ đang chọn (bấm nút công cụ / gõ địa chỉ link làm mất vùng chọn trên máy cảm ứng)
+  function noteEdOf(n) { var e = n && (n.nodeType === 1 ? n : n.parentNode); return e && e.closest ? e.closest(".ned") : null; }
+  document.addEventListener("selectionchange", function () {
+    var s = window.getSelection(); if (!s || !s.rangeCount) return;
+    var ed = noteEdOf(s.anchorNode); if (ed) ed._rng = s.getRangeAt(0).cloneRange();
+  });
+  function noteRestore(ed) {
+    try { ed.focus(); } catch (e) { }
+    var s = window.getSelection(), r = ed._rng;
+    if (!r || !ed.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); }
+    s.removeAllRanges(); s.addRange(r);
+  }
+  // màu / nền / cỡ / xóa định dạng: tô bằng màu "đánh dấu" #01gg0v rồi đổi thẻ font đó thành span có lớp (g = nhóm, v = mức)
+  function noteMark(ed) {
+    $$("font[color], span[style]", ed).forEach(function (f) {
+      var c = (f.getAttribute("color") || f.style.color || "").toLowerCase(), m = /^#01(0[1-4])0(\d)$/.exec(c) || /^rgb\(1, ([1-4]), (\d)\)$/.exec(c);
+      if (!m) return;
+      var g = NOTE_G[+m[1]], v = +m[2], s = document.createElement("span");
+      s.className = g === "x" ? "tc0 hl0 fs2" : g + v;
+      while (f.firstChild) s.appendChild(f.firstChild);
+      f.parentNode.replaceChild(s, f);
+      $$("span, b, i, u", s).forEach(function (x) {
+        if (g === "x") { while (x.firstChild) x.parentNode.insertBefore(x.firstChild, x); x.parentNode.removeChild(x); return; }
+        if (x.tagName === "SPAN") x.className = x.className.split(/\s+/).filter(function (k) { return k && k.slice(0, 2) !== g; }).join(" ");
+      });
+    });
+  }
+  function noteSet(ed, cls) {
+    var g = cls === "x" ? 4 : NOTE_G.indexOf(cls.slice(0, 2)), v = cls === "x" ? 0 : +cls.slice(2);
+    noteRestore(ed);
+    if (g === 4) document.execCommand("removeFormat", false, null);
+    try { document.execCommand("styleWithCSS", false, false); } catch (e) { }
+    document.execCommand("foreColor", false, "#010" + g + "0" + v);
+    noteMark(ed);
+  }
+  function noteLink(ed, box, add) {
+    var inp = box.querySelector(".ntpop input"), u = inp ? inp.value.trim() : "";
+    noteRestore(ed);
+    if (!add) { document.execCommand("unlink", false, null); return true; }
+    if (!u) { if (inp) inp.focus(); return false; }
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u.replace(/^\/+/, "");
+    if (!/^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$/i.test(u)) { toast("Địa chỉ link chưa đúng"); if (inp) inp.focus(); return false; }
+    var s = window.getSelection();
+    var r0 = s.rangeCount && s.getRangeAt(0), pre = r0 && r0.startContainer.nodeType === 3 && /\S/.test(r0.startContainer.nodeValue.charAt(r0.startOffset - 1)) ? " " : "";
+    if (s.isCollapsed) document.execCommand("insertHTML", false, pre + '<a href="' + esc(u) + '">' + esc(u) + "</a>&nbsp;");
+    else document.execCommand("createLink", false, u);
+    return true;
+  }
+  function notePop(box, k) {
+    var p = box.querySelector(".ntpop"), same = p.getAttribute("data-k") === k && !p.classList.contains("hide");
+    $$(".ntb [data-npop]", box).forEach(function (b) { b.classList.toggle("on", !same && b.getAttribute("data-npop") === k); });
+    if (same || !k) { p.classList.add("hide"); p.removeAttribute("data-k"); return; }
+    p.setAttribute("data-k", k); p.innerHTML = notePopHTML(k); p.classList.remove("hide");
+    if (k === "ln") {
+      var inp = p.querySelector("input"), s = window.getSelection(), a = s && s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentNode).closest("a");
+      if (a && box.contains(a)) inp.value = a.getAttribute("href") || "";
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); var ed = box.querySelector(".ned"); if (noteLink(ed, box, true)) { notePop(box, ""); noteSched(box); } } });
+      try { inp.focus(); } catch (e) { }
+    }
   }
   function noteMode(box, mode) {
+    if (noteCur === box) noteFlush();
     var id = box.getAttribute("data-note");
     box.innerHTML = noteInner(id, mode);
     if (mode === "edit") {
-      var ta = box.querySelector("textarea"), nc = box.querySelector(".nc");
-      ta.oninput = function () { nc.textContent = ta.value.length + " / " + NOTE_MAX; };
-      try { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { }
+      var ed = box.querySelector(".ned");
+      ed.addEventListener("input", function () { noteMark(ed); noteSched(box); });
+      ed.addEventListener("blur", function () { if (noteCur === box) noteFlush(); });
+      ed.addEventListener("paste", function (e) {
+        var cd = e.clipboardData || window.clipboardData; if (!cd) return;
+        e.preventDefault(); document.execCommand("insertText", false, cd.getData("text") || "");
+      });
+      ed.addEventListener("click", function (e) { var a = e.target.closest("a"); if (a && (e.ctrlKey || e.metaKey)) window.open(a.href, "_blank", "noopener"); });
+      // bấm nút công cụ không làm mất vùng chọn (máy tính)
+      box.querySelector(".ntb").addEventListener("mousedown", function (e) { if (e.target.closest("button")) e.preventDefault(); });
+      box.querySelector(".ntpop").addEventListener("mousedown", function (e) { if (e.target.closest("button")) e.preventDefault(); });
+      noteRestore(ed);
     }
   }
-  function refreshNotes(id, except) { $$('[data-note="' + id + '"]').forEach(function (b) { if (b !== except) noteMode(b, "view"); }); }
+  function refreshNotes(id, except) { $$('[data-note="' + id + '"]').forEach(function (b) { if (b !== except && !b.querySelector(".ned")) noteMode(b, "view"); }); }
   document.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-nact]"); if (!b) return;
+    var b = e.target.closest("[data-nact],[data-ncmd],[data-npop],[data-nset],[data-nlink]"); if (!b) return;
     var box = b.closest("[data-note]"); if (!box) return;
     e.preventDefault();
-    var id = box.getAttribute("data-note"), a = b.getAttribute("data-nact");
+    var id = box.getAttribute("data-note"), ed = box.querySelector(".ned"), a;
+    if ((a = b.getAttribute("data-ncmd")) && ed) {
+      if (a === "clear") noteSet(ed, "x"); else { noteRestore(ed); document.execCommand(a, false, null); }
+      noteSched(box); return;
+    }
+    if ((a = b.getAttribute("data-npop")) && ed) { notePop(box, a); return; }
+    if ((a = b.getAttribute("data-nset")) && ed) { noteSet(ed, a); notePop(box, ""); noteSched(box); return; }
+    if ((a = b.getAttribute("data-nlink")) && ed) { if (noteLink(ed, box, a === "add")) { notePop(box, ""); noteSched(box); } return; }
+    a = b.getAttribute("data-nact");
     if (a === "edit") noteMode(box, "edit");
-    else if (a === "del") noteMode(box, "del");
+    else if (a === "done") { if (noteCur === box && !noteFlush()) return; noteMode(box, "view"); }
+    else if (a === "del") { if (noteCur === box) noteFlush(); noteMode(box, noteOf(id) ? "del" : "view"); }
     else if (a === "cancel") noteMode(box, "view");
-    else if (a === "save") { HC.setNote(id, box.querySelector("textarea").value); noteMode(box, "view"); refreshNotes(id, box); toast(noteOf(id) ? "Đã lưu ghi chú" : "Đã xóa ghi chú"); }
     else if (a === "delyes") { HC.setNote(id, ""); noteMode(box, "view"); refreshNotes(id, box); toast("Đã xóa ghi chú"); }
   });
   // mở ô ghi chú: có khung chi tiết đang hiện thì sửa ngay ở đó; không thì mở khung nhỏ chỉ có chữ + ghi chú (không lộ đáp án thẻ ôn)
@@ -1520,7 +1679,7 @@
   // Mọi chữ Hán khác trên trang (danh sách, câu, trò chơi, chữ xen trong nghĩa…): bọc từng chữ thành <span class="sg">chữ</span>.
   // Chữ thật vẫn ở trong trang (textContent, chọn/chép, trò chơi chấm không đổi); khi ảnh tải xong thêm lớp "on": chữ trong suốt,
   // ảnh MS Song (mặt nạ, màu theo chữ) hiện đè lên. Ảnh lỗi/chưa có → chữ vẫn hiện bằng phông dự phòng như cũ.
-  var SG_SKIP = "script,style,textarea,input,select,option,svg,canvas,.big,.sg,.songimg";
+  var SG_SKIP = "script,style,textarea,input,select,option,svg,canvas,[contenteditable],.big,.sg,.songimg"; // ô soạn ghi chú: giữ chữ thật (ảnh sẽ bị lọc mất khi lưu)
   function sgChar(ch) {
     var o = ch.codePointAt(0);
     return isHan(ch) || (o >= 0x20000 && o <= 0x3FFFF) || (o >= 0x3001 && o <= 0x3003) || (o >= 0x3008 && o <= 0x3011) || o === 0xFF01 || o === 0xFF08 || o === 0xFF09 || o === 0xFF0C || o === 0xFF0E || o === 0xFF1A || o === 0xFF1B || o === 0xFF1F;
@@ -2047,7 +2206,7 @@
     function done() {
       v.innerHTML = '<div class="card result"><div class="score-big">+' + total + '</div><h2>Xong bài học mới hôm nay</h2><p class="sub">Các chữ vừa học đã vào lịch ôn. Chữ và từ cũng đã có trong mục Tập viết.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#viet">Tập viết ngay</a><a class="btn" href="#choi">Chơi trò ôn</a><a class="btn" href="#home">Về trang chính</a></div></div>';
     }
-    function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea,.more,.pop,.modal")) { e.preventDefault(); nextSee(); } }
+    function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea,[contenteditable],.more,.pop,.modal")) { e.preventDefault(); nextSee(); } }
     document.addEventListener("keydown", key);
     see();
     return function () { document.removeEventListener("keydown", key); };
@@ -2086,7 +2245,7 @@
       v.innerHTML = '<div class="card result"><div class="score-big">' + done + '</div><h2>Đã ôn xong</h2><p class="sub">Thẻ nào nhớ rõ sẽ quay lại sau vài ngày, thẻ quên sẽ quay lại ngày mai.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#viet">Tập viết</a><a class="btn" href="#choi">Trò chơi</a><a class="btn" href="#home">Trang chính</a></div></div>';
     }
     function key(e) {
-      if (e.target.closest("input,textarea,.pop,.more,.modal")) return;
+      if (e.target.closest("input,textarea,[contenteditable],.pop,.more,.modal")) return;
       if (!shown && (e.key === " " || e.key === "Enter")) { e.preventDefault(); shown = true; render(); }
       else if (shown && /^[123]$/.test(e.key)) { var b = $('[data-g="' + (+e.key - 1) + '"]', v); if (b) b.click(); }
     }
