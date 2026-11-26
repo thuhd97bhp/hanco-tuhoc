@@ -7,13 +7,13 @@
 
 ## Cấu trúc
 - `index.html` = HTML + toàn bộ CSS (token màu sáng/tối trên `:root`) + nạp Firebase rồi `app.js`, `games.js`.
-- `app.js` = lõi: dữ liệu, trạng thái `S`, SRS, lộ trình ôn thi (đọc `plan` trong app-data.json), đồng bộ Firebase, router, các màn hình.
+- `app.js` = lõi: dữ liệu, trạng thái `S`, SRS, lộ trình ôn thi THEO KỲ (đọc `terms` trong app-data.json), đồng bộ Firebase, router, các màn hình.
 - `games.js` = 11 trò chơi (`reg({...})`) + `runQuiz` + thi thử (`HC.exam`: đề HK1, kỳ 2 viết trong mã; đề khai trong
   app-data.json → `exams` chạy chung một bộ, vd đề giữa kỳ 3). Dùng API qua `window.HC`.
 - `sw.js` = service worker cho chạy ngoại tuyến (mã app: mạng trước, mất mạng dùng đệm; Firebase
   SDK/phông: đệm trước; KHÔNG bao giờ đệm request Firestore/Auth).
 - `app-data.json` = dữ liệu sinh từ `tools/` (chars, words, sents, rads, loaitu; `ltq` câu ví dụ loại từ theo kỳ;
-  `exams` đề thi thử; `plan` lộ trình; `srcs` tên tài liệu; mục có `fo: 1` = thuộc kỳ thi đang ưu tiên). KHÔNG sửa tay.
+  `exams` đề thi thử; `terms` các kỳ thi (tên đầy đủ / gọi tắt, đề thi thử, bảng loại từ, bộ câu); mục có `kt` = thuộc kỳ nào; `plan` cũ chỉ để bản app cũ còn chạy; `srcs` tên tài liệu; mục có `fo: 1` = thuộc kỳ thi đang ưu tiên). KHÔNG sửa tay.
 - `app-strokes.json` = đường giữa từng nét (Make Me a Hanzi, giấy phép Arphic: `strokes-LICENSE.txt`) để app TỰ CHẤM
   tập viết (`gradeShape` trong app.js): chấm theo HÌNH chữ, KHÔNG xét số nét / thứ tự nét (người dùng yêu cầu) — so chữ viết với
   ~1.600 chữ mẫu (gồm cả chữ giản thể), đúng khi chữ cần viết là chữ giống nhất (hoặc ngang ngửa, G_TIE), độ lệch ≤ G_ABS, VÀ không có đoạn nét
@@ -72,12 +72,12 @@
     `work/ids.json` id cố định (xem luật id).
   - Sửa nghĩa/âm → sửa file trong `tools/work/` rồi chạy `cd tools && python build.py && python build_app.py && python check_update.py`.
   - `build_app.py` còn khai: loại từ theo kỳ + câu ví dụ (`ltq`, bỏ câu mà chữ mang nghĩa khác: EXCL), đề thi thử (`EXAMS`),
-    lộ trình (`PLAN`). `check_update.py` = so id cũ / đối chiếu tài liệu (phải ĐẠT trước khi phát hành).
+    các kỳ thi (`TERMS`: tên, đề, bảng loại từ, bộ câu — kỳ mới PHẢI thêm). `check_update.py` = so id cũ / đối chiếu tài liệu (phải ĐẠT trước khi phát hành).
   - `python tools/release.py` = kiểm tra (cú pháp, ảnh `han/`, `giai/` đủ mọi chữ + đã soạn giải thích, không có .pdf/.pack ngoài tools/, `sach.json` khớp khop.txt và không chứa hình) + đổi VERSION
     trong sw.js + deploy hosting. `--check` = chỉ kiểm tra (không đổi sw.js, không deploy).
 
 ## Luật dữ liệu người học — BẮT BUỘC
-- Tiến độ = `S` (`{v,start,set,it,xp,streak,best,log,badges,upd}`), `it[id] = [rBox,rDue,wBox,wDue,lapses,introDay]`
+- Tiến độ = `S` (`{v,start,set,it,xp,streak,best,log,badges,upd}` + về sau `itT,gm,hard,pl,note,plans,lt`), `it[id] = [rBox,rDue,wBox,wDue,lapses,introDay]`
   (ngày = số ngày kể từ epoch theo giờ máy; wBox = -1 nếu không có thẻ viết). Lưu 3 nơi:
   localStorage `hanco-tuhoc-v1`, Firestore `hanco_progress/{uid}` (`data` = chuỗi JSON của S, `upd`, `ver`),
   sao lưu ngày `hanco_progress/{uid}/backups/{YYYY-MM-DD}` (giữ 14 bản).
@@ -108,10 +108,22 @@
   MS Song cũ: không lệch, không cắt nét, không ô trống). `release.py` DỪNG nếu còn chữ thiếu ảnh.
 - "Thông dụng" = xuất hiện ≥ 3 lần trong tất cả tài liệu hoặc có trong một đề cương / đề thi (hiện 759 chữ, 850 từ).
   Từ 1 chữ không lặp lại ở danh sách từ.
-- Lộ trình (người dùng yêu cầu 23/11/2026): mọi chữ, từ, câu, loại từ của KỲ THI SẮP TỚI (mục `fo`, hiện giữa kỳ 3:
-  424 chữ, 443 từ, 35 câu, 38 từ ngữ pháp) học TRƯỚC trong `PLAN.weeks` tuần (hiện 5: tuần 1–4 học mới ~18 chữ + ~18 từ
-  mỗi ngày, câu từ tuần 2, tuần 5 chỉ ôn + thi thử). Phần không thuộc kỳ đó học SAU lộ trình (thông dụng còn lại trước,
-  rồi phần còn lại) theo số chữ/từ mỗi ngày trong Cài đặt. Mỗi tuần 6 ngày học + 1 ngày ôn.
+- Lộ trình THEO KỲ (người dùng yêu cầu 26/11/2026; kế hoạch + nhật ký: `.claude/ke-hoach/lo-trinh-nhieu-ky.md`): người học tự
+  chọn kỳ (Kỳ 1 (Hán 1) · Kỳ 2 (Hán 2) · Giữa kỳ 3 (Hán 3); tổng cộng sẽ có 6 kỳ) + ngày thi từng kỳ, học nhiều kỳ cùng lúc được;
+  app tự xếp lịch (`S.plans`, khung "Chọn kỳ học" `planPick`, bộ xếp lịch `buildPlans`/`pstate` trong app.js). Mỗi kỳ: chữ + từ
+  từ ngày đầu, loại từ từ 1/5 chặng, câu từ 1/2 chặng, ~15% cuối (2–7 ngày) chỉ ôn + thi thử, cứ 7 ngày 1 ngày ôn. Nội dung kỳ =
+  chữ/từ có trong đề cương / đề thi của kỳ (không tính giáo trình). DÙ THẾ NÀO mục lặp lại nhiều học trước (chữ, từ, loại từ theo
+  số lần xuất hiện; câu: câu đã ra đề thi trước, rồi câu nhiều chữ phổ biến). Mục trùng nhiều kỳ học 1 lần ở kỳ thi sớm hơn.
+  "Việc hôm nay" chia theo từng kỳ + mục Chung. Phần không thuộc kỳ nào học khi không còn kỳ nào đang học (số chữ/từ trong Cài đặt).
+  Loại từ có lịch ôn riêng `S.lt`. Tên kỳ: tên đầy đủ ở chỗ rộng, tên gọi tắt ở chỗ hẹp.
+
+## Hiện điểm cộng — BẮT BUỘC, TỰ LÀM KHÔNG CẦN HỎI (người dùng yêu cầu 26/11/2026)
+- MỌI lần cộng XP (màn / trò chơi / tính năng mới, hay đổi chỗ cộng điểm) đều phải HIỆN cho người học "+N XP" + âm thanh
+  (lên cấp → khung "Lên cấp N!" + nhạc). Tự đảm bảo trong cùng lượt làm việc, không cần người dùng nhắc.
+- Cách làm: cộng điểm CHỈ qua `addXP(n)` (trong app.js) / `HC.addXP(n, nút vừa bấm)` — hiệu ứng nằm sẵn trong `addXP` → `xpShow`
+  (chữ bay từ nút; không có nút → huy hiệu cạnh ô XP; cộng liên tiếp trong 0,6 giây gộp 1 lần), âm `coin`/`tones`, lên cấp `lvUp`.
+  CẤM cộng thẳng `S.xp += …` (sẽ không hiện gì). Có nút vừa bấm thì truyền nút vào. Âm thanh theo công tắc `S.set.sound`.
+- Thêm/sửa chỗ cộng điểm → dò `S.xp` và `addXP` trong app.js, games.js, rồi chạy thử thật thấy "+N XP" hiện ra.
 
 ## Giao diện 3 loại máy — BẮT BUỘC (người dùng yêu cầu 25/11/2026)
 Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 FE để NẰM NGANG (khung ~1280×600–700), ngoài ra máy tính và
@@ -178,9 +190,9 @@ như mục sau; vẫn sao lưu, kiểm tra đầy đủ. Chỉ dừng hỏi khi:
 4. Bổ sung từ điển: chữ mới → `work/chars<n>.txt` mới, từ mới → `work/words<n>.txt` mới, câu → `work/sents.txt`
    (bộ mới, cờ k/w), loại từ / câu ví dụ / đề thi thử theo cấu trúc đề mới → `build_app.py`. Theo đúng Luật nội dung.
 5. Đếm lại toàn bộ số lần xuất hiện trên MỌI tài liệu (`build.py`), xếp lại theo tần suất, tính lại "thông dụng".
-6. Xếp lại lịch học và ôn: kỳ thi của tài liệu mới thành kỳ ưu tiên (`fo`, `PLAN` trong build_app.py): toàn bộ chữ, từ,
-   câu, loại từ của kỳ đó học trước; phần khác học sau. Số tuần: theo thời gian tới kỳ thi người dùng nói; không nói thì
-   chọn sao cho mỗi ngày ≤ ~20 chữ + ~20 từ và chừa tuần cuối để ôn + thi thử (lần này: 5 tuần). Tiến độ đã học giữ nguyên;
+6. Kỳ mới: thêm 1 mục vào `TERMS` trong build_app.py (mã kỳ như sources.json, tên đầy đủ + tên gọi tắt theo kiểu "Kỳ n (Hán n)" —
+   HỎI người dùng tên trước, khóa đề thi thử, bảng loại từ `LTK`, đầu tên bộ câu); `build_app.py` + `check_update.py` tự dừng nếu thiếu.
+   Người học tự chọn kỳ + ngày thi trong app, app tự xếp lịch (không ghi cứng số tuần). Tiến độ đã học giữ nguyên;
    thẻ đã học vẫn ôn theo lịch SRS cũ. Các con số trên giao diện lấy từ dữ liệu, không ghi cứng.
 7. Sinh lại: `build.py`, `build_app.py` (id cũ phải giữ — xem luật id), `check_update.py` (phải ĐẠT), `build_strokes.py`,
    `build_order.py`, `python sach_khop.py` (dò chữ mới trong sách; chỗ "cần soát" mở trang sách xem) rồi `python sach_pack.py` (sach.json + gói

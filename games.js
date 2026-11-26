@@ -243,6 +243,7 @@
     return null;
   }
   HC.ltTab = ltTab;
+  HC.ltCtx = function (k, x) { return ltCtx(ltTab(k) || ltTab("all"), x); }; // câu ví dụ có chữ gạch chân (bài loại từ trong Học mới)
   HC.ltTabKeys = function () { return (HC.D.ltk || []).map(function (K) { return K.k; }).concat(["all"]); };
   function ltAm(T, x, it) { return (T.am || {})[x] || (it ? HC.firstAm(it.am) : ""); }
   HC.ltAm = ltAm;
@@ -413,7 +414,7 @@
         var mem = HC.pickWeak(byRad[rno], Math.min(byRad[rno].length, 3 + Math.floor(Math.random() * 3)));
         var others = HC.pickWeak(pool.filter(function (c) { return String(c.rad) !== String(rno); }), 12 - mem.length);
         var grid = U().shuffle(mem.concat(others)), sel = {};
-        v.innerHTML = head(g, P.preview) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card" style="text-align:center;width:min(480px,100%)"><span class="han" style="font-size:52px">' + esc(R.r) + '</span><div><b>Bộ ' + esc(R.am) + "</b> · " + esc(R.ns || "") + (R.verse ? '<br><small class="muted">' + esc(R.verse) + "</small>" : "") + '</div></div><div class="hunt">' + grid.map(function (c, k) { return '<button data-k="' + k + '">' + esc(c.c) + "</button>"; }).join("") + '</div><div class="row"><button class="btn primary" id="chk">Kiểm tra</button></div><div class="feedback" id="fb"></div></div>';
+        v.innerHTML = head(g, P.preview) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card huntq" style="text-align:center;width:min(480px,100%)"><span class="han hr">' + esc(R.r) + '</span><div><b>Bộ ' + esc(R.am) + "</b> · " + esc(R.ns || "") + (R.verse ? '<br><small class="muted">' + esc(R.verse) + "</small>" : "") + '</div></div><div class="hunt">' + grid.map(function (c, k) { return '<button data-k="' + k + '">' + esc(c.c) + "</button>"; }).join("") + '</div><div class="feedback" id="fb"></div><div class="row acts"><button class="btn primary" id="chk">Kiểm tra</button></div></div>';
         setScore(v, score);
         U().$$(".hunt button", v).forEach(function (b) { b.onclick = function () { var k = b.dataset.k; sel[k] = !sel[k]; b.classList.toggle("sel", !!sel[k]); }; });
         v.querySelector("#chk").onclick = function () {
@@ -477,7 +478,7 @@
         var opts = U().shuffle([ans].concat(HC.distract(A, 3, "am").map(function (x) { return x.c; })));
         var syl = String(s.pa).replace(/\.\.\.|…/g, " ").split(/[\s,;.:]+/).filter(Boolean), hanCount = hs.filter(U().isHan).length, pa = s.pa;
         if (syl.length === hanCount) { var before = hs.slice(0, k).filter(U().isHan).length; syl[before] = "___"; pa = syl.join(" "); }
-        v.innerHTML = head(g, P.preview) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card" style="width:min(680px,100%);text-align:center"><div class="sent">' + hs.map(function (c, j) { return j === k ? '<span class="blank">?</span>' : esc(c); }).join("") + '</div><div style="font-weight:600">' + esc(pa) + '</div><div class="muted">' + esc(s.dn) + '</div></div><div class="choices">' + opts.map(function (o) { return '<button class="choice" data-o="' + esc(o) + '" style="text-align:center"><span class="han">' + esc(o) + "</span></button>"; }).join("") + '</div><div class="feedback" id="fb"></div></div>';
+        v.innerHTML = head(g, P.preview) + '<div class="stage"><div class="row"><span class="chip num">' + (i + 1) + " / " + N + '</span></div><div class="card clozeq" style="width:min(680px,100%);text-align:center"><div class="sent">' + hs.map(function (c, j) { return j === k ? '<span class="blank">?</span>' : esc(c); }).join("") + '</div><div style="font-weight:600">' + esc(pa) + '</div><div class="muted">' + esc(s.dn) + '</div></div><div class="choices c4">' + opts.map(function (o) { return '<button class="choice" data-o="' + esc(o) + '" style="text-align:center"><span class="han">' + esc(o) + "</span></button>"; }).join("") + '</div><div class="feedback" id="fb"></div></div>';
         setScore(v, score);
         U().$$(".choice", v).forEach(function (b) {
           b.onclick = function () {
@@ -509,7 +510,7 @@
       var g = this, Pw = HC.pool("w", 0), Pc = HC.pool("c", 0), qs = [], rec = HC.gameRec();
       HC.pickWeak(Pw.items, 8).forEach(function (w) { qs.push({ kind: "type", it: w, pts: 5, part: "Phiên âm", rec: rec }); });
       HC.pickWeak(Pc.items, 6).forEach(function (c) { qs.push({ kind: "mean", it: c, pts: 5, part: "Nghĩa của chữ", rec: rec }); });
-      var pl = HC.plan(), inPlan = pl.di < pl.weeks * 7; // trong lộ trình giữa kỳ 3: loại từ theo 7 loại của đề cương giữa kỳ 3
+      var inPlan = HC.focusLt && HC.focusLt() === "gk3"; // kỳ thi gần nhất đang học là giữa kỳ 3: loại từ theo 7 loại của đề cương giữa kỳ 3
       var GG = inPlan ? G7 : G5, st = inPlan ? "gk3" : undefined;
       if (ltKeys(GG, st, true).length) for (var k = 0; k < 6; k++) qs.push({ kind: "lt", q: ltQuestion(GG, st, true), groups: GG, pts: 5, part: "Loại từ", rec: rec });
       if (qs.length < 5) return lock(v, g, "Cần học thêm chữ, từ: bài đấu cần ít nhất 5 câu hỏi lấy từ phần bạn đã học.");
@@ -891,8 +892,8 @@
           var tot = e.parts.reduce(function (s, p) { return s + p.n * p.pts; }, 0);
           return '<div class="card"><h2>' + esc(e.name) + " · " + e.parts.length + " phần · " + tot + ' điểm</h2><table class="t"><tbody>' + e.parts.map(function (p) { return "<tr><td>" + esc(p.part) + '</td><td class="num">' + p.n * p.pts + "đ</td></tr>"; }).join("") + '</tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best[e.best] != null ? S.best[e.best] : "—") + '</p><a class="btn primary" href="#thi-' + e.key + '">Bắt đầu ' + esc(e.name.charAt(0).toLowerCase() + e.name.slice(1)) + "</a></div>";
         }).join("") +
-        '<div class="card"><h2>Đề HK1 · 6 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 từ đôi</td><td class="num">20đ</td></tr><tr><td>II. Nhận diện 10 chữ</td><td class="num">20đ</td></tr><tr><td>III. Nhận diện loại từ 20 câu</td><td class="num">20đ</td></tr><tr><td>IV. Phiên âm và dịch 10 câu</td><td class="num">20đ</td></tr><tr><td>V. Cụm thông tin cá nhân</td><td class="num">4đ</td></tr><tr><td>VI. Dịch và viết chữ Hán 4 câu</td><td class="num">16đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK1 != null ? S.best.examHK1 : "—") + '</p><a class="btn primary" href="#thi-hk1">Bắt đầu đề HK1</a></div>' +
-        '<div class="card"><h2>Đề cuối kỳ 2 · 4 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 cụm</td><td class="num">20đ</td></tr><tr><td>II. Loại từ 20 câu (5 loại)</td><td class="num">20đ</td></tr><tr><td>III. Phiên âm và dịch 10 câu</td><td class="num">30đ</td></tr><tr><td>IV. Viết chữ Hán 5 câu</td><td class="num">30đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK2 != null ? S.best.examHK2 : "—") + '</p><a class="btn primary" href="#thi-hk2">Bắt đầu đề kỳ 2</a></div></div>';
+        '<div class="card"><h2>Đề Kỳ 1 (Hán 1) · 6 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 từ đôi</td><td class="num">20đ</td></tr><tr><td>II. Nhận diện 10 chữ</td><td class="num">20đ</td></tr><tr><td>III. Nhận diện loại từ 20 câu</td><td class="num">20đ</td></tr><tr><td>IV. Phiên âm và dịch 10 câu</td><td class="num">20đ</td></tr><tr><td>V. Cụm thông tin cá nhân</td><td class="num">4đ</td></tr><tr><td>VI. Dịch và viết chữ Hán 4 câu</td><td class="num">16đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK1 != null ? S.best.examHK1 : "—") + '</p><a class="btn primary" href="#thi-hk1">Bắt đầu đề Kỳ 1 (Hán 1)</a></div>' +
+        '<div class="card"><h2>Đề Kỳ 2 (Hán 2) · 4 phần · 100 điểm</h2><table class="t"><tbody><tr><td>I. Phiên âm 20 cụm</td><td class="num">20đ</td></tr><tr><td>II. Loại từ 20 câu (5 loại)</td><td class="num">20đ</td></tr><tr><td>III. Phiên âm và dịch 10 câu</td><td class="num">30đ</td></tr><tr><td>IV. Viết chữ Hán 5 câu</td><td class="num">30đ</td></tr></tbody></table><p class="muted" style="margin-top:8px">Điểm cao nhất: ' + (S.best.examHK2 != null ? S.best.examHK2 : "—") + '</p><a class="btn primary" href="#thi-hk2">Bắt đầu đề Kỳ 2 (Hán 2)</a></div></div>';
       return;
     }
     var qs = [], U2 = U();
@@ -923,7 +924,7 @@
       U2.pick(D.sents.filter(function (s) { return s.set === "ĐC HK2 · Phần III"; }), 10).forEach(function (s) { qs.push({ kind: "self", s: s, a: 1.5, b: 1.5, pts: 3, part: "III. Phiên âm và dịch" }); });
       U2.pick(D.sents.filter(function (s) { return s.set === "ĐC HK2 · Phần IV"; }), 5).forEach(function (s) { qs.push({ kind: "write", s: s, pts: 6, part: "IV. Viết chữ Hán" }); });
     }
-    var hd = '<div class="ghead"><a class="btn sm ghost" href="#thi">← Thi thử</a><h1 style="margin:0;font-size:1.25rem">' + (ex ? "Đề thi thử " + esc(ex.name.replace(/^Đề\s*/, "")) : which === "hk1" ? "Đề thi thử HK1" : "Đề thi thử cuối kỳ 2") + "</h1></div>";
+    var hd = '<div class="ghead"><a class="btn sm ghost" href="#thi">← Thi thử</a><h1 style="margin:0;font-size:1.25rem">' + (ex ? "Đề thi thử " + esc(ex.name.replace(/^Đề\s*/, "")) : which === "hk1" ? "Đề thi thử Kỳ 1 (Hán 1)" : "Đề thi thử Kỳ 2 (Hán 2)") + "</h1></div>";
     runQuiz(v, hd, qs, function (score, max, parts, byPart) {
       var sc = Math.round(score * 10) / 10, key = ex ? ex.best : which === "hk1" ? "examHK1" : "examHK2";
       var best = HC.setBest(key, sc, true); HC.addXP(Math.round(sc / 3)); HC.after();
