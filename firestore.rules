@@ -10,7 +10,9 @@ rules_version = '2';
 // - hanco_cfg/dk: {tran (trần số người), dem (số người đã đăng ký), mo (cho đăng ký mới)}. Ai cũng đọc; người đăng ký chỉ được
 //   +1 dem khi còn chỗ và đang mở, cùng lần tạo hồ sơ của mình. Quản trị ghi tự do.
 // - hanco_progress/{uid} (+ backups/, sach/): chỉ chủ tài khoản đang "ok"; quản trị đọc được mọi người, xóa được.
-// - hanco_qt/*: chỉ quản trị (mã số tài khoản, nhật ký quản trị…).
+// - hanco_qt/*: chỉ quản trị (mã số tài khoản, lịch sử người bị xóa, tự xóa, nhật ký quản trị — Bước 4).
+// - hanco_cfg/chung (Bước 4): thông báo chung, ngày thi chung, cài đặt tự xóa — người đã đăng nhập đọc, chỉ quản trị ghi.
+// - tk (Bước 4) = bản thống kê tóm tắt người học tự gửi (≤ 1 lần/giờ): phải là map đúng các khóa đã định.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null; }
@@ -35,6 +37,7 @@ service cloud.firestore {
       // hình trang sách — chỉ chủ tài khoản đang "ok" (Bước 6 chuyển sang kho chung hanco_sach)
       match /sach/{k} {
         allow read, write: if owner(uid);
+        allow read, delete: if isAdmin(); // xóa người (Bước 4)
       }
     }
 
@@ -43,7 +46,13 @@ service cloud.firestore {
       allow create: if isAdmin() || (me(uid) && regOk(uid));
       allow update: if isAdmin() || (me(uid) && resource.data.st == 'ok'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ten', 'tk', 'upd'])
-        && tenOk(request.resource.data.ten));
+        && tenOk(request.resource.data.ten)
+        && (!('tk' in request.resource.data) || tkOk(request.resource.data.tk)));
+      function tkOk(t) {
+        return t is map && t.keys().hasOnly(['v', 't', 'd', 'last', 'sc', 'sd', 'xp', 'xw', 'la', 'lx', 'n', 'due', 'ky', 'ex', 'hq', 'sz'])
+          && (!('la' in t) || (t.la is list && t.la.size() <= 31)) && (!('lx' in t) || (t.lx is list && t.lx.size() <= 31))
+          && (!('ky' in t) || (t.ky is list && t.ky.size() <= 12)) && (!('hq' in t) || (t.hq is list && t.hq.size() <= 10));
+      }
       allow delete: if isAdmin();
 
       // đăng ký: email đã xác nhận, đúng khuôn, giữ đúng 1 tên còn trống trong danh sách, +1 số người khi còn chỗ — cùng 1 lần ghi
@@ -80,7 +89,7 @@ service cloud.firestore {
     }
 
     match /hanco_cfg/{k} {
-      allow read: if true;
+      allow read: if k == 'dk' || signed();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (k == 'dk' && signed()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dem'])

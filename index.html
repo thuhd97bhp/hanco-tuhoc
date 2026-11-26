@@ -440,6 +440,44 @@ ruby rt { font-family: var(--f-ui); font-size: 0.42em; color: var(--muted); lett
 .modal [data-detail] .more { margin-right: 34px; } /* chừa chỗ nút ✕ đóng khung */
 .chip.hs { background: var(--warn-soft); color: var(--warn); }
 .chip.hs.hide { display: none; }
+
+/* tab Quản trị + thông báo chung + hộp chọn lộ trình của người mới (Bước 4, 26/11/2026) */
+.qtnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+.qtnav a[aria-current] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+#qtb > .card, #qtb > .cols2 { margin-bottom: 14px; }
+.qtst { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+.qtst > div { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.qtst small { display: block; color: var(--muted); font-size: 0.8rem; }
+.qtst b { display: block; font-size: 1.4rem; line-height: 1.3; }
+.qtst.sm b { font-size: 1.1rem; }
+.qtwrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.qtwrap table.t { min-width: 640px; }
+.qtwrap table.qtt { min-width: 1080px; }
+.qtt th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; min-height: 32px; text-align: left; }
+.qtt td { white-space: nowrap; }
+button.lnk { background: none; border: 0; padding: 4px 0; font: inherit; font-weight: 600; color: var(--accent); text-decoration: underline; cursor: pointer; text-align: left; min-height: 32px; }
+.qtls { padding-left: 1.2em; margin: 6px 0; }
+.qtls li { margin: 4px 0; }
+.qtcal { display: grid; grid-template-columns: repeat(15, 1fr); gap: 4px; max-width: 460px; }
+.qtcal i { aspect-ratio: 1; border-radius: 4px; background: var(--line); }
+.qtcal i.l1 { background: color-mix(in srgb, var(--good) 28%, var(--line)); }
+.qtcal i.l2 { background: color-mix(in srgb, var(--good) 52%, var(--line)); }
+.qtcal i.l3 { background: color-mix(in srgb, var(--good) 76%, var(--line)); }
+.qtcal i.l4 { background: var(--good); }
+.qtcalk { display: flex; justify-content: space-between; gap: 8px; max-width: 460px; flex-wrap: wrap; }
+.qtdel { border: 1px solid var(--seal); border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
+.qtopt { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; min-height: 40px; }
+.qtopt input { margin-top: 4px; }
+.qtchk { display: flex; gap: 8px; align-items: center; min-height: 40px; margin-top: 6px; }
+#qtnt { min-height: 120px; }
+.tbc { border-color: var(--seal); }
+.tbh { margin: 6px 0 0; overflow-wrap: anywhere; }
+.thir + .thir { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+.thir p { margin: 0 0 6px; }
+.kygate .box { max-width: 760px; }
+.kygate #kygpick { display: contents; } /* nút Lưu (.acts) dính đáy cả hộp thoại, kể cả khi phần giải thích dài hơn màn hình */
+.kyg { padding-left: 1.3em; margin: 8px 0; }
+.kyg li { margin: 5px 0; }
 .pop { position: fixed; z-index: 70; min-width: 220px; max-width: calc(100vw - 16px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.22); padding: 6px; display: grid; gap: 2px; }
 .pop .ph { padding: 6px 10px 4px; color: var(--muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pop .ph .han { font-size: 1.15rem; color: var(--han); }

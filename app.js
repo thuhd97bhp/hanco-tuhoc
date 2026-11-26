@@ -800,8 +800,8 @@
     };
   }
 
-  // thẻ "Quản trị (tạm)" trong Cài đặt — chỉ quản trị viên. Bước 4 chuyển sang tab Quản trị.
-  // Danh sách họ tên: mỗi dòng 1 họ tên (dán từ Excel được: bỏ cột STT / số thứ tự đầu dòng). Xem trước đúng từng tên sẽ lưu rồi mới ghi.
+  // Danh sách họ tên thật (tab Quản trị → Họ tên): mỗi dòng 1 họ tên (dán từ Excel được: bỏ cột STT / số thứ tự đầu dòng).
+  // Xem trước đúng từng tên sẽ lưu rồi mới ghi.
   function qtParse(text) {
     var out = [], seen = {}, dup = [], bad = [];
     String(text || "").split(/\r?\n/).forEach(function (line) {
@@ -817,27 +817,440 @@
     return { list: out, dup: dup, bad: bad };
   }
   HC.qtParse = qtParse;
-  function qtCard(el) {
-    if (!el || !isAdmin()) return;
-    var db = fb.db, cref = db.collection("hanco_cfg").doc("dk");
-    el.innerHTML = '<h2>Quản trị (tạm)</h2><p class="sub">Chỉ tài khoản quản trị thấy thẻ này. Bước sau sẽ chuyển sang tab Quản trị.</p>' +
-      '<h3>Đăng ký tài khoản</h3><div id="qtdk"><p class="sub">Đang tải…</p></div>' +
-      '<h3>Danh sách họ tên thật</h3><p class="sub">Chỉ người có họ tên trong danh sách này mới đăng ký được (mỗi họ tên 1 tài khoản). Dán mỗi dòng 1 họ tên đầy đủ, có dấu (dán thẳng từ Excel được: app tự bỏ cột số thứ tự). Không ai ngoài quản trị đọc được danh sách.</p>' +
-      '<textarea id="qtten" aria-label="Danh sách họ tên" placeholder="Nguyễn Văn An&#10;Trần Thị Bình"></textarea><div class="row" style="margin-top:8px"><button class="btn" type="button" id="qtxem">Xem trước</button><button class="btn" type="button" id="qtds">Xem danh sách đã lưu</button></div><div id="qtkq"></div>';
-    function dk() {
-      cref.get().then(function (c) {
-        var d = c.exists ? c.data() : { tran: 120, dem: 0, mo: true };
-        $("#qtdk", el).innerHTML = '<p>Đã đăng ký: <b>' + fmt(d.dem || 0) + '</b> / ' + fmt(d.tran || 0) + ' người (không tính quản trị viên).</p>' +
-          '<div class="row" style="align-items:end"><div class="field" style="flex:0 1 160px"><label for="qttran">Trần số người</label><input id="qttran" type="number" min="0" max="1000" value="' + (+d.tran || 0) + '"></div>' +
-          '<button class="btn" type="button" id="qtluu">Lưu</button></div><label style="display:flex;gap:8px;align-items:center;min-height:40px;margin-top:6px"><input type="checkbox" id="qtmo"' + (d.mo ? " checked" : "") + '> Cho người mới đăng ký</label>' +
-          '<p class="sub">Bỏ chọn "Cho người mới đăng ký" = tạm không nhận thêm người mới dù còn chỗ (người đã có tài khoản vẫn học bình thường). Hết chỗ thì người mới thấy "App đã đủ người".</p>';
-        $("#qtluu", el).onclick = function () {
-          var t = Math.max(0, Math.min(1000, parseInt($("#qttran", el).value, 10) || 0)), mo = $("#qtmo", el).checked;
-          (c.exists ? cref.update({ tran: t, mo: mo }) : cref.set({ tran: t, dem: 0, mo: mo })).then(function () { toast("Đã lưu"); dk(); }, function (e) { toast(tkErr(e)); });
-        };
-      }, function (e) { $("#qtdk", el).innerHTML = '<p class="sub">' + esc(tkErr(e)) + "</p>"; });
+
+  // ---------- CẤU HÌNH CHUNG do quản trị đặt (Bước 4, 26/11/2026) ----------
+  // hanco_cfg/chung = {tb: {h thông báo (chữ thường), t ms đăng}, thi: {mã kỳ: ngày thi (số ngày)}, tx: {bat, n, k, mien: [uid]}}.
+  // Người học đọc khi vào app + tối đa 1 lần/giờ (localStorage CH_LS = {t, u, d}); "Ẩn" thông báo = localStorage TB_AN (t của bản đã ẩn);
+  // "Bỏ qua" ngày thi chung = localStorage THI_AN {mã kỳ: ngày}. Không thuộc S. Ngày thi chung KHÔNG tự đổi lộ trình: người học bấm
+  // "Áp dụng" mới ghi S.plans (như khung Chọn kỳ học); khung Chọn kỳ học lấy sẵn ngày này làm ngày thi mặc định.
+  var CH_LS = "hanco-chung", TB_AN = "hanco-tb-an", THI_AN = "hanco-thi-an", CH_GAP = 3600e3;
+  var CHG = (function () { try { var c = JSON.parse(lsGet(CH_LS)); return c && c.d ? c.d : {}; } catch (e) { return {}; } })();
+  function chungLoad(force) {
+    if (!fb.db || !fb.user || tk.st !== "ok") return;
+    var c = null; try { c = JSON.parse(lsGet(CH_LS)); } catch (e) { }
+    if (!force && c && c.u === fb.user.uid && Date.now() - (c.t || 0) < CH_GAP) return;
+    fb.db.collection("hanco_cfg").doc("chung").get().then(function (s) { chungSet(s.exists ? s.data() : {}); }, function () { });
+  }
+  function chungSet(d, quiet) {
+    var old = JSON.stringify(CHG); CHG = d || {};
+    lsSet(CH_LS, JSON.stringify({ t: Date.now(), u: fb.user ? fb.user.uid : "", d: CHG }));
+    if (!quiet && old !== JSON.stringify(CHG)) softRefresh();
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") chungLoad(); });
+  function thiChung(k, t0) { var e = +((CHG.thi || {})[k]) || 0; return e > t0 ? e : 0; }
+  function tbHTML(s) { // thông báo: chữ thường, giữ xuống dòng, link http(s) bấm được
+    return esc(s).replace(/https?:\/\/[^\s<]+/g, function (u) { return '<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>"; }).replace(/\n/g, "<br>");
+  }
+  function jget(k) { try { return JSON.parse(lsGet(k)) || {}; } catch (e) { return {}; } }
+  // các kỳ có ngày thi chung mà lộ trình của người học chưa theo (chưa học kỳ đó / ngày thi khác)
+  function thiRows(t0) {
+    var an = jget(THI_AN), out = [];
+    TERMS.forEach(function (T) {
+      var k = T.k, e = thiChung(k, t0); if (!e || an[k] === e) return;
+      var p = S.plans[k], act = !!(p && !p.x && t0 <= p.e); if (act && p.e === e) return;
+      var P = {}; Object.keys(S.plans).forEach(function (j) { var q = S.plans[j]; if (q && !q.x && t0 <= q.e) P[j] = q; });
+      P[k] = { s: act ? p.s : t0, e: e, t: 1, x: 0 };
+      var pp = buildPlans(P, t0).ps.filter(function (x) { return x.k === k; })[0], pd = pp ? perDay(pp, t0) : null;
+      out.push({ k: k, T: T, e: e, act: act, p: p, c: pd ? pd.c.per : 0, w: pd ? pd.w.per : 0 });
+    });
+    return out;
+  }
+  function chungCards(t0) {
+    var h = "", tb = CHG.tb;
+    if (tb && tb.h && lsGet(TB_AN) !== String(tb.t)) h += '<div class="card tbc" role="status"><div class="row"><h2 style="margin:0">Thông báo</h2><span class="spacer"></span><button class="btn sm ghost" type="button" data-tban="' + esc(tb.t) + '">Ẩn</button></div><p class="tbh">' + tbHTML(tb.h) + "</p></div>";
+    var rows = thiRows(t0);
+    if (rows.length) h += '<div class="card tbc"><h2>Ngày thi chung</h2>' + rows.map(function (r) {
+      return '<div class="thir"><p><b>' + esc(r.T.name) + "</b> thi ngày <b>" + dateY(r.e) + "</b> (quản trị viên đặt). Lộ trình của bạn: " + (r.act ? "thi ngày " + dateY(r.p.e) : "chưa học kỳ này") + ". Áp dụng thì mỗi ngày học khoảng " + r.c + " chữ + " + r.w + " từ." +
+        (r.c > 20 ? ' <span class="chip warn">Khá nặng: hơn 20 chữ/ngày</span>' : "") + '</p><div class="row"><button class="btn primary sm" type="button" data-thiok="' + r.k + '">Áp dụng ngày thi này</button><button class="btn sm ghost" type="button" data-thian="' + r.k + '">Bỏ qua</button></div></div>';
+    }).join("") + "</div>";
+    return h;
+  }
+  function chungBind(v) {
+    $$("[data-tban]", v).forEach(function (b) { b.onclick = function () { lsSet(TB_AN, b.getAttribute("data-tban")); route(); }; });
+    $$("[data-thian]", v).forEach(function (b) { b.onclick = function () { var k = b.getAttribute("data-thian"), an = jget(THI_AN); an[k] = thiChung(k, today()); lsSet(THI_AN, JSON.stringify(an)); route(); }; });
+    $$("[data-thiok]", v).forEach(function (b) {
+      b.onclick = function () {
+        var k = b.getAttribute("data-thiok"), t0 = today(), e = thiChung(k, t0), p = S.plans[k], act = !!(p && !p.x && t0 <= p.e); if (!e) return;
+        S.plans[k] = { s: act ? p.s : t0, e: e, t: Date.now(), x: 0 }; save();
+        toast("Đã đổi ngày thi " + (TERM[k] ? TERM[k].short : k) + ", app đã xếp lại lịch học"); route();
+      };
+    });
+  }
+
+  // ---------- NGƯỜI HỌC MỚI: bắt buộc chọn lộ trình (người dùng yêu cầu 26/11/2026) ----------
+  // Tài khoản vào app mà CHƯA có lộ trình nào (S.plans trống) → hộp thoại "Chọn lộ trình học" không đóng được, tới khi chọn ít nhất
+  // 1 kỳ + ngày thi. Chỉ hỏi sau khi đã nhận bản tiến độ từ tài khoản (fb.remOk: máy thứ 2 của người đã chọn không bị hỏi nhầm).
+  // Quản trị viên không bị hỏi. Chỉ ghi S.plans như khung Chọn kỳ học.
+  function needPlan() { return TK_GATE && tk.st === "ok" && !!fb.user && !isAdmin() && !!fb.ref && fb.remOk && TERMS.length > 0 && !Object.keys(S.plans || {}).length; }
+  var gateBox = null;
+  function planGate() {
+    var open = !!(gateBox && document.body.contains(gateBox));
+    if (!needPlan()) { if (open) layer.innerHTML = ""; gateBox = null; return; }
+    if (open) return;
+    var names = TERMS.map(function (T) { return T.name; }).join(", ");
+    layer.innerHTML = '<div class="modal kygate" role="dialog" aria-modal="true" aria-labelledby="kyg-h"><div class="box">' +
+      '<h1 id="kyg-h" style="margin-top:0">Chọn lộ trình học</h1><p>Chào mừng bạn! Trước khi học, hãy cho app biết bạn ôn thi kỳ nào và ngày thi, để app tự chia bài mỗi ngày cho vừa kịp.</p><ol class="kyg">' +
+      "<li><b>Chọn kỳ</b> (đánh dấu ô): " + esc(names) + ". Mỗi kỳ gồm các chữ, từ, loại từ và câu có trong đề cương / đề thi của kỳ đó. Học nhiều kỳ cùng lúc được.</li>" +
+      "<li><b>Chọn ngày thi</b> của từng kỳ (hoặc bấm 4 / 6 / 8 / 10 tuần). Ngày thi càng gần thì mỗi ngày học càng nhiều: dòng chữ dưới mỗi kỳ cho biết mỗi ngày bao nhiêu chữ, bao nhiêu từ.</li>" +
+      "<li><b>App tự xếp lịch:</b> chữ + từ học từ ngày đầu (chữ, từ hay gặp học trước); loại từ từ 1/5 chặng; câu từ nửa chặng; cứ 7 ngày có 1 ngày chỉ ôn; những ngày cuối chỉ ôn + thi thử. Mỗi ngày mở mục <b>Hôm nay</b>, làm hết \"Việc hôm nay\" là kịp.</li>" +
+      "<li>Chữ, từ trùng giữa các kỳ chỉ học 1 lần, ở kỳ thi sớm hơn.</li></ol>" +
+      '<p class="sub">Đổi kỳ hoặc ngày thi lúc nào cũng được ở mục <b>Tiến độ &amp; cài đặt → Chọn kỳ học</b>; chữ đã học vẫn giữ nguyên.</p><div id="kygpick"></div></div></div>';
+    gateBox = layer.firstChild;
+    planPick($("#kygpick", gateBox), function () {
+      if (needPlan()) return;
+      gateBox = null; layer.innerHTML = ""; toast("Đã xếp lộ trình. Bắt đầu học thôi!"); route();
+    }, { gate: true });
+  }
+
+  // ---------- BẢN THỐNG KÊ TÓM TẮT (Bước 4) ----------
+  // Mỗi người học gửi lên hanco_users/{uid}.tk TỐI ĐA 1 lần/giờ, chỉ khi có thay đổi (thêm 1 lần khi "ngày học cuối" đổi, để quản trị
+  // thấy đúng lần học cuối). Chỉ số liệu, KHÔNG có ghi chú. Quản trị tính lại bằng chính sumOf() từ tiến độ đọc được (màn chi tiết).
+  // tk = {v, t ms, d ngày tính, last ngày học cuối (có lượt học/ôn), sc chuỗi ngày, sd ngày cuối của chuỗi, xp, xw XP tuần (từ thứ Hai),
+  // la/lx 30 ngày gần nhất (lượt học+ôn / XP, cũ → mới), n {c,w,r,s,lt} đã học, due thẻ quá hạn, ky [{k, s, e, p %, ch chậm, nh nhanh}],
+  // ex {điểm thi thử cao nhất}, hq [10 id chữ hay quên], sz độ dài tiến độ (ký tự)}. localStorage TKS_LS = lần gửi gần nhất.
+  var TKS_LS = "hanco-tk-gui", TK_GAP = 3600e3;
+  function weekStart(d) { return d - (d + 3) % 7; } // thứ Hai của tuần chứa ngày d (ngày 0 = thứ Năm 1/1/1970)
+  function dayOfMs(ms) { var d = new Date(ms); return Math.floor((ms - d.getTimezoneOffset() * 60000) / 864e5); }
+  function withS(o, fn) { var keep = S; S = o; try { return fn(); } finally { S = keep; } } // tính số liệu trên tiến độ của người khác
+  function sumOf(s) {
+    return withS(s, function () {
+      var t0 = today(), last = 0, la = [], lx = [], xw = 0, ws = weekStart(t0), d;
+      Object.keys(S.log).forEach(function (k) { var dd = +k, l = S.log[k] || {}; if ((+l.n || 0) + (+l.r || 0) > 0 && dd > last && dd <= t0) last = dd; if (dd >= ws && dd <= t0) xw += +l.x || 0; });
+      for (d = t0 - 29; d <= t0; d++) { var l = S.log[d] || {}; la.push((+l.n || 0) + (+l.r || 0)); lx.push(+l.x || 0); }
+      var n = { c: 0, w: 0, r: 0, s: 0, lt: Object.keys(S.lt).length };
+      Object.keys(S.it).forEach(function (id) { var it = ITEM[id]; if (it && n[it.type] != null) n[it.type]++; });
+      var ky = buildPlans(S.plans, t0).ps.map(function (p) {
+        var dd = t0 - p.s, g = 0, tot = 0, tg = 0;
+        PTY.forEach(function (t) { g += pgot(p, t); tot += p.Q[t].length; tg += dd < 0 ? 0 : ptarget(p, t, dd); });
+        return { k: p.k, s: p.s, e: p.e, p: tot ? Math.round(100 * g / tot) : 100, ch: Math.max(0, tg - g), nh: Math.max(0, g - tg) };
+      });
+      var ex = {}; Object.keys(S.best || {}).forEach(function (k) { if (k.indexOf("exam") === 0 && typeof S.best[k] === "number") ex[k] = S.best[k]; });
+      return {
+        v: 1, t: Date.now(), d: t0, last: last, sc: S.streak.d >= t0 - 1 ? S.streak.c : 0, sd: S.streak.d || 0, xp: S.xp || 0, xw: xw,
+        la: la, lx: lx, n: n, due: due("r").length + due("w").length, ky: ky, ex: ex,
+        hq: HC.hard().slice(0, 10).map(function (it) { return it.id; }), sz: JSON.stringify(S).length
+      };
+    });
+  }
+  HC.sumOf = sumOf;
+  function tkSend() {
+    if (!TK_GATE || !fb.user || isAdmin() || tk.st !== "ok" || !tk.prof || !fb.ref || !fb.remOk || tk.sending) return;
+    var u = fb.user, g = jget(TKS_LS); if (g.u !== u.uid) g = {};
+    var s; try { s = sumOf(S); } catch (e) { return; }
+    var sig = JSON.stringify(s, function (k, v) { return k === "t" ? undefined : v; });
+    if (sig === g.h) return; // không có gì mới
+    if (Date.now() - (g.t || 0) < TK_GAP && s.last === g.l) return; // ≤ 1 lần/giờ (trừ khi ngày học cuối vừa đổi)
+    tk.sending = true;
+    fb.db.collection("hanco_users").doc(u.uid).update({ tk: s, upd: Date.now() }).then(function () {
+      lsSet(TKS_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: sig, l: s.last }));
+    }, function () { }).then(function () { tk.sending = false; });
+  }
+  HC.tkSend = tkSend;
+
+  // ---------- TAB QUẢN TRỊ (Bước 4) — chỉ tài khoản quản trị (ADMIN_UID) thấy ----------
+  // Đọc khi mở tab (đệm 2 phút, nút "Tải lại"): hanco_users (hồ sơ + bản tóm tắt tk), hanco_cfg/dk + chung, và tài liệu chỉ quản trị
+  // hanco_qt/ma {so: {uid: số}, next} = MÃ SỐ tài khoản (000 = quản trị; 001… cấp theo thứ tự đăng ký khi mở tab; KHÔNG dùng lại số),
+  // hanco_qt/daxoa {ds: [{uid, ma, hoten, ten, email, tao, xoa, cach "chan"|"lai", ly "tay"|"tu"}]} = lịch sử người bị xóa,
+  // hanco_qt/tuxoa {kh: {uid: ngày bị tự khóa}}, hanco_qt/nk-YYYY-MM {e: [{t, a việc, m mã, n họ tên, c chi tiết}]} = nhật ký.
+  // Xóa người: "chan" = hồ sơ st "xoa" (giữ họ tên → không đăng ký lại được); "lai" = xóa hồ sơ + trả họ tên (đăng ký lại → số mới).
+  // Cả 2: xóa tiến độ + sao lưu (+ sach riêng), trả 1 chỗ (dem − 1), ghi lịch sử. Tự xóa: chạy khi quản trị mở tab (gói Spark).
+  // Ghi chú riêng của người học KHÔNG bao giờ hiện (bản tóm tắt không có; màn chi tiết chỉ dùng sumOf).
+  var QT = null, QT_NHAC = "hanco-qt-nhac", qtSort = { k: "ma", d: 1 }, qtQ = { q: "", st: "" };
+  function pad3(n) { return ("00" + n).slice(-3); }
+  function qtMa(uid) { var n = QT && QT.ma && QT.ma.so ? QT.ma.so[uid] : 0; return uid === ADMIN_UID ? "000" : n ? pad3(n) : "—"; }
+  function qtRef(c, d) { return fb.db.collection(c).doc(d); }
+  function qtFV() { return firebase.firestore.FieldValue; }
+  function pad2(n) { return ("0" + n).slice(-2); }
+  function hm(ms) { var d = new Date(ms); return d.getDate() + "/" + (d.getMonth() + 1) + "/" + d.getFullYear() + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+  function qtLog(a, u, c) {
+    var d = new Date(), id = "nk-" + d.getFullYear() + "-" + pad2(d.getMonth() + 1);
+    var e = { t: Date.now(), a: a, m: u ? qtMa(u.uid) : "", n: u ? (u.hoten || u.ten || "") : "", c: c || "" };
+    return qtRef("hanco_qt", id).set({ e: qtFV().arrayUnion(e) }, { merge: true }).catch(function () { });
+  }
+  function qtLoad() {
+    var db = fb.db;
+    return Promise.all([
+      db.collection("hanco_users").get(), qtRef("hanco_qt", "ma").get(), qtRef("hanco_qt", "daxoa").get(), qtRef("hanco_qt", "tuxoa").get(),
+      qtRef("hanco_cfg", "dk").get(), qtRef("hanco_cfg", "chung").get()
+    ]).then(function (r) {
+      var users = r[0].docs.filter(function (d) { return d.id !== ADMIN_UID; }).map(function (d) {
+        var x = d.data(); x.uid = d.id; x.taoMs = x.tao && x.tao.toMillis ? x.tao.toMillis() : (+x.upd || 0); return x;
+      });
+      QT = {
+        t: Date.now(), users: users, ma: r[1].exists ? r[1].data() : { so: {}, next: 1 }, dx: r[2].exists ? (r[2].data().ds || []) : [],
+        kh: r[3].exists ? (r[3].data().kh || {}) : {}, dk: r[4].exists ? r[4].data() : { tran: 120, dem: 0, mo: true }, ch: r[5].exists ? r[5].data() : {}, msg: ""
+      };
+      if (!QT.ma.so) QT.ma.so = {};
+      chungSet(QT.ch, true);
+      return qtNumber();
+    }).then(qtAuto);
+  }
+  // cấp mã số cho người chưa có (không tính người đã bị xóa), theo thứ tự đăng ký
+  function qtNumber() {
+    var need = QT.users.filter(function (u) { return u.st !== "xoa" && !QT.ma.so[u.uid]; }).sort(function (a, b) { return a.taoMs - b.taoMs; });
+    if (!need.length) return;
+    var ref = qtRef("hanco_qt", "ma");
+    return fb.db.runTransaction(function (tx) {
+      return tx.get(ref).then(function (s) {
+        var m = s.exists ? s.data() : {}; m.so = m.so || {}; m.next = +m.next || 1;
+        need.forEach(function (u) { if (!m.so[u.uid]) m.so[u.uid] = m.next++; });
+        tx.set(ref, m); return m;
+      });
+    }).then(function (m) {
+      QT.ma = m;
+      need.forEach(function (u) { qtLog("Cấp mã số", u, (u.email || "") + " · đăng ký " + (u.taoMs ? hm(u.taoMs) : "?")); });
+    });
+  }
+  function qtLast(u) { var t = u.tk || {}; return t.last || (u.taoMs ? dayOfMs(u.taoMs) : today()); }
+  // khóa / mở khóa (auto = tự khóa vì không học → nhớ ngày khóa để tự xóa sau k ngày; mở khóa tay → bỏ khỏi danh sách tự xóa)
+  function qtSetSt(u, st, auto, why) {
+    var b = fb.db.batch(), t0 = today(), kh = {};
+    kh[u.uid] = auto ? t0 : qtFV().delete();
+    b.update(qtRef("hanco_users", u.uid), { st: st, upd: Date.now() });
+    b.set(qtRef("hanco_qt", "tuxoa"), { kh: kh }, { merge: true });
+    return b.commit().then(function () {
+      u.st = st; if (auto) QT.kh[u.uid] = t0; else delete QT.kh[u.uid];
+      qtLog(auto ? "Tự khóa" : st === "khoa" ? "Khóa" : "Mở khóa", u, why);
+    });
+  }
+  function qtWipe(uid) { // xóa tiến độ + sao lưu + hình sách riêng của 1 người
+    var ref = qtRef("hanco_progress", uid);
+    function sub(n) { return ref.collection(n).get().then(function (qs) { return Promise.all(qs.docs.map(function (d) { return d.ref.delete(); })); }); }
+    return sub("backups").then(function () { return sub("sach").catch(function () { }); }).then(function () { return ref.delete(); });
+  }
+  function qtDelete(u, cach, ly, why) {
+    var FV = qtFV(), b = fb.db.batch(), ma = qtMa(u.uid), o = {}, kh = {};
+    var entry = { uid: u.uid, ma: ma, hoten: u.hoten || "", ten: u.ten || "", email: u.email || "", tao: u.taoMs || 0, xoa: Date.now(), cach: cach, ly: ly };
+    if (cach === "lai") { b.delete(qtRef("hanco_users", u.uid)); if (u.hk) b.update(qtRef("hanco_ten", u.hk), { uid: null }); }
+    else b.update(qtRef("hanco_users", u.uid), { st: "xoa", upd: Date.now() });
+    if (u.st !== "xoa") b.set(qtRef("hanco_cfg", "dk"), { dem: FV.increment(-1) }, { merge: true }); // trả 1 chỗ
+    o[u.uid] = FV.delete(); kh[u.uid] = FV.delete();
+    b.set(qtRef("hanco_qt", "ma"), { so: o }, { merge: true });
+    b.set(qtRef("hanco_qt", "tuxoa"), { kh: kh }, { merge: true });
+    b.set(qtRef("hanco_qt", "daxoa"), { ds: FV.arrayUnion(entry) }, { merge: true });
+    // ghi trạng thái trước (máy người học ngắt đồng bộ ngay), rồi mới xóa tiến độ
+    return b.commit().then(function () {
+      qtLog(ly === "tu" ? "Tự xóa" : "Xóa", u, (cach === "lai" ? "cho đăng ký lại" : "chặn luôn") + (why ? " · " + why : ""));
+      if (u.st !== "xoa") QT.dk.dem = Math.max(0, (+QT.dk.dem || 0) - 1);
+      QT.dx.push(entry); delete QT.ma.so[u.uid]; delete QT.kh[u.uid];
+      if (cach === "lai") QT.users = QT.users.filter(function (x) { return x !== u; }); else u.st = "xoa";
+      return qtWipe(u.uid).catch(function () { toast("Đã xóa tài khoản nhưng chưa xóa hết tiến độ. Bấm Tải lại rồi thử lại sau."); });
+    });
+  }
+  // tự khóa / tự xóa người không học (chỉ khi bật; quản trị + danh sách miễn không bao giờ bị)
+  function qtAuto() {
+    var tx = (QT.ch && QT.ch.tx) || {}; if (!tx.bat) return;
+    var n = Math.max(7, +tx.n || 30), k = Math.max(1, +tx.k || 7), mien = tx.mien || [], t0 = today(), jobs = [], nk = 0, nx = 0;
+    QT.users.slice().forEach(function (u) {
+      if (u.st === "xoa" || mien.indexOf(u.uid) >= 0) return;
+      var idle = t0 - qtLast(u);
+      if (u.st === "ok" && idle >= n) jobs.push(function () { nk++; return qtSetSt(u, "khoa", true, "không học " + idle + " ngày"); });
+      else if (u.st === "khoa" && QT.kh[u.uid] != null && t0 - QT.kh[u.uid] >= k) jobs.push(function () { nx++; return qtDelete(u, "lai", "tu", "không học " + idle + " ngày"); });
+    });
+    return jobs.reduce(function (p, f) { return p.then(f); }, Promise.resolve()).then(function () {
+      if (nk || nx) { QT.msg = "Tự xóa vừa chạy: khóa " + nk + " người, xóa " + nx + " người (xem Nhật ký)."; toast(QT.msg); }
+    }, function (e) { QT.msg = "Tự xóa chưa chạy xong (" + tkErr(e) + ")."; });
+  }
+  function qtRow(u) {
+    var t = u.tk || {}, t0 = today(), ky = t.ky || [], ld = t.last || 0, ex = t.ex || {}, best = null, ch = 0, nh = 0, p = 0;
+    ky.forEach(function (x) { ch += +x.ch || 0; nh += +x.nh || 0; p += +x.p || 0; });
+    Object.keys(ex).forEach(function (k) { if (best == null || ex[k] > best) best = ex[k]; });
+    return {
+      u: u, ma: qtMa(u.uid), last: ld, idle: ld ? t0 - ld : null, sc: t.sd >= t0 - 1 ? (t.sc || 0) : 0,
+      xw: t.d != null && weekStart(t.d) === weekStart(t0) ? (t.xw || 0) : 0, xp: t.xp || 0,
+      pct: ky.length ? Math.round(p / ky.length) : null, lag: ky.length ? ch - nh : null, due: t.due != null ? t.due : null, ex: best, tk: !!u.tk
+    };
+  }
+  function qtLastTxt(r) { return r.last ? (r.idle <= 0 ? "hôm nay" : r.idle === 1 ? "hôm qua" : r.idle + " ngày trước") : r.tk ? "chưa học" : "chưa có số liệu"; }
+  function qtLagTxt(r) { return r.lag == null ? "—" : r.lag > 0 ? '<span class="chip warn">chậm ' + r.lag + " mục</span>" : r.lag < 0 ? '<span class="chip ok">nhanh ' + (-r.lag) + " mục</span>" : "đúng lịch"; }
+  function qtStTxt(st) { return st === "khoa" ? '<span class="chip warn">đang khóa</span>' : st === "xoa" ? '<span class="chip k10">đã chặn</span>' : '<span class="chip ok">đang học</span>'; }
+  function vAdmin(v, args) {
+    if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
+    var sec = args[0] || "tong", ep = HC.epoch;
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["nk", "Nhật ký"]];
+    v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
+      '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtb"><p class="sub">Đang tải…</p></div>';
+    var box = $("#qtb", v);
+    function draw() {
+      if (HC.epoch !== ep) return;
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
-    dk();
+    function load() {
+      box.innerHTML = '<p class="sub">Đang tải…</p>';
+      qtLoad().then(draw, function (e) { if (HC.epoch === ep) box.innerHTML = '<p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Kiểm tra mạng rồi bấm Tải lại.</p>"; });
+    }
+    $("#qtre", v).onclick = load;
+    if (!QT || Date.now() - QT.t > 120000) load(); else draw();
+  }
+  function qtActive() { return QT.users.filter(function (u) { return u.st !== "xoa"; }); }
+  function qtTong(box) {
+    var t0 = today(), ws = weekStart(t0), us = qtActive(), rows = us.map(qtRow);
+    var nd = rows.filter(function (r) { return r.last === t0; }).length, nw = rows.filter(function (r) { return r.last >= ws; }).length;
+    var nk = us.filter(function (u) { return u.st === "khoa"; }).length, nt = rows.filter(function (r) { return !r.tk; }).length;
+    var tx = (QT.ch && QT.ch.tx) || {}, h = "";
+    if (QT.msg) h += '<p class="tkmsg" role="status">' + esc(QT.msg) + "</p>";
+    h += '<div class="card"><div class="qtst">' +
+      "<div><small>Thành viên / trần</small><b>" + fmt(+QT.dk.dem || 0) + " / " + fmt(+QT.dk.tran || 0) + "</b><small>" + (QT.dk.mo ? "đang cho đăng ký" : "đang đóng đăng ký") + "</small></div>" +
+      "<div><small>Học hôm nay</small><b>" + nd + "</b><small>trên " + us.length + " người</small></div>" +
+      "<div><small>Học tuần này</small><b>" + nw + "</b><small>từ thứ Hai</small></div>" +
+      "<div><small>Đang khóa</small><b>" + nk + "</b><small>" + QT.dx.length + " lượt xóa (lịch sử)</small></div></div>" +
+      '<p class="sub" style="margin-top:8px">Số liệu học lấy từ bản thống kê mỗi máy gửi lên (tối đa 1 lần/giờ), nên có thể chậm tới 1 giờ.' + (nt ? " " + nt + " người chưa gửi số liệu lần nào." : "") + " Cập nhật lúc " + hm(QT.t) + ".</p></div>";
+    // tự xóa: ai sắp bị khóa / xóa
+    if (tx.bat) {
+      var n = Math.max(7, +tx.n || 30), k = Math.max(1, +tx.k || 7), mien = tx.mien || [], soon = [];
+      us.forEach(function (u) {
+        if (mien.indexOf(u.uid) >= 0) return;
+        var idle = t0 - qtLast(u);
+        if (u.st === "ok" && idle >= n - 3) soon.push([u, "không học " + idle + " ngày → tự khóa sau " + Math.max(0, n - idle) + " ngày"]);
+        else if (u.st === "khoa" && QT.kh[u.uid] != null) soon.push([u, "đã tự khóa ngày " + dateY(QT.kh[u.uid]) + " → tự xóa sau " + Math.max(0, k - (t0 - QT.kh[u.uid])) + " ngày"]);
+      });
+      h += '<div class="card"><h2>Tự xóa đang BẬT</h2><p class="sub">Không học ' + n + " ngày → khóa; khóa thêm " + k + " ngày → xóa (cho đăng ký lại). Chỉ chạy khi bạn mở tab này. Đổi ở mục Cài đặt.</p>" +
+        (soon.length ? '<ul class="qtls">' + soon.map(function (x) { return "<li><b>" + qtMa(x[0].uid) + "</b> " + esc(x[0].hoten || x[0].ten) + " — " + esc(x[1]) + "</li>"; }).join("") + "</ul>" : '<p class="sub">Chưa ai sắp bị tự khóa / tự xóa.</p>') + "</div>";
+    }
+    var tb = (QT.ch && QT.ch.tb) || null;
+    h += '<div class="card"><h2>Thông báo chung đang hiện</h2>' + (tb && tb.h ? '<p class="tbh">' + tbHTML(tb.h) + '</p><p class="sub">Đăng lúc ' + hm(tb.t) + "</p>" : '<p class="sub">Không có. Đăng ở mục Cài đặt.</p>') + "</div>";
+    h += '<div class="card"><h2>Dung lượng &amp; hạn mức</h2><p class="sub">Phần theo dõi hạn mức gói miễn phí sẽ có ở bước sau. Xem số chính xác ở trang Usage của Firebase.</p><p><a class="btn sm" href="https://console.firebase.google.com/project/hanco-tuhoc/usage" target="_blank" rel="noopener">Mở trang Usage (Firebase)</a></p></div>';
+    box.innerHTML = h;
+  }
+  var QT_COLS = [["ma", "Mã"], ["ten", "Tên hiển thị"], ["hoten", "Họ tên"], ["email", "Email"], ["last", "Học lần cuối"], ["sc", "Chuỗi"], ["xw", "XP tuần"], ["pct", "Lộ trình"], ["lag", "So với lịch"], ["due", "Quá hạn"], ["ex", "Thi thử"], ["st", "Trạng thái"]];
+  function qtSortVal(r, k) {
+    if (k === "ma") return r.ma === "—" ? 1e9 : +r.ma;
+    if (k === "ten" || k === "hoten" || k === "email") return String(r.u[k] || "").toLowerCase();
+    if (k === "st") return r.u.st || "";
+    if (k === "last") return r.last || -1;
+    var x = r[k]; return x == null ? -1e9 : x;
+  }
+  function qtNguoi(box, redraw) {
+    var q = nameKey(qtQ.q), rows = QT.users.map(qtRow).filter(function (r) {
+      if (qtQ.st && (r.u.st || "ok") !== qtQ.st) return false;
+      if (!q) return true;
+      return [r.ma, r.u.ten, r.u.hoten, r.u.email].some(function (s) { return nameKey(s).indexOf(q) >= 0; });
+    });
+    rows.sort(function (a, b) { var x = qtSortVal(a, qtSort.k), y = qtSortVal(b, qtSort.k); return (x < y ? -1 : x > y ? 1 : 0) * qtSort.d; });
+    var h = '<div class="card"><div class="row" style="align-items:end"><div class="field" style="flex:1 1 220px"><label for="qtq">Tìm (mã, tên, họ tên, email)</label><input id="qtq" type="search" value="' + esc(qtQ.q) + '"></div>' +
+      '<div class="field" style="flex:0 1 170px"><label for="qtst">Trạng thái</label><select id="qtst"><option value="">Tất cả</option><option value="ok">Đang học</option><option value="khoa">Đang khóa</option><option value="xoa">Đã chặn</option></select></div>' +
+      '<button class="btn" type="button" id="qtcsv">Xuất CSV</button></div><p class="sub">' + rows.length + " người. Bấm tên để xem chi tiết, khóa / mở khóa / xóa. Bấm tiêu đề cột để xếp.</p>" +
+      '<div class="qtwrap"><table class="t qtt"><thead><tr>' + QT_COLS.map(function (c) { return '<th><button type="button" data-sk="' + c[0] + '">' + c[1] + (qtSort.k === c[0] ? (qtSort.d > 0 ? " ▲" : " ▼") : "") + "</button></th>"; }).join("") + "</tr></thead><tbody>" +
+      (rows.length ? rows.map(function (r) {
+        var u = r.u;
+        return "<tr><td class=\"num\">" + r.ma + '</td><td><button type="button" class="lnk" data-qu="' + esc(u.uid) + '">' + esc(u.ten || "(chưa đặt)") + "</button></td><td>" + esc(u.hoten || "") + "</td><td>" + esc(u.email || "") + "</td><td>" + qtLastTxt(r) + '</td><td class="num">' + r.sc + '</td><td class="num">' + fmt(r.xw) + '</td><td class="num">' + (r.pct == null ? "—" : r.pct + "%") + "</td><td>" + qtLagTxt(r) + '</td><td class="num">' + (r.due == null ? "—" : r.due) + '</td><td class="num">' + (r.ex == null ? "—" : r.ex) + "</td><td>" + qtStTxt(u.st) + "</td></tr>";
+      }).join("") : '<tr><td colspan="12" class="muted">Không có ai.</td></tr>') + "</tbody></table></div></div>";
+    // lịch sử người bị xóa
+    var dx = QT.dx.slice().sort(function (a, b) { return b.xoa - a.xoa; });
+    h += '<div class="card"><h2>Lịch sử đã xóa</h2>' + (dx.length ? '<div class="qtwrap"><table class="t"><thead><tr><th>Mã</th><th>Họ tên</th><th>Tên hiển thị</th><th>Email</th><th>Đăng ký</th><th>Xóa</th><th>Cách</th></tr></thead><tbody>' +
+      dx.map(function (x) { return '<tr><td class="num">' + esc(x.ma) + "</td><td>" + esc(x.hoten) + "</td><td>" + esc(x.ten) + "</td><td>" + esc(x.email) + "</td><td>" + (x.tao ? hm(x.tao) : "—") + "</td><td>" + hm(x.xoa) + "</td><td>" + (x.cach === "lai" ? "cho đăng ký lại" : "chặn luôn") + (x.ly === "tu" ? " (tự xóa)" : "") + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="sub">Chưa xóa ai.</p>') + "</div>";
+    box.innerHTML = h;
+    $("#qtst", box).value = qtQ.st;
+    var qi = $("#qtq", box), tmo = 0;
+    qi.oninput = function () { clearTimeout(tmo); tmo = setTimeout(function () { qtQ.q = qi.value; redraw(); var n = $("#qtq"); if (n) { n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) { } } }, 250); };
+    $("#qtst", box).onchange = function () { qtQ.st = this.value; redraw(); };
+    $$("[data-sk]", box).forEach(function (b) { b.onclick = function () { var k = b.getAttribute("data-sk"); if (qtSort.k === k) qtSort.d = -qtSort.d; else { qtSort.k = k; qtSort.d = /^(last|sc|xw|xp|pct|lag|due|ex)$/.test(k) ? -1 : 1; } redraw(); }; });
+    $$("[data-qu]", box).forEach(function (b) { b.onclick = function () { qtDetail(b.getAttribute("data-qu"), redraw); }; });
+    $("#qtcsv", box).onclick = function () { qtCSV(rows); };
+  }
+  function qtCSV(rows) {
+    var out = [["Mã", "Tên hiển thị", "Họ tên", "Email", "Ngày đăng ký", "Học lần cuối", "Chuỗi ngày", "XP", "XP tuần", "Lộ trình (%)", "Chậm (+) / nhanh (−) mục", "Thẻ quá hạn", "Thi thử cao nhất", "Trạng thái"]];
+    rows.forEach(function (r) {
+      var u = r.u;
+      out.push([r.ma === "—" ? "" : '="' + r.ma + '"', u.ten || "", u.hoten || "", u.email || "", u.taoMs ? hm(u.taoMs) : "", r.last ? dateY(r.last) : "", r.sc, r.xp, r.xw, r.pct == null ? "" : r.pct, r.lag == null ? "" : r.lag, r.due == null ? "" : r.due, r.ex == null ? "" : r.ex, u.st === "khoa" ? "đang khóa" : u.st === "xoa" ? "đã chặn" : "đang học"]);
+    });
+    var csv = "﻿" + out.map(function (r) { return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(","); }).join("\r\n");
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "hanco-nguoi-hoc-" + dayKey(today()) + ".csv"; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+  var QT_EXN = { examHK1: "Đề Kỳ 1 (Hán 1)", examHK2: "Đề Kỳ 2 (Hán 2)" };
+  function qtExName(k) { if (QT_EXN[k]) return QT_EXN[k]; var e = (D.exams || []).filter(function (x) { return x.best === k; })[0]; return e ? e.name : k; }
+  // chi tiết 1 người: đọc tiến độ mới nhất (1 lượt đọc) → sumOf; không đọc được thì dùng bản tóm tắt. Không hiện ghi chú.
+  function qtDetail(uid, redraw) {
+    var u = QT.users.filter(function (x) { return x.uid === uid; })[0]; if (!u) return;
+    var m = modal('<div id="qtd"><h2>' + qtMa(uid) + " · " + esc(u.ten || "") + '</h2><p class="sub">Đang tải tiến độ…</p></div>');
+    var el = $("#qtd", m.el);
+    qtRef("hanco_progress", uid).get().then(function (snap) {
+      var t = null; try { if (snap.exists && snap.data().data) t = sumOf(normalize(JSON.parse(snap.data().data))); } catch (e) { t = null; }
+      show(t ? t : u.tk, t ? "tiến độ mới nhất" : u.tk ? "bản tóm tắt gửi lúc " + hm(u.tk.t) : "");
+    }, function () { show(u.tk, u.tk ? "bản tóm tắt gửi lúc " + hm(u.tk.t) : ""); });
+    function show(t, src) {
+      if (!document.body.contains(el)) return;
+      var t0 = today(), h = "<h2>" + qtMa(uid) + " · " + esc(u.ten || "") + " " + qtStTxt(u.st) + "</h2>";
+      h += "<p>Họ tên: <b>" + esc(u.hoten || "") + "</b><br>Email: " + esc(u.email || "") + "<br>Đăng ký: " + (u.taoMs ? hm(u.taoMs) : "—") + "</p>";
+      if (!t) h += '<p class="sub">Người này chưa có số liệu học nào.</p>';
+      else {
+        var r = qtRow({ uid: uid, tk: t, st: u.st }), n = t.n || {};
+        h += '<p class="sub">Số liệu tính từ ' + esc(src) + ".</p>";
+        h += '<div class="qtst sm"><div><small>Học lần cuối</small><b>' + qtLastTxt(r) + "</b></div><div><small>Chuỗi ngày</small><b>" + r.sc + "</b></div><div><small>Tổng XP</small><b>" + fmt(t.xp || 0) + "</b><small>" + fmt(r.xw) + " XP tuần này</small></div><div><small>Thẻ quá hạn</small><b>" + (t.due || 0) + "</b></div></div>";
+        h += '<p class="sub">Đã học: ' + (n.c || 0) + " chữ · " + (n.w || 0) + " từ · " + (n.r || 0) + " bộ thủ · " + (n.s || 0) + " câu · " + (n.lt || 0) + " loại từ. Tiến độ dài " + fmt(Math.round((t.sz || 0) / 1000)) + " nghìn ký tự.</p>";
+        var la = t.la || [], lx = t.lx || [], base = (t.d || t0) - 29;
+        h += "<h3>30 ngày gần nhất</h3><div class=\"qtcal\" role=\"img\" aria-label=\"Lịch học 30 ngày\">" + la.map(function (a, i) { var lv = a <= 0 ? 0 : a < 10 ? 1 : a < 30 ? 2 : a < 60 ? 3 : 4; return '<i class="l' + lv + '" title="' + dateOf(base + i) + ": " + a + " lượt học/ôn, " + (lx[i] || 0) + ' XP"></i>'; }).join("") + '</div><p class="sub qtcalk"><span>' + dateOf(base) + "</span><span>ô càng đậm = học càng nhiều</span><span>" + dateOf(base + 29) + "</span></p>";
+        h += "<h3>Lộ trình</h3>" + ((t.ky || []).length ? '<table class="t"><tbody>' + t.ky.map(function (x) { var rr = { lag: (x.ch || 0) - (x.nh || 0) }; return "<tr><td>" + esc(TERM[x.k] ? TERM[x.k].name : x.k) + "</td><td>" + dateOf(x.s) + " → thi " + dateY(x.e) + '</td><td class="num">' + x.p + "%</td><td>" + qtLagTxt(rr) + "</td></tr>"; }).join("") + "</tbody></table>" : '<p class="sub">Chưa chọn kỳ nào (hoặc các kỳ đã thi xong).</p>');
+        var ex = t.ex || {}, ek = Object.keys(ex);
+        h += "<h3>Thi thử (điểm cao nhất)</h3>" + (ek.length ? "<p>" + ek.map(function (k) { return esc(qtExName(k)) + ": <b>" + ex[k] + "</b>"; }).join(" · ") + "</p>" : '<p class="sub">Chưa thi thử.</p>');
+        var hq = (t.hq || []).map(function (id) { return ITEM[id]; }).filter(Boolean);
+        h += "<h3>Chữ hay quên</h3>" + (hq.length ? '<div class="minis">' + hq.map(function (it) { return '<span class="mini"><span class="han">' + esc(it.key) + "</span>" + esc(firstAm(it.am)) + "</span>"; }).join("") + "</div>" : '<p class="sub">Chưa có.</p>');
+      }
+      h += '<div id="qtdact" class="row" style="margin-top:12px">' + (u.st === "xoa" ? "" : u.st === "khoa" ? '<button class="btn" type="button" data-a="mo">Mở khóa</button>' : '<button class="btn" type="button" data-a="khoa">Khóa</button>') +
+        '<button class="btn bad" type="button" data-a="xoa">' + (u.st === "xoa" ? "Cho đăng ký lại…" : "Xóa…") + "</button></div>";
+      el.innerHTML = h;
+      var act = $("#qtdact", el);
+      function done(msg) { toast(msg); m.close(); redraw(); }
+      function fail(e) { $$("button", act).forEach(function (b) { b.disabled = false; }); toast(tkErr(e)); }
+      $$("[data-a]", act).forEach(function (b) {
+        b.onclick = function () {
+          var a = b.getAttribute("data-a");
+          if (a === "khoa") { if (!confirm("Khóa tài khoản " + qtMa(uid) + " " + (u.hoten || "") + "? Người này bị đẩy ra màn \"Tài khoản đang tạm khóa\" ngay (tiến độ vẫn giữ).")) return; b.disabled = true; qtSetSt(u, "khoa", false).then(function () { done("Đã khóa"); }, fail); }
+          else if (a === "mo") { b.disabled = true; qtSetSt(u, "ok", false).then(function () { done("Đã mở khóa"); }, fail); }
+          else delForm();
+        };
+      });
+      function delForm() {
+        var ma = qtMa(uid), code = ma !== "—" ? ma : "XOA", blocked = u.st === "xoa";
+        act.outerHTML = '<div class="qtdel" id="qtdel"><h3>' + (blocked ? "Cho đăng ký lại" : "Xóa tài khoản") + "</h3>" +
+          (blocked ? '<p>Trả họ tên <b>' + esc(u.hoten || "") + '</b> về danh sách: người này đăng ký lại được (nhận mã số mới). Dòng lịch sử cũ vẫn giữ.</p>' :
+            '<p>Xóa <b>vĩnh viễn</b> tiến độ học và các bản sao lưu của người này trên tài khoản (không khôi phục được), trả lại 1 chỗ; máy của người đó ngắt đồng bộ ngay. Lịch sử (mã số, họ tên, email, ngày đăng ký, ngày xóa) vẫn được lưu.</p>' +
+            '<label class="qtopt"><input type="radio" name="qtc" value="chan"> <span><b>Chặn luôn</b>: giữ họ tên này, người đó KHÔNG đăng ký lại được (kể cả bằng email khác).</span></label>' +
+            '<label class="qtopt"><input type="radio" name="qtc" value="lai"> <span><b>Cho đăng ký lại</b>: trả họ tên về danh sách; đăng ký lại thì nhận mã số mới.</span></label>') +
+          '<div class="field" style="max-width:260px"><label for="qtcf">Gõ <b>' + code + '</b> để xác nhận</label><input id="qtcf" type="text" inputmode="numeric" autocomplete="off"></div>' +
+          '<div class="row"><button class="btn bad" type="button" id="qtgo">' + (blocked ? "Cho đăng ký lại" : "Xóa vĩnh viễn") + '</button><button class="btn ghost" type="button" id="qtno">Thôi</button></div></div>';
+        var f = $("#qtdel", el);
+        $("#qtno", f).onclick = function () { show(t, src); };
+        $("#qtgo", f).onclick = function () {
+          var c = blocked ? "lai" : ($("input[name=qtc]:checked", f) || {}).value;
+          if (!c) return toast("Hãy chọn Chặn luôn hoặc Cho đăng ký lại");
+          if ($("#qtcf", f).value.trim().toUpperCase() !== code) return toast("Gõ đúng " + code + " để xác nhận");
+          this.disabled = true; var me = this;
+          qtDelete(u, c, "tay").then(function () { done(blocked ? "Đã cho đăng ký lại" : "Đã xóa tài khoản"); }, function (e) { me.disabled = false; toast(tkErr(e)); });
+        };
+        try { $("input", f).focus({ preventScroll: true }); } catch (e) { }
+      }
+    }
+  }
+  function qtNhac(box) {
+    var nd = Math.max(1, parseInt(lsGet(QT_NHAC), 10) || 3), t0 = today(), list = [];
+    QT.users.forEach(function (u) {
+      if (u.st !== "ok") return;
+      var r = qtRow(u), why = [], idle = t0 - qtLast(u);
+      if (idle >= nd) why.push(r.last ? idle + " ngày chưa học" : "chưa học buổi nào (đăng ký " + idle + " ngày)");
+      (u.tk && u.tk.ky || []).forEach(function (x) { var lag = (x.ch || 0) - (x.nh || 0); if (lag >= 10) why.push("chậm " + lag + " mục so với lịch " + (TERM[x.k] ? TERM[x.k].short : x.k)); });
+      if (why.length) list.push([u, why.join("; "), idle]);
+    });
+    list.sort(function (a, b) { return b[2] - a[2]; });
+    var txt = "Danh sách cần nhắc học (" + dateY(t0) + "):\n" + list.map(function (x, i) { return (i + 1) + ". " + (x[0].hoten || x[0].ten) + " — " + x[1]; }).join("\n");
+    box.innerHTML = '<div class="card"><h2>Danh sách cần nhắc</h2><div class="row" style="align-items:end"><div class="field" style="flex:0 1 200px"><label for="qtnd">Lâu không học từ (ngày)</label><input id="qtnd" type="number" min="1" max="60" value="' + nd + '"></div></div>' +
+      '<p class="sub">Người đang học mà lâu không học, hoặc chậm từ 10 mục trở lên so với lịch. Bấm "Chép" rồi dán vào Zalo (chỉ chép họ tên + lý do, không chép mã số).</p>' +
+      (list.length ? '<ol class="qtls">' + list.map(function (x) { return "<li><b>" + qtMa(x[0].uid) + "</b> " + esc(x[0].hoten || x[0].ten) + " — " + esc(x[1]) + "</li>"; }).join("") + '</ol><textarea id="qtnt" readonly aria-label="Nội dung để chép">' + esc(txt) + '</textarea><div class="row acts"><button class="btn primary" type="button" id="qtcp">Chép danh sách</button></div>' : '<p class="sub">Không có ai cần nhắc. Tốt lắm!</p>') + "</div>";
+    $("#qtnd", box).onchange = function () { lsSet(QT_NHAC, String(Math.max(1, parseInt(this.value, 10) || 3))); qtNhac(box); };
+    var cp = $("#qtcp", box); if (cp) cp.onclick = function () {
+      var ta = $("#qtnt", box);
+      function fb2() { ta.select(); try { document.execCommand("copy"); toast("Đã chép"); } catch (e) { toast("Chưa chép được, hãy tự chọn chữ rồi chép"); } }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(function () { toast("Đã chép, dán vào Zalo được rồi"); }, fb2); else fb2();
+    };
+  }
+  function qtTen(box) {
+    var db = fb.db, byUid = {};
+    QT.users.forEach(function (u) { byUid[u.uid] = u; });
+    box.innerHTML = '<div class="card"><h2>Danh sách họ tên thật</h2><p class="sub">Chỉ người có họ tên trong danh sách này mới đăng ký được (mỗi họ tên 1 tài khoản). Dán mỗi dòng 1 họ tên đầy đủ, có dấu (dán thẳng từ Excel được: app tự bỏ cột số thứ tự). Không ai ngoài quản trị đọc được danh sách.</p>' +
+      '<textarea id="qtten" aria-label="Danh sách họ tên" placeholder="Nguyễn Văn An&#10;Trần Thị Bình"></textarea><div class="row" style="margin-top:8px"><button class="btn" type="button" id="qtxem">Xem trước</button><button class="btn" type="button" id="qtds">Xem danh sách đã lưu</button></div><div id="qtkq"></div></div>';
+    var el = box;
     function saved() { return db.collection("hanco_ten").get().then(function (qs) { var m = {}; qs.docs.forEach(function (d) { m[d.id] = d.data(); }); return m; }); }
     var kq = $("#qtkq", el);
     $("#qtxem", el).onclick = function () {
@@ -857,7 +1270,10 @@
           var chunks = []; for (var i = 0; i < neu.length; i += 400) chunks.push(neu.slice(i, i + 400));
           chunks.reduce(function (pr, ch) {
             return pr.then(function () { var b = db.batch(); ch.forEach(function (x) { b.set(db.collection("hanco_ten").doc(x.k), { ten: x.ten, uid: null }); }); return b.commit(); });
-          }, Promise.resolve()).then(function () { toast("Đã thêm " + neu.length + " họ tên"); $("#qtten", el).value = ""; kq.innerHTML = '<p>Đã thêm <b>' + neu.length + "</b> họ tên vào danh sách.</p>"; }, function (e) { ghi.disabled = false; toast(tkErr(e)); });
+          }, Promise.resolve()).then(function () {
+            toast("Đã thêm " + neu.length + " họ tên"); $("#qtten", el).value = ""; kq.innerHTML = '<p>Đã thêm <b>' + neu.length + "</b> họ tên vào danh sách.</p>";
+            qtLog("Thêm họ tên", null, neu.length + " họ tên: " + neu.slice(0, 20).map(function (x) { return x.ten; }).join(", ") + (neu.length > 20 ? "…" : ""));
+          }, function (e) { ghi.disabled = false; toast(tkErr(e)); });
         };
       }, function (e) { kq.innerHTML = '<p class="tkmsg">' + esc(tkErr(e)) + "</p>"; });
     };
@@ -866,14 +1282,70 @@
       saved().then(function (m) {
         var ks = Object.keys(m).sort(function (a, b) { return m[a].ten.localeCompare(m[b].ten, "vi"); }), n = ks.filter(function (k) { return m[k].uid; }).length;
         kq.innerHTML = '<p>' + ks.length + ' họ tên trong danh sách: <b>' + n + '</b> đã có tài khoản, <b>' + (ks.length - n) + '</b> chưa.</p>' +
-          (ks.length ? '<table class="t"><tbody>' + ks.map(function (k) { return "<tr><td>" + esc(m[k].ten) + "</td><td>" + (m[k].uid ? "đã có tài khoản" : '<span class="muted">chưa</span>') + "</td><td>" + (m[k].uid ? "" : '<button class="btn sm ghost" type="button" data-qtx="' + esc(k) + '" aria-label="Xóa họ tên này">✕</button>') + "</td></tr>"; }).join("") + "</tbody></table>" : "");
+          (ks.length ? '<div class="qtwrap"><table class="t"><tbody>' + ks.map(function (k) {
+            var uid = m[k].uid, u = uid ? byUid[uid] : null;
+            return "<tr><td>" + esc(m[k].ten) + "</td><td>" + (uid ? "đã có tài khoản" + (u ? " · mã " + qtMa(uid) + " · " + esc(u.email || "") + (u.st === "xoa" ? " (đã chặn)" : u.st === "khoa" ? " (đang khóa)" : "") : "") : '<span class="muted">chưa</span>') + "</td><td>" + (uid ? "" : '<button class="btn sm ghost" type="button" data-qtx="' + esc(k) + '" aria-label="Xóa họ tên này">✕</button>') + "</td></tr>";
+          }).join("") + "</tbody></table></div>" : "");
         $$("[data-qtx]", kq).forEach(function (bx) { bx.onclick = function () {
           var k = bx.getAttribute("data-qtx");
           if (!confirm("Xóa \"" + m[k].ten + "\" khỏi danh sách? Người này sẽ không đăng ký được.")) return;
-          db.collection("hanco_ten").doc(k).delete().then(function () { toast("Đã xóa"); $("#qtds", el).click(); }, function (e) { toast(tkErr(e)); });
+          db.collection("hanco_ten").doc(k).delete().then(function () { toast("Đã xóa"); qtLog("Xóa họ tên", null, m[k].ten); $("#qtds", el).click(); }, function (e) { toast(tkErr(e)); });
         }; });
       }, function (e) { kq.innerHTML = '<p class="tkmsg">' + esc(tkErr(e)) + "</p>"; });
     };
+  }
+  function qtCai(box, redraw) {
+    var d = QT.dk, ch = QT.ch || {}, tb = ch.tb || {}, thi = ch.thi || {}, tx = ch.tx || {}, mien = (tx.mien || []).slice(), t0 = today();
+    var cref = qtRef("hanco_cfg", "chung");
+    function saveCh(o, what) { return cref.set(o, { merge: true }).then(function () { return cref.get(); }).then(function (s) { QT.ch = s.exists ? s.data() : {}; chungSet(QT.ch, true); toast("Đã lưu"); qtLog("Cài đặt", null, what); redraw(); }, function (e) { toast(tkErr(e)); }); }
+    var others = QT.users.filter(function (u) { return u.st !== "xoa"; }).sort(function (a, b) { return qtMa(a.uid) < qtMa(b.uid) ? -1 : 1; });
+    function uname(uid) { var u = QT.users.filter(function (x) { return x.uid === uid; })[0]; return u ? qtMa(uid) + " " + (u.hoten || u.ten) : uid; }
+    box.innerHTML = '<div class="cols2">' +
+      '<div class="card"><h2>Đăng ký tài khoản</h2><p>Đã đăng ký: <b>' + fmt(d.dem || 0) + "</b> / " + fmt(d.tran || 0) + ' người (không tính quản trị viên).</p>' +
+      '<div class="row" style="align-items:end"><div class="field" style="flex:0 1 160px"><label for="qttran">Trần số người</label><input id="qttran" type="number" min="0" max="1000" value="' + (+d.tran || 0) + '"></div>' +
+      '<button class="btn" type="button" id="qtluu">Lưu</button></div><label class="qtchk"><input type="checkbox" id="qtmo"' + (d.mo ? " checked" : "") + '> Cho người mới đăng ký</label>' +
+      '<p class="sub">Bỏ chọn "Cho người mới đăng ký" = tạm không nhận thêm người mới dù còn chỗ (người đã có tài khoản vẫn học bình thường). Hết chỗ thì người mới thấy "App đã đủ người".</p></div>' +
+      '<div class="card"><h2>Thông báo chung</h2><p class="sub">Hiện ở đầu mục Hôm nay của mọi người (người học bấm Ẩn được; đăng thông báo mới thì hiện lại). Chỉ chữ thường; link http(s) tự bấm được.</p>' +
+      '<textarea id="qttb" maxlength="1000" aria-label="Nội dung thông báo">' + esc(tb.h || "") + '</textarea><div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="qttbok">Đăng thông báo</button>' + (tb.h ? '<button class="btn ghost" type="button" id="qttbx">Gỡ thông báo</button>' : "") + "</div>" + (tb.h ? '<p class="sub">Đang hiện từ ' + hm(tb.t) + ".</p>" : "") + "</div>" +
+      '<div class="card"><h2>Ngày thi chung</h2><p class="sub">Đặt ngày thi của từng kỳ cho cả lớp. Người học thấy thẻ "Ngày thi chung" ở mục Hôm nay, bấm Áp dụng thì lịch tự nén cho kịp (app báo nếu phải học hơn 20 chữ/ngày); khung Chọn kỳ học lấy sẵn ngày này. Không tự đổi lộ trình của ai khi họ chưa bấm.</p>' +
+      TERMS.map(function (T) { var e = +thi[T.k] || 0; return '<div class="row" style="align-items:end"><div class="field" style="flex:0 1 200px"><label for="qtthi-' + T.k + '">' + esc(T.name) + '</label><input type="date" id="qtthi-' + T.k + '" data-thi="' + T.k + '" value="' + (e ? ymd(e) : "") + '"></div>' + (e && e <= t0 ? '<span class="sub">đã qua</span>' : "") + "</div>"; }).join("") +
+      '<div class="row" style="margin-top:8px"><button class="btn" type="button" id="qtthiok">Lưu ngày thi</button></div><p class="sub">Xóa ô ngày = bỏ ngày thi chung của kỳ đó.</p></div>' +
+      '<div class="card"><h2>Tự xóa người không học</h2><label class="qtchk"><input type="checkbox" id="qttx"' + (tx.bat ? " checked" : "") + '> Bật tự xóa</label>' +
+      '<div class="row" style="align-items:end"><div class="field" style="flex:0 1 190px"><label for="qtn">Không học bao nhiêu ngày thì khóa</label><input id="qtn" type="number" min="7" max="365" value="' + (+tx.n || 30) + '"></div>' +
+      '<div class="field" style="flex:0 1 190px"><label for="qtk">Khóa thêm bao nhiêu ngày thì xóa</label><input id="qtk" type="number" min="1" max="90" value="' + (+tx.k || 7) + '"></div></div>' +
+      '<p class="sub">"Không học" = không có lượt học / ôn nào (chỉ mở app không tính). Bị xóa theo cách "cho đăng ký lại". Chỉ chạy khi bạn mở tab Quản trị; quản trị viên và người trong danh sách miễn không bao giờ bị. Lưu ý: ai học khi mất mạng nhiều ngày có thể bị khóa nhầm (mở khóa lại được).</p>' +
+      "<h3>Danh sách miễn</h3>" + (mien.length ? '<ul class="qtls">' + mien.map(function (uid) { return "<li>" + esc(uname(uid)) + ' <button class="btn sm ghost" type="button" data-mx="' + esc(uid) + '" aria-label="Bỏ khỏi danh sách miễn">✕</button></li>'; }).join("") + "</ul>" : '<p class="sub">Chưa có ai.</p>') +
+      '<div class="row" style="align-items:end"><div class="field" style="flex:1 1 220px"><label for="qtma">Thêm người được miễn</label><select id="qtma"><option value="">— chọn —</option>' + others.filter(function (u) { return mien.indexOf(u.uid) < 0; }).map(function (u) { return '<option value="' + esc(u.uid) + '">' + esc(qtMa(u.uid) + " " + (u.hoten || u.ten)) + "</option>"; }).join("") + '</select></div><button class="btn" type="button" id="qtmadd">Thêm</button></div>' +
+      '<div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="qttxok">Lưu cài đặt tự xóa</button></div></div></div>';
+    var dref = qtRef("hanco_cfg", "dk");
+    $("#qtluu", box).onclick = function () {
+      var t = Math.max(0, Math.min(1000, parseInt($("#qttran", box).value, 10) || 0)), mo = $("#qtmo", box).checked;
+      dref.set({ tran: t, mo: mo }, { merge: true }).then(function () { QT.dk.tran = t; QT.dk.mo = mo; if (QT.dk.dem == null) QT.dk.dem = 0; toast("Đã lưu"); qtLog("Cài đặt", null, "trần " + t + " người, " + (mo ? "cho" : "đóng") + " đăng ký"); redraw(); }, function (e) { toast(tkErr(e)); });
+    };
+    $("#qttbok", box).onclick = function () { var h = $("#qttb", box).value.replace(/\s+$/, ""); if (!h.trim()) return toast("Hãy nhập nội dung thông báo"); saveCh({ tb: { h: h.slice(0, 1000), t: Date.now() } }, "đăng thông báo: " + h.slice(0, 80)); };
+    var tbx = $("#qttbx", box); if (tbx) tbx.onclick = function () { saveCh({ tb: qtFV().delete() }, "gỡ thông báo"); };
+    $("#qtthiok", box).onclick = function () {
+      var o = {}, ds = [];
+      $$("[data-thi]", box).forEach(function (i) { var k = i.getAttribute("data-thi"), n = fromYmd(i.value); o[k] = n ? n : qtFV().delete(); if (n) ds.push((TERM[k] ? TERM[k].short : k) + " " + dateY(n)); });
+      saveCh({ thi: o }, "ngày thi chung: " + (ds.join(", ") || "không có"));
+    };
+    $$("[data-mx]", box).forEach(function (b) { b.onclick = function () { var uid = b.getAttribute("data-mx"); mien = mien.filter(function (x) { return x !== uid; }); tx.mien = mien; saveCh({ tx: { mien: mien } }, "bỏ miễn tự xóa: " + uname(uid)); }; });
+    $("#qtmadd", box).onclick = function () { var uid = $("#qtma", box).value; if (!uid) return; mien.push(uid); saveCh({ tx: { mien: mien } }, "miễn tự xóa: " + uname(uid)); };
+    $("#qttxok", box).onclick = function () {
+      var bat = $("#qttx", box).checked, n = Math.max(7, Math.min(365, parseInt($("#qtn", box).value, 10) || 30)), k = Math.max(1, Math.min(90, parseInt($("#qtk", box).value, 10) || 7));
+      if (bat && !tx.bat && !confirm("Bật tự xóa: ai không học " + n + " ngày sẽ bị khóa, khóa thêm " + k + " ngày sẽ bị XÓA tiến độ (không khôi phục được). Việc này chạy mỗi lần bạn mở tab Quản trị. Bật?")) return;
+      saveCh({ tx: { bat: bat, n: n, k: k, mien: mien } }, "tự xóa " + (bat ? "BẬT" : "tắt") + ": khóa sau " + n + " ngày, xóa sau thêm " + k + " ngày");
+    };
+  }
+  function qtNk(box) {
+    var d = new Date(), a = "nk-" + d.getFullYear() + "-" + pad2(d.getMonth() + 1), p = new Date(d.getFullYear(), d.getMonth() - 1, 1), b = "nk-" + p.getFullYear() + "-" + pad2(p.getMonth() + 1);
+    box.innerHTML = '<div class="card"><h2>Nhật ký quản trị</h2><p class="sub">Đang tải…</p></div>';
+    Promise.all([qtRef("hanco_qt", a).get(), qtRef("hanco_qt", b).get()]).then(function (r) {
+      var e = []; r.forEach(function (s) { if (s.exists) e = e.concat(s.data().e || []); });
+      e.sort(function (x, y) { return y.t - x.t; }); e = e.slice(0, 300);
+      box.innerHTML = '<div class="card"><h2>Nhật ký quản trị</h2><p class="sub">Tháng này và tháng trước (tối đa 300 dòng mới nhất).</p>' + (e.length ? '<div class="qtwrap"><table class="t"><thead><tr><th>Lúc</th><th>Việc</th><th>Mã</th><th>Họ tên</th><th>Chi tiết</th></tr></thead><tbody>' +
+        e.map(function (x) { return "<tr><td>" + hm(x.t) + "</td><td>" + esc(x.a) + '</td><td class="num">' + esc(x.m || "") + "</td><td>" + esc(x.n || "") + "</td><td>" + esc(x.c || "") + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="sub">Chưa có việc nào.</p>') + "</div>";
+    }, function (e) { box.innerHTML = '<div class="card"><h2>Nhật ký quản trị</h2><p class="tkmsg">' + esc(tkErr(e)) + "</p></div>"; });
   }
 
   function normalize(s) {
@@ -1304,9 +1776,11 @@
   }
 
   // ---------- khung "Chọn kỳ học": tick kỳ, chọn ngày thi (hoặc 4/6/8 tuần), xem trước mỗi ngày học bao nhiêu ----------
-  function planPick(box, onSave) {
-    var t0 = today(), dr = {};
-    TERMS.forEach(function (T) { var p = S.plans[T.k], on = !!(p && !p.x && t0 <= p.e); dr[T.k] = { on: on, s: on ? p.s : t0, e: on ? p.e : t0 + 34, old: on }; });
+  // opts.gate = hộp thoại bắt buộc của người mới (không có tiêu đề riêng; phải chọn ít nhất 1 kỳ; nút Lưu dính đáy).
+  // Ngày thi mặc định của kỳ chưa học = ngày thi chung do quản trị đặt (nếu có), không thì 5 tuần.
+  function planPick(box, onSave, opts) {
+    var t0 = today(), dr = {}, gate = !!(opts && opts.gate);
+    TERMS.forEach(function (T) { var p = S.plans[T.k], on = !!(p && !p.x && t0 <= p.e); dr[T.k] = { on: on, s: on ? p.s : t0, e: on ? p.e : (thiChung(T.k, t0) || t0 + 34), old: on }; });
     function hypo() { var P = {}; Object.keys(dr).forEach(function (k) { if (dr[k].on) P[k] = { s: dr[k].s, e: dr[k].e, t: 1, x: 0 }; }); return P; }
     function preview(k) {
       var B = buildPlans(hypo(), t0), p = B.ps.filter(function (x) { return x.k === k; })[0]; if (!p) return "";
@@ -1318,21 +1792,23 @@
       return (p.e < t0 + 1 ? "" : "<b>" + p.L + " ngày</b> (" + dateOf(p.s) + " → thi " + dateY(p.e) + "): ") + parts.join("; ") + ". " + p.tail + " ngày cuối chỉ ôn + thi thử; cứ 7 ngày có 1 ngày ôn." + shared + (heavy ? ' <span class="chip warn">Khá nặng: nên chọn ngày thi xa hơn nếu được</span>' : "");
     }
     function draw() {
-      var h = '<div class="row"><h2 style="margin:0">Chọn kỳ học</h2></div><p class="sub">Chọn kỳ muốn học và ngày thi của từng kỳ (học nhiều kỳ cùng lúc được). App tự xếp lịch: chữ + từ học từ ngày đầu (chữ, từ lặp lại nhiều học trước), loại từ từ 1/5 chặng, câu từ nửa chặng, những ngày cuối chỉ ôn + thi thử. Chữ đã học giữ nguyên.</p><div class="kypick">';
+      var h = (gate ? "" : '<div class="row"><h2 style="margin:0">Chọn kỳ học</h2></div><p class="sub">Chọn kỳ muốn học và ngày thi của từng kỳ (học nhiều kỳ cùng lúc được). App tự xếp lịch: chữ + từ học từ ngày đầu (chữ, từ lặp lại nhiều học trước), loại từ từ 1/5 chặng, câu từ nửa chặng, những ngày cuối chỉ ôn + thi thử. Chữ đã học giữ nguyên.</p>') + '<div class="kypick">';
       TERMS.forEach(function (T) {
         var x = dr[T.k];
         h += '<div class="kyp' + (x.on ? " on" : "") + '"><label class="row kyon"><input type="checkbox" data-on="' + T.k + '"' + (x.on ? " checked" : "") + '><b>' + esc(T.name) + '</b><small class="muted">' + T.n.c + " chữ · " + T.n.w + " từ · " + T.n.lt + " loại từ · " + T.n.s + " câu</small></label>";
-        if (x.on) h += '<div class="row kyset"><div class="field"><label for="ke-' + T.k + '">Ngày thi</label><input type="date" id="ke-' + T.k + '" data-e="' + T.k + '" value="' + ymd(x.e) + '" min="' + ymd(t0 + 1) + '"></div><div class="row kywk">' + [4, 6, 8, 10].map(function (n) { return '<button type="button" class="btn sm" data-wk="' + T.k + "|" + n + '">' + n + " tuần</button>"; }).join("") + "</div>" + (x.old ? '<button type="button" class="btn sm ghost" data-rs="' + T.k + '">Bắt đầu lại từ hôm nay</button>' : "") + '</div><p class="sub kypv">' + preview(T.k) + "</p>";
+        if (x.on) h += '<div class="row kyset"><div class="field"><label for="ke-' + T.k + '">Ngày thi</label><input type="date" id="ke-' + T.k + '" data-e="' + T.k + '" value="' + ymd(x.e) + '" min="' + ymd(t0 + 1) + '"></div><div class="row kywk">' + [4, 6, 8, 10].map(function (n) { return '<button type="button" class="btn sm" data-wk="' + T.k + "|" + n + '">' + n + " tuần</button>"; }).join("") + "</div>" + (x.old ? '<button type="button" class="btn sm ghost" data-rs="' + T.k + '">Bắt đầu lại từ hôm nay</button>' : "") + (thiChung(T.k, t0) && thiChung(T.k, t0) !== x.e ? '<button type="button" class="btn sm ghost" data-tc="' + T.k + '">Dùng ngày thi chung ' + dateY(thiChung(T.k, t0)) + "</button>" : "") + '</div>' + (thiChung(T.k, t0) ? '<p class="sub">Ngày thi chung do quản trị viên đặt: <b>' + dateY(thiChung(T.k, t0)) + "</b>.</p>" : "") + '<p class="sub kypv">' + preview(T.k) + "</p>";
         h += "</div>";
       });
-      h += '</div><div class="row"><button type="button" class="btn primary" id="kysave">Lưu lộ trình</button><span class="muted" id="kymsg" style="font-size:0.85rem"></span></div>';
+      h += '</div><div class="row' + (gate ? " acts" : "") + '"><button type="button" class="btn primary" id="kysave">' + (gate ? "Lưu lộ trình và bắt đầu học" : "Lưu lộ trình") + '</button><span class="muted" id="kymsg" style="font-size:0.85rem" role="status"></span></div>';
       box.innerHTML = h;
       $$("[data-on]", box).forEach(function (c) { c.onchange = function () { var x = dr[c.getAttribute("data-on")]; x.on = c.checked; if (x.on && !x.old) { x.s = t0; } draw(); }; });
       $$("[data-e]", box).forEach(function (c) { c.onchange = function () { var n = fromYmd(c.value), x = dr[c.getAttribute("data-e")]; if (n == null || n <= t0) { toast("Hãy chọn ngày thi sau hôm nay"); draw(); return; } x.e = n; draw(); }; });
       $$("[data-wk]", box).forEach(function (b) { b.onclick = function () { var a = b.getAttribute("data-wk").split("|"), x = dr[a[0]]; x.e = Math.max(t0, x.s) + 7 * (+a[1]) - 1; if (x.e <= t0) x.e = t0 + 1; draw(); }; });
+      $$("[data-tc]", box).forEach(function (b) { b.onclick = function () { var k = b.getAttribute("data-tc"), x = dr[k]; x.e = thiChung(k, t0) || x.e; draw(); }; });
       $$("[data-rs]", box).forEach(function (b) { b.onclick = function () { var x = dr[b.getAttribute("data-rs")]; x.s = t0; if (x.e <= t0) x.e = t0 + 34; draw(); $("#kymsg", box).textContent = "Bấm Lưu lộ trình để áp dụng."; }; });
       $("#kysave", box).onclick = function () {
         var now = Date.now(), n = 0;
+        if (gate && !Object.keys(dr).some(function (k) { return dr[k].on; })) { $("#kymsg", box).textContent = "Hãy chọn ít nhất 1 kỳ và ngày thi."; toast("Hãy chọn ít nhất 1 kỳ và ngày thi"); var kp = $(".kypick", box); if (kp && kp.scrollIntoView) try { kp.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (e) { } return; }
         Object.keys(dr).forEach(function (k) {
           var x = dr[k], p = S.plans[k], act = !!(p && !p.x && t0 <= p.e);
           if (x.on && (!act || p.s !== x.s || p.e !== x.e)) { S.plans[k] = { s: x.s, e: x.e, t: now, x: 0 }; n++; }
@@ -2740,19 +3216,20 @@
   // ---------- router ----------
   var VIEWS = [
     ["home", "Hôm nay"], ["hoc", "Học mới"], ["on", "Ôn tập"], ["kho", "Kho khó"], ["viet", "Tập viết"], ["choi", "Trò chơi"],
-    ["bo", "Bộ thủ"], ["loaitu", "Loại từ"], ["cau", "Câu"], ["thi", "Thi thử"], ["tra", "Tra cứu"], ["caidat", "Tiến độ & cài đặt"]
+    ["bo", "Bộ thủ"], ["loaitu", "Loại từ"], ["cau", "Câu"], ["thi", "Thi thử"], ["tra", "Tra cứu"], ["caidat", "Tiến độ & cài đặt"], ["qt", "Quản trị"]
   ];
+  function viewList() { return VIEWS.filter(function (v) { return v[0] !== "qt" || isAdmin(); }); } // tab Quản trị: chỉ quản trị viên
   // ký hiệu chữ Hán (chỉ để trang trí, không phải nội dung thi) + nhãn ngắn cho thanh mục dọc hẹp
   var MENU_IC = {
     home: ["今", "Hôm nay"], hoc: ["新", "Học mới"], on: ["溫", "Ôn tập"], kho: ["難", "Kho khó"], viet: ["書", "Tập viết"], choi: ["戲", "Trò chơi"],
-    bo: ["部", "Bộ thủ"], loaitu: ["類", "Loại từ"], cau: ["句", "Câu"], thi: ["試", "Thi thử"], tra: ["查", "Tra cứu"], caidat: ["設", "Cài đặt"]
+    bo: ["部", "Bộ thủ"], loaitu: ["類", "Loại từ"], cau: ["句", "Câu"], thi: ["試", "Thi thử"], tra: ["查", "Tra cứu"], caidat: ["設", "Cài đặt"], qt: ["管", "Quản trị"]
   };
   var cleanup = null;
   // THỨ TỰ các mục trên thanh menu: người học tự xếp (người dùng yêu cầu 25/11/2026), nhớ RIÊNG từng máy ở localStorage
   // "hanco-menu-thu-tu" (mảng tên màn), KHÔNG thuộc S. Luôn đủ mọi mục của VIEWS: mục lạ / trùng bị bỏ, mục mới thêm vào cuối.
   var MENU_KEY = "hanco-menu-thu-tu", menuCur = null, menuBadge = {};
   function menuOrder() {
-    var ids = VIEWS.map(function (v) { return v[0]; }), saved = null, out = [];
+    var ids = viewList().map(function (v) { return v[0]; }), saved = null, out = [];
     try { saved = JSON.parse(localStorage.getItem(MENU_KEY) || "null"); } catch (e) { saved = null; }
     if (Object.prototype.toString.call(saved) === "[object Array]") saved.forEach(function (k) { if (typeof k === "string" && ids.indexOf(k) >= 0 && out.indexOf(k) < 0) out.push(k); });
     ids.forEach(function (k) { if (out.indexOf(k) < 0) out.push(k); });
@@ -2900,11 +3377,12 @@
       return;
     }
     var h = (cur || "home").split("-");
-    var name = h[0]; if (!VIEWS.some(function (v) { return v[0] === name; })) name = "home";
+    var name = h[0]; if (!viewList().some(function (v) { return v[0] === name; })) name = "home";
     renderMenu(name); renderStats();
     var view = $("#view"); view.innerHTML = "";
-    var fn = { home: vHome, hoc: vLearn, on: vReview, kho: vKho, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, tra: vLookup, caidat: vSettings }[name];
+    var fn = { home: vHome, hoc: vLearn, on: vReview, kho: vKho, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, tra: vLookup, caidat: vSettings, qt: vAdmin }[name];
     cleanup = fn(view, h.slice(1)) || null;
+    planGate(); // người mới chưa có lộ trình: hộp thoại bắt buộc chọn (route vừa xóa lớp hộp thoại)
     try { view.focus({ preventScroll: true }); } catch (e) { }
     window.scrollTo(0, 0);
   }
@@ -2970,6 +3448,7 @@
     var P = PLN(), t0 = today(), L = lvl();
     var h = '<div class="grid">';
     if (fb.on && !fb.user) h += '<div class="card" style="border-color:var(--seal)"><div class="row"><div style="flex:1;min-width:220px"><h2 style="margin:0">Đăng nhập Google để tự đồng bộ</h2><p class="sub" style="margin:0">Chỉ cần làm 1 lần trên máy này. Sau đó tiến độ tự lưu và tự đồng bộ với mọi máy khác của bạn.</p></div><button class="btn primary" id="fbin2">Đăng nhập bằng Google</button></div></div>';
+    h += chungCards(t0); // thông báo chung + ngày thi chung (quản trị đặt)
     h += '<div class="card hero"><div class="row"><h1 style="margin:0">Lộ trình ôn thi</h1><span class="spacer"></span>' + (P.ps.length ? '<a class="btn sm" href="#caidat-ky">Chọn kỳ / đổi thời gian</a>' : "") + "</div>";
     h += P.ps.length ? P.ps.map(function (p) { return kyRow(p, t0); }).join("") : '<div id="kyhome"></div>';
     h += "</div>";
@@ -2993,6 +3472,7 @@
     h += "</div></div></div>";
     v.innerHTML = h;
     var b2 = $("#fbin2", v); if (b2) b2.onclick = HC.fbSignIn;
+    chungBind(v);
     var kh = $("#kyhome", v); if (kh) planPick(kh, function () { route(); });
   }
   function task(ic, cls, title, sub, btn) { return '<div class="task"><div class="ic ' + cls + '" aria-hidden="true">' + ic + "</div><div><b>" + esc(title) + "</b><small>" + esc(sub) + "</small></div><div>" + btn + "</div></div>"; }
@@ -3692,9 +4172,9 @@
       '<div class="card"><h2>Kế hoạch</h2><p class="sub">Lộ trình từng kỳ chọn ở khung "Chọn kỳ học" phía trên. Hai ô dưới đây = số chữ, từ mới mỗi ngày khi bạn không học kỳ nào (hoặc các kỳ đã thi xong).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày khi không học kỳ nào</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày khi không học kỳ nào</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh (trả lời đúng / sai, cộng điểm, lên cấp)</label></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div><div class="card" id="sach-set"></div></div>';
-    if (fb.user) { // tài khoản (+ thẻ quản trị tạm) đứng đầu lưới thẻ
+    if (fb.user) { // thẻ tài khoản đứng đầu lưới thẻ (quản trị: tab Quản trị riêng)
       var cg0 = $(".cols2", v);
-      if (cg0) { cg0.insertAdjacentHTML("afterbegin", '<div class="card" id="tk-set"></div>' + (isAdmin() ? '<div class="card" id="qt-set"></div>' : "")); tkCard($("#tk-set", v)); qtCard($("#qt-set", v)); }
+      if (cg0) { cg0.insertAdjacentHTML("afterbegin", '<div class="card" id="tk-set"></div>'); tkCard($("#tk-set", v)); }
     }
     var cg = $(".cols2", v); if (cg) cg.insertAdjacentHTML("beforeend", '<div class="card"><h2>Thanh mục</h2><p class="sub">Đổi vị trí các mục trên thanh menu cho hợp cách học của bạn (lưu riêng trên máy này). Ở màn hẹp, các mục đầu hiện trên thanh, các mục sau nằm trong nút ».</p><button class="btn" type="button" data-msort>⇅ Sắp xếp thanh mục</button></div>');
     var redraw = bindSched($("#lich", v));
