@@ -9,7 +9,8 @@ rules_version = '2';
 //   đọc 1 tên đúng như mình gõ chỉ được khi tên đó không có / còn trống / của mình (đủ để báo lỗi, không lộ thêm).
 // - hanco_cfg/dk: {tran (trần số người), dem (số người đã đăng ký), mo (cho đăng ký mới)}. Ai cũng đọc; người đăng ký chỉ được
 //   +1 dem khi còn chỗ và đang mở, cùng lần tạo hồ sơ của mình. Quản trị ghi tự do.
-// - hanco_progress/{uid} (+ backups/, sach/): chỉ chủ tài khoản đang "ok"; quản trị đọc được mọi người, xóa được.
+// - hanco_progress/{uid} (+ backups/): chỉ chủ tài khoản đang "ok"; quản trị đọc được mọi người, xóa được.
+//   sach/ (hình sách riêng bản cũ): chỉ đọc + xóa. Hình sách nay ở kho chung hanco_sach (Bước 6): thành viên "ok" đọc, quản trị ghi.
 // - hanco_qt/*: chỉ quản trị (mã số tài khoản, lịch sử người bị xóa, tự xóa, nhật ký quản trị — Bước 4).
 // - hanco_cfg/chung (Bước 4): thông báo chung, ngày thi chung, cài đặt tự xóa — người đã đăng nhập đọc, chỉ quản trị ghi.
 // - tk (Bước 4) = bản thống kê tóm tắt người học tự gửi (≤ 1 lần/giờ): phải là map đúng các khóa đã định.
@@ -34,10 +35,9 @@ service cloud.firestore {
         allow create, update: if owner(uid);
         allow delete: if owner(uid) || isAdmin();
       }
-      // hình trang sách — chỉ chủ tài khoản đang "ok" (Bước 6 chuyển sang kho chung hanco_sach)
+      // hình trang sách RIÊNG (bản cũ, trước kho chung hanco_sach — Bước 6): chỉ còn đọc + xóa, KHÔNG ai ghi mới
       match /sach/{k} {
-        allow read, write: if owner(uid);
-        allow read, delete: if isAdmin(); // xóa người (Bước 4)
+        allow read, delete: if owner(uid) || isAdmin();
       }
     }
 
@@ -99,6 +99,20 @@ service cloud.firestore {
         && request.resource.data.dem == resource.data.dem + 1
         && !exists(userPath(request.auth.uid))
         && getAfter(userPath(request.auth.uid)).data.hk is string);
+    }
+
+    // KHO HÌNH SÁCH CHUNG (Bước 6): p<vị trí> = {b (PNG base64), vt, upd}; info = {sz {vị trí: độ dài b}, upd}.
+    // Thành viên đang "ok" + quản trị đọc; chỉ quản trị ghi/xóa, đúng khuôn, giới hạn kích thước.
+    match /hanco_sach/{k} {
+      allow read: if isAdmin() || (signed() && exists(userPath(request.auth.uid)) && get(userPath(request.auth.uid)).data.st == 'ok');
+      allow create, update: if isAdmin() && sachOk(k, request.resource.data);
+      allow delete: if isAdmin();
+      function sachOk(k, d) {
+        return (k == 'info' && d.keys().hasOnly(['sz', 'upd']) && d.sz is map && d.sz.size() <= 1000 && d.upd is int)
+          || (k != 'info' && d.keys().hasOnly(['b', 'vt', 'upd']) && d.keys().hasAll(['b', 'vt'])
+            && d.vt is int && d.vt > 0 && d.vt < 10000 && k == 'p' + string(d.vt)
+            && d.b is string && d.b.size() > 0 && d.b.size() <= 400000 && (!('upd' in d) || d.upd is int));
+      }
     }
 
     match /hanco_qt/{doc=**} {

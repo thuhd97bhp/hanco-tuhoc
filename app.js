@@ -596,6 +596,7 @@
     fb.attach = fbAttach;
     function fbAttach(u, dirty) {
       fb.ref = fb.db.collection("hanco_progress").doc(u.uid);
+      try { sachRefresh(); } catch (e) { } // khung sách / thẻ Cài đặt đang hiện: nay đọc được kho chung (Bước 6)
       fb.dirty = dirty == null ? !fbClean() : dirty; // máy có phần chưa lên tài khoản (học khi chưa đăng nhập / tắt app trước khi kịp ghi)
       var ref = fb.ref, started = false;
       function start() { if (started || ref !== fb.ref) return; started = true; fbSync().then(softRefresh); }
@@ -1149,7 +1150,8 @@
       qtRef("hanco_qt", "dem").get().catch(function () { return null; }),
       fb.ref ? fb.ref.collection("sach").doc("info").get().catch(function () { return null; }) : null,
       fetch("dung-luong.json", { cache: "no-store" }).then(function (x) { return x.ok ? x.json() : null; }).catch(function () { return null; }),
-      demPull()
+      demPull(),
+      qtRef("hanco_sach", "info").get().catch(function () { return null; }) // kho hình sách chung (Bước 6)
     ]).then(function (r) {
       var users = r[0].docs.filter(function (d) { return d.id !== ADMIN_UID; }).map(function (d) {
         var x = d.data(); x.uid = d.id; x.taoMs = x.tao && x.tao.toMillis ? x.tao.toMillis() : (+x.upd || 0); return x;
@@ -1157,7 +1159,7 @@
       QT = {
         t: Date.now(), users: users, ma: r[1].exists ? r[1].data() : { so: {}, next: 1 }, dx: r[2].exists ? (r[2].data().ds || []) : [],
         kh: r[3].exists ? (r[3].data().kh || {}) : {}, dk: r[4].exists ? r[4].data() : { tran: 120, dem: 0, mo: true }, ch: r[5].exists ? r[5].data() : {}, msg: "",
-        dem: r[6] && r[6].exists ? r[6].data() : {}, sach: r[7] && r[7].exists ? r[7].data() : {}, host: r[8] && +r[8].b > 0 ? r[8] : null,
+        dem: r[6] && r[6].exists ? r[6].data() : {}, sach: r[7] && r[7].exists ? r[7].data() : {}, sachPub: r[10] && r[10].exists ? r[10].data() : {}, host: r[8] && +r[8].b > 0 ? r[8] : null,
         real: QT && QT.real, realMsg: QT && QT.realMsg
       };
       if (!QT.ma.so) QT.ma.so = {};
@@ -1282,8 +1284,7 @@
     });
     var nbA = (demGet().nb || {})[fb.user ? fb.user.uid : ""];
     prog += JSON.stringify(S).length * (1 + (nbA >= 0 ? nbA : 14));
-    var ss = (QT.sach && QT.sach.sz) || {};
-    Object.keys(ss).forEach(function (k) { sach += (+ss[k] || 0) + 200; });
+    [(QT.sach && QT.sach.sz) || {}, (QT.sachPub && QT.sachPub.sz) || {}].forEach(function (ss) { Object.keys(ss).forEach(function (k) { sach += (+ss[k] || 0) + 200; }); }); // bản riêng cũ + kho chung (Bước 6)
     try { other += JSON.stringify([QT.ma, QT.dx, QT.kh, QT.ch, QT.dk, QT.dem]).length + QT.users.length * 150; } catch (e) { }
     var fs = Math.round((prog + prof + sach + other) * 1.15);
     return { t: t, mo: mo, sum: sum, per: per, nDev: nDev, st: { prog: prog, prof: prof, sach: sach, other: other, fs: fs }, host: QT.host };
@@ -1353,8 +1354,8 @@
     var st = U.st;
     h += '<div class="card"><h2>Dung lượng lưu</h2><div class="qtbars">' + qtBar("Firestore", st.fs, L.fs, fmtB) +
       (H && H.b ? qtBar("Hosting (bản đang chạy)", H.b, L.hs, fmtB) : "") + "</div>" +
-      '<ul class="qtls"><li>Tiến độ + sao lưu (tối đa 14 bản/người): ' + fmtB(st.prog) + "</li><li>Hồ sơ + bản thống kê: " + fmtB(st.prof) + "</li><li>Hình trang sách (bản đã đưa lên): " + fmtB(st.sach) +
-      "</li><li>Khác (danh sách họ tên, mã số, nhật ký…): " + fmtB(st.other) + "</li><li>Đã cộng thêm ~15% cho chỉ mục của Firestore.</li><li>Kho sách chung, cách nhớ chung: chưa có (các bước sau).</li></ul>" +
+      '<ul class="qtls"><li>Tiến độ + sao lưu (tối đa 14 bản/người): ' + fmtB(st.prog) + "</li><li>Hồ sơ + bản thống kê: " + fmtB(st.prof) + "</li><li>Hình trang sách (kho chung + bản riêng cũ nếu còn): " + fmtB(st.sach) +
+      "</li><li>Khác (danh sách họ tên, mã số, nhật ký…): " + fmtB(st.other) + "</li><li>Đã cộng thêm ~15% cho chỉ mục của Firestore.</li><li>Cách nhớ chung: chưa có (bước sau).</li></ul>" +
       '<p class="sub qtnote">' + (H && H.b ? "Hosting: bản phát hành lúc " + hm(H.t) + ", " + fmtN(H.n) + " tệp, " + fmtB(H.b) + " (release.py ghi). Firebase giữ cả các bản phát hành cũ và tính vào dung lượng — có thể đặt số bản giữ lại trong console → Hosting (lịch sử bản phát hành)." :
         "Hosting: chưa có số (tệp dung-luong.json do release.py ghi ở lần phát hành tới).") + "</p></div>";
     // ai dùng nhiều nhất (hôm qua + hôm nay)
@@ -1414,14 +1415,14 @@
   function vAdmin(v, args) {
     if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
     var sec = args[0] || "tong", ep = HC.epoch;
-    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["han", "Hạn mức"], ["nk", "Nhật ký"]];
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["nk", "Nhật ký"]];
     v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
       '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtwarn"></div><div id="qtb"><p class="sub">Đang tải…</p></div>';
     var box = $("#qtb", v);
     function draw() {
       if (HC.epoch !== ep) return;
       try { qtWarn($("#qtwarn", v)); } catch (e) { }
-      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, han: qtHan, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
     function load() {
       box.innerHTML = '<p class="sub">Đang tải…</p>';
@@ -2735,8 +2736,9 @@
 
   // ---------- HÌNH TRANG SÁCH "Tìm về cội nguồn chữ Hán" (ảnh quét, có bản quyền) ----------
   // sach.json (trên hosting, KHÔNG có hình) = {v, m: {id: vị trí | [["nhãn thành phần", vị trí], ...]}}, sinh bằng tools/sach_pack.py
-  // từ tools/work/sach/khop.txt. Hình (PNG base64) CHỈ ở Firestore riêng của người dùng: hanco_progress/{uid}/sach/p<vị trí> = {b, vt, upd};
-  // hanco_progress/{uid}/sach/info = {sz: {vị trí: độ dài base64}, upd}. Đưa lên ở Cài đặt (file tools/work/sach/sach.pack).
+  // từ tools/work/sach/khop.txt. Hình (PNG base64) ở KHO CHUNG Firestore (Bước 6): hanco_sach/p<vị trí> = {b, vt, upd}, hanco_sach/info =
+  // {sz: {vị trí: độ dài base64}, upd} — thành viên đang "ok" đọc, chỉ quản trị đưa lên (tab Quản trị → Hình sách, file tools/work/sach/sach.pack).
+  // Bản RIÊNG cũ hanco_progress/{uid}/sach/… (trước Bước 6, chỉ còn đọc + xóa) dùng dự phòng khi kho chung chưa có trang đó.
   // Máy giữ hình đã xem trong Cache Storage "sach-v1" (KHÔNG bắt đầu bằng "hanco-" nên sw.js không xóa khi đổi VERSION), trừ khi bật
   // "Không lưu hình sách trên máy này" (localStorage hanco-sach-noluu — tiện ích từng máy, không thuộc S). Không động tới S.
   var SACH_BOOK = "Tìm về cội nguồn chữ Hán", SACH_CACHE = "sach-v1", SACH_NOLUU = "hanco-sach-noluu";
@@ -2759,13 +2761,17 @@
   }
   function b64Blob(b64) { var s = atob(b64), n = s.length, u = new Uint8Array(n); for (var i = 0; i < n; i++) u[i] = s.charCodeAt(i); return new Blob([u], { type: "image/png" }); }
   function sachErr(code) { var e = new Error(code); e.code = code; return e; }
-  function sachRef() { return fb.ref ? fb.ref.collection("sach") : null; }
-  function sachFetch(vt) { // đọc 1 trang từ Firestore → Blob (đã lưu vào bộ đệm nếu được phép)
-    var col = sachRef();
-    if (!col) return Promise.reject(sachErr(fb.on ? "signedout" : "nofb"));
+  function sachRef() { return fb.ref ? fb.ref.collection("sach") : null; } // bản riêng cũ (fb.ref chỉ có khi tài khoản đang "ok")
+  function sachPub() { return fb.ref && fb.db ? fb.db.collection("hanco_sach") : null; } // kho chung
+  function sachFetch(vt) { // đọc 1 trang: kho chung trước, chưa có (hoặc luật chưa cho) thì bản riêng cũ → Blob (đã lưu vào bộ đệm nếu được phép)
+    var col = sachRef(), pub = sachPub();
+    if (!col || !pub) return Promise.reject(sachErr(fb.on ? "signedout" : "nofb"));
     if (navigator.onLine === false) return Promise.reject(sachErr("offline"));
-    return col.doc("p" + vt).get().then(function (d) {
-      var x = d.exists ? d.data() : null;
+    var e1 = null;
+    return pub.doc("p" + vt).get().then(function (d) { return d.exists ? d.data() : null; }, function (e) { e1 = e; return null; }).then(function (x) {
+      if (x && x.b) return x;
+      return col.doc("p" + vt).get().then(function (d) { return d.exists ? d.data() : null; }, function (e) { if (e1) throw e1; return null; });
+    }).then(function (x) {
       if (!x || !x.b) throw sachErr("missing");
       var blob = b64Blob(x.b);
       return sachCachePut(vt, blob).then(function () { return blob; });
@@ -2799,9 +2805,9 @@
       box.innerHTML = '<button type="button" class="sbtn" data-szoom="' + vt + '" aria-label="Xem to trang ' + sachPg(vt) + '"><img alt="Trang ' + sachPg(vt) + " sách " + esc(SACH_BOOK) + '" src="' + u + '"></button>';
     }, function (e) {
       var c = e && (e.code || e.message), t;
-      if (c === "signedout") t = 'Đăng nhập Google để xem hình trang sách. <button type="button" class="btn sm" data-sin>Đăng nhập</button>';
-      else if (c === "nofb") t = "Cần đăng nhập Google để xem hình trang sách.";
-      else if (c === "missing") t = 'Tài khoản này chưa có hình trang sách (có gói hình thì đưa lên ở <a href="#caidat-sach">Cài đặt → Hình trang sách</a>).';
+      if (c === "signedout") t = 'Đăng nhập để xem hình trang sách. <button type="button" class="btn sm" data-sin>Đăng nhập</button>';
+      else if (c === "nofb") t = "Cần đăng nhập để xem hình trang sách.";
+      else if (c === "missing") t = isAdmin() ? 'Kho hình sách chung chưa có trang này — đưa lên ở <a href="#qt-sach">Quản trị → Hình sách</a>.' : "Kho hình sách chung chưa có trang này (quản trị viên chưa đưa lên).";
       else if (c === "permission-denied") t = "Chưa đọc được hình: máy chủ chưa cho phép đọc hình sách.";
       else if (c === "offline" || c === "unavailable") t = "Cần mạng để tải hình này (hình chưa lưu trên máy).";
       else t = "Chưa tải được hình.";
@@ -2870,30 +2876,40 @@
       });
     }).then(function (a) { return { n: a.length, b: a.reduce(function (s, x) { return s + x; }, 0) }; }, function () { return { n: 0, b: 0 }; });
   }
-  function sachInfo() { var col = sachRef(); return col ? col.doc("info").get().then(function (d) { return (d.exists && d.data()) || {}; }) : Promise.reject(sachErr("signedout")); }
-  function sachSettings(el) {
+  function sachInfo() { var col = sachPub(); return col ? col.doc("info").get().then(function (d) { return (d.exists && d.data()) || {}; }) : Promise.reject(sachErr("signedout")); } // info kho chung
+  function sachErrText(e) { var c = e && (e.code || e.message); return c === "permission-denied" ? "máy chủ chưa cho phép (cần cập nhật quy tắc Firestore)" : c === "offline" || c === "unavailable" ? "không có mạng" : "lỗi " + (c || "không rõ"); }
+  function sachPool(list, work, done) { // chạy 4 việc song song; dừng ở lỗi đầu tiên
+    var k = 0, i = 0, fail = null, run = 0;
+    return new Promise(function (res, rej) {
+      function next() {
+        if (fail) { if (!run) rej(fail); return; }
+        if (i >= list.length) { if (!run) res(k); return; }
+        var x = list[i++]; run++;
+        work(x).then(function () { k++; done(k); }, function (e) { fail = fail || e; }).then(function () { run--; next(); });
+      }
+      for (var j = 0; j < 4; j++) next();
+    });
+  }
+  function sachSettings(el) { // thẻ Cài đặt: tình trạng kho chung + hình trên máy. "Tải hết về máy này" CHỈ quản trị (người dùng chốt 27/11/2026: tiết kiệm hạn mức)
     if (!el) return;
     var busy = false, cachesOk = !!window.caches;
-    function errText(e) { var c = e && (e.code || e.message); return c === "permission-denied" ? "máy chủ chưa cho phép lưu hình sách (cần cập nhật quy tắc Firestore)" : c === "offline" || c === "unavailable" ? "không có mạng" : "lỗi " + (c || "không rõ"); }
     function draw() {
-      var noluu = sachNoLuu();
-      el.innerHTML = '<h2>Hình trang sách</h2><p class="sub">Hình trang sách «' + esc(SACH_BOOK) + '» (ảnh quét, có bản quyền) chỉ lưu trên tài khoản Google của bạn, không có trên trang web công khai. Hình hiện trong khung chi tiết chữ và bộ thủ: chữ có trong sách → trang của chữ; chữ không có → trang từng thành phần cấu tạo.</p>' +
-        '<div class="srow"><span class="k">Trên tài khoản</span> <span id="sst-acc">' + (fb.user ? "đang kiểm tra…" : fb.on ? "chưa đăng nhập" : "không dùng được trên trang này") + "</span></div>" +
+      var noluu = sachNoLuu(), adm = isAdmin(), acc = !!sachPub();
+      el.innerHTML = '<h2>Hình trang sách</h2><p class="sub">Hình trang sách «' + esc(SACH_BOOK) + '» lưu ở kho chung của app, thành viên đã đăng nhập xem được. Hình hiện trong khung chi tiết chữ và bộ thủ: chữ có trong sách → trang của chữ; chữ không có → trang từng thành phần cấu tạo. Trang đã xem được giữ lại trên máy, lần sau mở không cần tải lại.</p>' +
+        '<div class="srow"><span class="k">Kho chung</span> <span id="sst-acc">' + (acc ? "đang kiểm tra…" : fb.on ? "cần đăng nhập" : "không dùng được trên trang này") + "</span></div>" +
         '<div class="srow"><span class="k">Trên máy này</span> <span id="sst-dev">' + (cachesOk ? "đang tính…" : "trình duyệt này không lưu hình được") + "</span></div>" +
         '<div class="row" style="margin-top:8px">' +
-        (fb.user ? '<button class="btn" id="sup">Đưa hình sách lên tài khoản</button><input type="file" id="supf" accept=".pack,application/json" hidden>' + (cachesOk ? '<button class="btn" id="sall"' + (noluu ? " disabled" : "") + ">Tải hết về máy này</button>" : "") : fb.on ? '<button class="btn primary" id="sin">Đăng nhập bằng Google</button>' : "") +
+        (acc ? (adm ? '<a class="btn" href="#qt-sach">Đưa hình lên (Quản trị)</a>' + (cachesOk ? '<button class="btn" id="sall"' + (noluu ? " disabled" : "") + ">Tải hết về máy này</button>" : "") : "") : fb.on ? '<button class="btn primary" id="sin">Đăng nhập</button>' : "") +
         (cachesOk ? '<button class="btn ghost" id="sdel">Xóa hình sách đã lưu</button>' : "") + "</div>" +
         '<div id="sconf"></div><div id="sprog" class="sprog" hidden><div class="bar"><i></i></div><span class="muted"></span></div>' +
-        (cachesOk ? '<label class="row" style="margin-top:10px"><input type="checkbox" id="snl"' + (noluu ? " checked" : "") + "> Không lưu hình sách trên máy này (mỗi lần xem tải lại từ tài khoản, cần mạng)</label>" : "") +
-        '<p class="sub" style="margin-top:8px">Đưa hình lên chỉ cần làm 1 lần, từ máy tính có file <code>tools/work/sach/sach.pack</code>. "Tải hết về máy này" lấy khoảng 35 MB để xem khi không có mạng.</p>';
+        (cachesOk ? '<label class="row" style="margin-top:10px"><input type="checkbox" id="snl"' + (noluu ? " checked" : "") + "> Không lưu hình sách trên máy này (mỗi lần xem tải lại, cần mạng)</label>" : "") +
+        (adm && acc && cachesOk ? '<p class="sub" style="margin-top:8px">"Tải hết về máy này" (chỉ quản trị viên thấy) lấy khoảng 35 MB để xem khi không có mạng.</p>' : "");
       var b;
       if ((b = $("#sin", el))) b.onclick = HC.fbSignIn;
-      if ((b = $("#sup", el))) b.onclick = function () { if (!busy) $("#supf", el).click(); };
-      if ((b = $("#supf", el))) b.onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) upload(f); };
-      if ((b = $("#sall", el))) b.onclick = function () { if (!busy) fetchAll(); };
+      if ((b = $("#sall", el))) b.onclick = function () { if (!busy && isAdmin()) fetchAll(); };
       if ((b = $("#sdel", el))) b.onclick = function () {
         if (busy) return;
-        $("#sconf", el).innerHTML = '<div class="row" style="margin-top:8px"><span>Xóa hết hình sách đã lưu trên máy này? (Hình trên tài khoản vẫn còn.)</span><button class="btn sm bad" id="sdy">Xóa</button><button class="btn sm" id="sdn">Thôi</button></div>';
+        $("#sconf", el).innerHTML = '<div class="row" style="margin-top:8px"><span>Xóa hết hình sách đã lưu trên máy này? (Kho chung vẫn còn.)</span><button class="btn sm bad" id="sdy">Xóa</button><button class="btn sm" id="sdn">Thôi</button></div>';
         $("#sdy", el).onclick = function () { caches.delete(SACH_CACHE).then(function () { SURL = {}; toast("Đã xóa hình sách trên máy này"); draw(); }, function () { toast("Chưa xóa được"); }); };
         $("#sdn", el).onclick = function () { $("#sconf", el).innerHTML = ""; };
       };
@@ -2907,56 +2923,14 @@
     function stat() {
       var a = $("#sst-acc", el), d = $("#sst-dev", el);
       if (cachesOk) sachCacheStat().then(function (s) { if (d && d.isConnected) d.textContent = s.n ? s.n + " trang · " + fmtMB(s.b) : "chưa lưu hình nào"; });
-      if (fb.user) Promise.all([sachMap(), sachInfo()]).then(function (r) {
+      if (sachPub()) Promise.all([sachMap(), sachInfo()]).then(function (r) {
         var tot = sachPages(r[0]).length, n = Object.keys(r[1].sz || {}).length;
-        if (a && a.isConnected) a.textContent = n ? n + "/" + tot + " trang" + (r[1].upd ? " (đưa lên " + new Date(r[1].upd).toLocaleDateString("vi-VN") + ")" : "") : "chưa có hình (cần đưa lên)";
-      }, function (e) { if (a && a.isConnected) a.textContent = "chưa kiểm tra được: " + errText(e); });
+        if (a && a.isConnected) a.textContent = n ? n + "/" + tot + " trang" + (r[1].upd ? " (cập nhật " + new Date(r[1].upd).toLocaleDateString("vi-VN") + ")" : "") : "chưa có hình (quản trị viên chưa đưa lên)";
+      }, function (e) { if (a && a.isConnected) a.textContent = "chưa kiểm tra được: " + sachErrText(e); });
     }
     function prog(k, n, txt) {
       var p = $("#sprog", el); if (!p) return;
       p.hidden = false; p.querySelector("i").style.width = (n ? Math.round(k * 100 / n) : 0) + "%"; p.querySelector("span").textContent = txt;
-    }
-    function pool(list, work, done) { // chạy 4 việc song song; dừng ở lỗi đầu tiên
-      var k = 0, i = 0, fail = null, run = 0;
-      return new Promise(function (res, rej) {
-        function next() {
-          if (fail) { if (!run) rej(fail); return; }
-          if (i >= list.length) { if (!run) res(k); return; }
-          var x = list[i++]; run++;
-          work(x).then(function () { k++; done(k); }, function (e) { fail = fail || e; }).then(function () { run--; next(); });
-        }
-        for (var j = 0; j < 4; j++) next();
-      });
-    }
-    function upload(file) {
-      busy = true; prog(0, 1, "Đang đọc file…");
-      var fr = new FileReader();
-      fr.onerror = function () { busy = false; prog(0, 1, "Không đọc được file."); };
-      fr.onload = function () {
-        var pk; try { pk = JSON.parse(fr.result); } catch (e) { pk = null; }
-        if (!pk || pk.v !== 1 || !pk.pages || typeof pk.pages !== "object") { busy = false; prog(0, 1, "File không đúng: hãy chọn tools/work/sach/sach.pack."); return; }
-        fr = null;
-        var col = sachRef(); if (!col) { busy = false; prog(0, 1, "Cần đăng nhập."); return; }
-        sachInfo().then(function (info) {
-          var sz = info.sz || {}, todo = Object.keys(pk.pages).filter(function (vt) { return /^\d+$/.test(vt) && typeof pk.pages[vt] === "string" && sz[vt] !== pk.pages[vt].length; });
-          var n = todo.length, skip = Object.keys(pk.pages).length - n, lastSave = 0;
-          if (!n) { prog(1, 1, "Tài khoản đã có đủ " + Object.keys(sz).length + " trang, không cần đưa lên."); return; }
-          prog(0, n, "Đang đưa lên 0/" + n + " trang" + (skip ? " (bỏ qua " + skip + " trang đã có)" : "") + "…");
-          var saveInfo = function () { return col.doc("info").set({ sz: sz, upd: Date.now() }); };
-          return pool(todo, function (vt) {
-            var b = pk.pages[vt];
-            return col.doc("p" + vt).set({ b: b, vt: +vt, upd: Date.now() }).then(function () {
-              sz[vt] = b.length;
-              if (Object.keys(sz).length - lastSave >= 25) { lastSave = Object.keys(sz).length; return saveInfo(); }
-            });
-          }, function (k) { prog(k, n, "Đang đưa lên " + k + "/" + n + " trang…"); }).then(function () {
-            return saveInfo().then(function () { prog(n, n, "Xong: đã đưa lên " + n + " trang. Tài khoản có " + Object.keys(sz).length + " trang."); toast("Đã đưa hình sách lên tài khoản"); });
-          }, function (e) {
-            return saveInfo().then(null, function () { }).then(function () { prog(0, 1, "Dừng giữa chừng (" + errText(e) + "). Bấm lại và chọn file để đưa tiếp phần còn lại."); });
-          });
-        }).then(null, function (e) { prog(0, 1, "Chưa đưa lên được: " + errText(e) + "."); }).then(function () { busy = false; pk = null; stat(); });
-      };
-      fr.readAsText(file);
     }
     function fetchAll() {
       busy = true; prog(0, 1, "Đang kiểm tra…");
@@ -2966,14 +2940,119 @@
           var todo = a.filter(function (x) { return x != null; }), n = todo.length;
           if (!n) { prog(1, 1, "Máy này đã có đủ " + ps.length + " trang."); return; }
           prog(0, n, "Đang tải 0/" + n + " trang…");
-          return pool(todo, sachFetch, function (k) { prog(k, n, "Đang tải " + k + "/" + n + " trang…"); }).then(function () { prog(n, n, "Xong: máy này đã có đủ " + ps.length + " trang."); }, function (e) {
-            prog(0, 1, (e && e.code === "missing" ? "Tài khoản chưa có đủ hình (cần đưa lên trước)." : "Dừng giữa chừng (" + errText(e) + "). Bấm lại để tải tiếp."));
+          return sachPool(todo, sachFetch, function (k) { prog(k, n, "Đang tải " + k + "/" + n + " trang…"); }).then(function () { prog(n, n, "Xong: máy này đã có đủ " + ps.length + " trang."); }, function (e) {
+            prog(0, 1, (e && e.code === "missing" ? "Kho chung chưa có đủ hình (cần đưa lên trước)." : "Dừng giữa chừng (" + sachErrText(e) + "). Bấm lại để tải tiếp."));
           });
         });
-      }).then(null, function (e) { prog(0, 1, "Chưa tải được: " + errText(e) + "."); }).then(function () { busy = false; stat(); });
+      }).then(null, function (e) { prog(0, 1, "Chưa tải được: " + sachErrText(e) + "."); }).then(function () { busy = false; stat(); });
     }
     el._redraw = function () { if (!busy && el.isConnected) draw(); };
     draw();
+  }
+
+  // Quản trị → Hình sách (Bước 6): đưa gói hình (tools/work/sach/sach.pack) lên KHO CHUNG hanco_sach — chỉ trang mới / đổi (so độ dài với
+  // hanco_sach/info.sz), dừng giữa chừng thì bấm lại để đưa tiếp; xóa bản riêng cũ hanco_progress/{quản trị}/sach/* khi kho chung đã đủ.
+  // Việc đang chạy vẫn chạy khi rời mục (qtSachSt giữ tiến độ để vẽ lại).
+  var qtSachSt = null;
+  function qtSachProg(k, n, txt, busy) {
+    qtSachSt = { k: k, n: n, txt: txt, busy: !!busy };
+    var p = document.getElementById("qsprog"); if (!p) return;
+    p.hidden = false; p.querySelector("i").style.width = (n ? Math.round(k * 100 / n) : 0) + "%"; p.querySelector("span").textContent = txt;
+    $$("#qsup, #qsdel").forEach(function (b) { if (busy) b.disabled = true; });
+  }
+  function qtSach(box, redraw) {
+    box.innerHTML = '<p class="sub">Đang tính…</p>';
+    sachMap().then(function (m) {
+      var pub = (QT.sachPub && QT.sachPub.sz) || {}, own = (QT.sach && QT.sach.sz) || {};
+      var all = sachPages(m), tot = all.length, nPub = Object.keys(pub).length, nOwn = Object.keys(own).length;
+      var miss = all.filter(function (vt) { return !pub[vt]; }).length, ownLeft = Object.keys(own).filter(function (k) { return !pub[k]; }).length;
+      var szOf = function (o) { return Object.keys(o).reduce(function (s, k) { return s + (+o[k] || 0); }, 0); };
+      var busy = !!(qtSachSt && qtSachSt.busy), canDel = nOwn > 0 && !miss && !ownLeft;
+      var h = '<div class="card"><h2>Kho hình sách chung</h2><div class="qtst">' +
+        "<div><small>Trang đã có</small><b>" + fmt(nPub) + " / " + fmt(tot) + "</b><small>" + (miss ? "còn thiếu " + fmt(miss) + " trang" : "đủ") + "</small></div>" +
+        "<div><small>Dung lượng</small><b>" + fmtB(szOf(pub)) + "</b><small>trên Firestore</small></div>" +
+        "<div><small>Cập nhật</small><b>" + (QT.sachPub && QT.sachPub.upd ? dateY(dayOfMs(QT.sachPub.upd)) : "—") + "</b><small>lần đưa lên gần nhất</small></div></div>" +
+        '<p class="sub" style="margin-top:8px">Mọi thành viên đang hoạt động xem được hình trong khung chi tiết chữ / bộ thủ; chỉ bạn đưa lên được. Mỗi trang thành viên mở lần đầu trên một máy tốn 2 lượt đọc và ~77 KB tải ra (trang đã xem được giữ lại trên máy). "Tải hết về máy này" chỉ quản trị viên có.</p>' +
+        '<div class="row" style="margin-top:8px"><button class="btn primary" id="qsup"' + (busy ? " disabled" : "") + '>Đưa hình sách lên kho chung</button><input type="file" id="qsupf" accept=".pack,application/json" hidden></div>' +
+        '<div id="qsprog" class="sprog" hidden><div class="bar"><i></i></div><span class="muted"></span></div>' +
+        '<p class="sub" style="margin-top:8px">Chọn file <code>tools/work/sach/sach.pack</code> (từ máy tính có file này). Chỉ trang mới hoặc trang đã đổi được ghi; dừng giữa chừng thì bấm lại và chọn file để đưa tiếp. Sau khi chạy lại <code>sach_pack.py</code> có trang mới → đưa lại ở đây.</p></div>';
+      h += '<div class="card"><h2>Bản riêng cũ trên tài khoản của bạn</h2>' + (nOwn ?
+        '<p class="sub">Trước Bước 6, hình sách lưu riêng trong tài khoản của bạn: ' + fmt(nOwn) + " trang · " + fmtB(szOf(own)) + ". App vẫn dùng bản này làm dự phòng khi kho chung chưa có trang. " +
+        (canDel ? "Kho chung đã có đủ — có thể xóa bản riêng để bớt dung lượng Firestore." : "Chỉ xóa được khi kho chung đã có đủ mọi trang (" + (miss ? "còn thiếu " + fmt(miss) + " trang" : "còn " + fmt(ownLeft) + " trang của bản riêng chưa có ở kho chung") + ").") + "</p>" +
+        '<div class="row"><button class="btn bad" id="qsdel"' + (canDel && !busy ? "" : " disabled") + '>Xóa bản riêng cũ</button></div><div id="qsconf"></div>' :
+        '<p class="sub">Không còn bản riêng (đã xóa hoặc chưa từng đưa lên).</p>') + "</div>";
+      box.innerHTML = h;
+      if (qtSachSt) qtSachProg(qtSachSt.k, qtSachSt.n, qtSachSt.txt, qtSachSt.busy);
+      $("#qsup", box).onclick = function () { if (!(qtSachSt && qtSachSt.busy)) $("#qsupf", box).click(); };
+      $("#qsupf", box).onchange = function () { var f = this.files && this.files[0]; this.value = ""; if (f) qtSachUp(f, redraw); };
+      var d = $("#qsdel", box);
+      if (d) d.onclick = function () {
+        if (!canDel || (qtSachSt && qtSachSt.busy)) return;
+        $("#qsconf", box).innerHTML = '<div class="row" style="margin-top:8px"><span>Xóa ' + fmt(nOwn) + ' trang bản riêng cũ? Không hoàn tác được (kho chung vẫn đủ, gói hình vẫn còn ở máy tính).</span><button class="btn sm bad" id="qsdy">Xóa</button><button class="btn sm" id="qsdn">Thôi</button></div>';
+        $("#qsdn", box).onclick = function () { $("#qsconf", box).innerHTML = ""; };
+        $("#qsdy", box).onclick = function () { qtSachDel(Object.keys(own), redraw); };
+      };
+    }, function (e) { box.innerHTML = '<p class="tkmsg">Chưa đọc được sach.json (' + esc(e && e.message) + ").</p>"; });
+  }
+  function qtSachUp(file, redraw) {
+    qtSachProg(0, 1, "Đang đọc file…", true);
+    var fr = new FileReader();
+    fr.onerror = function () { qtSachProg(0, 1, "Không đọc được file.", false); };
+    fr.onload = function () {
+      var pk; try { pk = JSON.parse(fr.result); } catch (e) { pk = null; }
+      fr = null;
+      if (!pk || pk.v !== 1 || !pk.pages || typeof pk.pages !== "object") { qtSachProg(0, 1, "File không đúng: hãy chọn tools/work/sach/sach.pack.", false); return; }
+      var col = fb.db.collection("hanco_sach"), big = [];
+      col.doc("info").get().then(function (d) {
+        var info = (d.exists && d.data()) || {}, sz = info.sz || {}, lastSave = 0;
+        var todo = Object.keys(pk.pages).filter(function (vt) {
+          var b = pk.pages[vt];
+          if (!/^\d+$/.test(vt) || +vt <= 0 || typeof b !== "string" || !b) return false;
+          if (b.length > 400000) { big.push(vt); return false; } // luật chặn trang > 400.000 ký tự
+          return sz[vt] !== b.length;
+        });
+        var n = todo.length, skip = Object.keys(pk.pages).length - n - big.length;
+        var bigTxt = big.length ? " " + big.length + " trang quá lớn bị bỏ qua (vị trí " + big.slice(0, 5).join(", ") + (big.length > 5 ? "…" : "") + ")." : "";
+        if (!n) { qtSachProg(1, 1, "Kho chung đã có đủ " + Object.keys(sz).length + " trang, không cần đưa lên." + bigTxt, false); return; }
+        qtSachProg(0, n, "Đang đưa lên 0/" + n + " trang" + (skip ? " (bỏ qua " + skip + " trang đã có)" : "") + "…", true);
+        var saveInfo = function () { var x = { sz: sz, upd: Date.now() }; QT.sachPub = x; return col.doc("info").set(x); };
+        return sachPool(todo, function (vt) {
+          var b = pk.pages[vt];
+          return col.doc("p" + vt).set({ b: b, vt: +vt, upd: Date.now() }).then(function () {
+            sz[vt] = b.length;
+            if (Object.keys(sz).length - lastSave >= 25) { lastSave = Object.keys(sz).length; return saveInfo(); }
+          });
+        }, function (k) { qtSachProg(k, n, "Đang đưa lên " + k + "/" + n + " trang…", true); }).then(function () {
+          return saveInfo().then(function () {
+            qtSachProg(n, n, "Xong: đã đưa lên " + n + " trang. Kho chung có " + Object.keys(sz).length + " trang." + bigTxt, false);
+            toast("Đã đưa hình sách lên kho chung");
+            qtLog("Đưa hình sách lên kho chung", null, n + " trang, kho có " + Object.keys(sz).length);
+          });
+        }, function (e) {
+          return saveInfo().then(null, function () { }).then(function () { qtSachProg(0, 1, "Dừng giữa chừng (" + sachErrText(e) + "). Bấm lại và chọn file để đưa tiếp phần còn lại.", false); });
+        });
+      }).then(null, function (e) { qtSachProg(0, 1, "Chưa đưa lên được: " + sachErrText(e) + ".", false); }).then(function () {
+        pk = null; SURL = {};
+        if (cur === "qt-sach") redraw();
+      });
+    };
+    fr.readAsText(file);
+  }
+  function qtSachDel(keys, redraw) { // xóa theo danh sách trang đã biết (info.sz) — không đọc lại từng trang
+    var col = sachRef(); if (!col) return;
+    var ids = keys.map(function (k) { return "p" + k; }).concat(["info"]), parts = [], done = 0;
+    for (var i = 0; i < ids.length; i += 400) parts.push(ids.slice(i, i + 400));
+    qtSachProg(0, ids.length, "Đang xóa bản riêng cũ…", true);
+    parts.reduce(function (p, part) {
+      return p.then(function () {
+        var b = fb.db.batch(); part.forEach(function (id) { b.delete(col.doc(id)); });
+        return b.commit().then(function () { done += part.length; qtSachProg(done, ids.length, "Đang xóa " + done + "/" + ids.length + "…", true); });
+      });
+    }, Promise.resolve()).then(function () {
+      QT.sach = {}; SURL = {};
+      qtSachProg(ids.length, ids.length, "Đã xóa bản riêng cũ (" + keys.length + " trang).", false);
+      toast("Đã xóa bản riêng cũ"); qtLog("Xóa hình sách bản riêng cũ", null, keys.length + " trang");
+    }, function (e) { qtSachProg(0, 1, "Xóa dừng giữa chừng (" + sachErrText(e) + "). Bấm Tải lại rồi xóa tiếp.", false); }).then(function () { if (cur === "qt-sach") redraw(); });
   }
 
   // ruby: ghép từng chữ với âm trong phiên âm của đề cương (nếu khớp số âm tiết), không thì lấy âm từ từ điển
