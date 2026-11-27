@@ -231,6 +231,7 @@
     m.rec = { hb: ra.hb, hk: ra.hk, pf: ra.pf };
     if (rb.hb && (!ra.hb || rb.hb < ra.hb || (rb.hb === ra.hb && rb.hk && (!ra.hk || rb.hk < ra.hk)))) { m.rec.hb = rb.hb; m.rec.hk = rb.hk; }
     Object.keys(rb.pf).forEach(function (d) { m.rec.pf[d] = Math.max(+m.rec.pf[d] || 0, +rb.pf[d] || 0); });
+    if (ra.lg || rb.lg) m.rec.lg = Math.max(ra.lg || 0, rb.lg || 0);
     return m;
   }
   // gộp {id: t}: t > 0 = thêm lúc t, t < 0 = bỏ lúc −t. Lấy |t| lớn hơn; bằng nhau thì "bỏ" thắng (gộp theo thứ tự nào cũng ra một kết quả)
@@ -353,7 +354,7 @@
     for (k in a) { if (!b[k] || gt(a[k].nt, b[k].nt) || gt(a[k].x, b[k].x)) return true; for (j in a[k].ids || {}) if (!(b[k].ids || {})[j] || Math.abs(a[k].ids[j]) > Math.abs(b[k].ids[j])) return true; }
     a = s.streak || {}; b = r.streak || {}; if (gt(a.d, b.d) || (a.d === b.d && gt(a.c, b.c))) return true;
     a = s.cup || {}; b = r.cup || {}; for (k in a) if (!b[k] || gt(b[k], a[k])) return true;
-    a = s.rec || {}; b = r.rec || {}; if (a.hb > 0 && (!(b.hb > 0) || a.hb < b.hb)) return true;
+    a = s.rec || {}; b = r.rec || {}; if (a.hb > 0 && (!(b.hb > 0) || a.hb < b.hb)) return true; if (gt(a.lg, b.lg)) return true;
     a = a.pf || {}; b = b.pf || {}; for (k in a) if (gt(a[k], b[k])) return true;
     return gt(s.xp, r.xp) || (gt(s.upd, r.upd) && (s.start !== r.start || JSON.stringify(s.set) !== JSON.stringify(r.set)));
   }
@@ -978,7 +979,7 @@
     function opt(name, val, lab, on, dis) { return '<label class="vaio' + (dis ? " dis" : "") + '"><input type="radio" name="' + name + '" value="' + val + '"' + (on ? " checked" : "") + (dis ? " disabled" : "") + "> " + lab + "</label>"; }
     box.innerHTML = '<h3 class="vaih">Hai vai của tôi</h3><p class="sub">Người khác thấy bạn bằng vai bạn chọn ở từng chỗ. <b>Mọi số liệu là một</b> (XP, cấp, chuỗi ngày, huy hiệu, cúp đều từ cùng một tiến độ học) — đổi vai chỉ đổi tên và ảnh. Vai người học có mã riêng, không ai biết đó là bạn.</p>' +
       '<div class="vai2">' + one("tq", "Vai quản trị", u.uid, c.tq, "người khác thấy bạn là quản trị viên") + one("th", "Vai người học", c.hv, c.th, hasHv ? "trông như một học viên bình thường" : "chưa đặt tên") + "</div>" +
-      '<div class="vaich"><div class="vaiq"><b>Bảng xếp hạng + cúp tuần</b><div class="vaios">' + opt("vbx", "qt", "Vai quản trị", c.bx === "qt") + opt("vbx", "hv", "Vai người học", c.bx === "hv", !hasHv) + opt("vbx", "an", "Ẩn (không ai thấy tôi)", c.bx === "an") + "</div></div>" +
+      '<div class="vaich"><div class="vaiq"><b>Bảng xếp hạng + cúp tuần + giải đấu</b><div class="vaios">' + opt("vbx", "hv", "Hiện bằng vai người học", c.bx === "hv", !hasHv) + opt("vbx", "an", "Ẩn (không ai thấy tôi)", c.bx === "an") + "</div>" + (hasHv ? "" : '<small class="muted">Đặt tên vai người học để hiện trên bảng xếp hạng.</small>') + "</div>" +
       '<div class="vaiq"><b>Cách nhớ chung</b><div class="vaios">' + opt("vme", "qt", "Vai quản trị", c.me === "qt") + opt("vme", "hv", "Vai người học", c.me === "hv", !hasHv) + "</div></div></div>" +
       '<p class="sub vaimsg" role="status" aria-live="polite"></p>';
     avFill(box);
@@ -994,7 +995,7 @@
     $$("[data-vanh]", box).forEach(function (b) { b.onclick = function () { avPick(b.getAttribute("data-vanh")); }; });
     $$('input[name="vbx"]', box).forEach(function (r) { r.onchange = function () {
       var m = r.value; lock(true); msg.textContent = "Đang đổi vai trên bảng xếp hạng…";
-      vaiSetBx(m).then(function () { done(m === "an" ? "Đã ẩn bạn khỏi bảng xếp hạng" : "Bảng xếp hạng giờ hiện " + (m === "hv" ? "vai người học" : "vai quản trị")); }, bad);
+      vaiSetBx(m).then(function () { done(m === "an" ? "Đã ẩn bạn khỏi bảng xếp hạng" : "Bảng xếp hạng giờ hiện vai người học"); }, bad);
     }; });
     $$('input[name="vme"]', box).forEach(function (r) { r.onchange = function () {
       var m = r.value; lock(true); msg.textContent = "Đang chuyển cách nhớ của bạn sang vai mới…";
@@ -1922,7 +1923,8 @@
   }
   function normalize0(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note", "cup", "rec", "meo"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); recNorm(s.rec); return s; }
   // kỷ lục (Bước 7): rec = {hb hạng tuần cao nhất (0 = chưa có), hk tuần đạt hạng đó, pf {ngày: số bài không sai}}
-  function recNorm(r) { r.hb = +r.hb > 0 ? +r.hb : 0; r.hk = +r.hk || 0; if (typeof r.pf !== "object" || !r.pf || Array.isArray(r.pf)) r.pf = {}; return r; }
+  // + lg giải đấu cao nhất từng đạt 1–7 (27/11/2026; chỉ có khi > 0 → tiến độ cũ không đổi)
+  function recNorm(r) { r.hb = +r.hb > 0 ? +r.hb : 0; r.hk = +r.hk || 0; if (typeof r.pf !== "object" || !r.pf || Array.isArray(r.pf)) r.pf = {}; var lg = Math.floor(+r.lg || 0); if (lg >= 1) r.lg = Math.min(lg, 7); else delete r.lg; return r; }
 
   // ---------- SRS ----------
   // it[id] = [rBox, rDue, wBox, wDue, lapses, introDay]; wBox = -1 when the item has no writing card
@@ -2185,7 +2187,7 @@
   // giảm dần, t}, người đầu tiên mở app sau 12 giờ trưa thứ Hai tuần sau chốt (luật kiểm 3 người đầu khớp bảng) → ai trong top 3 tự ghi
   // vào S.cup; hạng tuần cao nhất vào S.rec. localStorage MỚI: hanco-bxh-gui (lần ghi dòng gần nhất), hanco-bxh-cup (tuần đã kiểm cúp),
   // hanco-qt-xpla (ngưỡng XP lạ của máy quản trị). Không thuộc S.
-  var BXH = { d: null, t: 0, u: "", rs: 0, err: "", sending: false, timer: null, cup: {}, cupTry: {} }, BXH_LS = "hanco-bxh-gui", BXH_CUP = "hanco-bxh-cup", BXH_GAP = 15 * 60e3, BXH_TTL = 180e3;
+  var BXH = { d: null, t: 0, u: "", rs: 0, err: "", sending: false, timer: null, cup: {}, cupTry: {}, cupNo: {}, gd: null }, BXH_LS = "hanco-bxh-gui", BXH_CUP = "hanco-bxh-cup", BXH_GAP = 15 * 60e3, BXH_TTL = 180e3;
   var MEDAL = ["", "vàng", "bạc", "đồng"];
   HC.bxh = BXH;
   function bxhRef(d) { return fb.db.collection("hanco_bxh").doc(d || "tong"); }
@@ -2193,16 +2195,18 @@
   // ---------- HAI VAI CỦA QUẢN TRỊ VIÊN (người dùng yêu cầu 27/11/2026) ----------
   // Với người khác, quản trị viên hiện bằng 1 trong 2 vai: VAI QUẢN TRỊ (tên tq, mã = ADMIN_UID, ảnh hanco_anh/{ADMIN_UID}) hoặc VAI NGƯỜI HỌC
   // (tên th, mã riêng ngẫu nhiên hv trông như uid thường → không ai nối được với quản trị, ảnh hanco_anh/{hv}). Chọn theo từng chỗ:
-  // bx = bảng xếp hạng + cúp tuần (qt | hv | an = ẩn hẳn, xóa dòng), me = cách nhớ chung (qt | hv).
+  // bx = bảng xếp hạng + cúp tuần + giải đấu (hv | an = ẩn hẳn, xóa dòng — KHÔNG BAO GIỜ hiện vai quản trị, người dùng yêu cầu 27/11/2026;
+  // hiện hay ẩn là do quản trị tự chọn), me = cách nhớ chung (qt | hv).
   // MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều tính từ S của quản trị — đổi vai chỉ đổi tên + ảnh + mã dòng.
   // Cấu hình ở hanco_qt/vai (chỉ quản trị đọc; luật đọc hv để cho quản trị ghi ảnh / cách nhớ dưới mã đó) + bản trên máy VAI_LS. Không thuộc S.
   // Máy chưa đọc được cấu hình (VAI.ld) thì KHÔNG ghi dòng bảng xếp hạng / cách nhớ (tránh ghi nhầm vai).
-  var VAI_LS = "hanco-qt-vai", VAI_DEF = { tq: "Quản trị viên", th: "", hv: "", bx: "qt", me: "qt" }, VAI = { ld: 0, job: null, busy: false };
+  var VAI_LS = "hanco-qt-vai", VAI_DEF = { tq: "Quản trị viên", th: "", hv: "", bx: "hv", me: "qt" }, VAI = { ld: 0, job: null, busy: false };
   function vaiGet() {
     var o = jget(VAI_LS), r = {};
     Object.keys(VAI_DEF).forEach(function (k) { r[k] = o[k] != null && o[k] !== "" ? String(o[k]) : VAI_DEF[k]; });
-    if (!r.th || !r.hv) { if (r.bx === "hv") r.bx = "qt"; if (r.me === "hv") r.me = "qt"; } // chưa đặt tên vai người học → dùng vai quản trị
-    if (["qt", "hv", "an"].indexOf(r.bx) < 0) r.bx = "qt"; if (["qt", "hv"].indexOf(r.me) < 0) r.me = "qt";
+    if (r.bx === "qt") r.bx = "hv"; // bảng xếp hạng không còn vai quản trị (cấu hình cũ "qt" → vai người học)
+    if (!r.th || !r.hv) { if (r.bx === "hv") r.bx = "an"; if (r.me === "hv") r.me = "qt"; } // chưa đặt tên vai người học: bảng xếp hạng → ẩn; cách nhớ → vai quản trị
+    if (["hv", "an"].indexOf(r.bx) < 0) r.bx = "an"; if (["qt", "hv"].indexOf(r.me) < 0) r.me = "qt";
     return r;
   }
   function vaiPut(c) { var o = {}; Object.keys(VAI_DEF).forEach(function (k) { o[k] = c[k] || ""; }); lsSet(VAI_LS, JSON.stringify(o)); }
@@ -2228,7 +2232,7 @@
   }
   // mã của mình ở chỗ p ("bx" bảng xếp hạng | "me" cách nhớ): người học = uid; quản trị theo vai đã chọn; "" = quản trị đang ẩn khỏi bảng
   function myKey(p) { var u = fb.user; if (!u) return ""; if (!isAdmin()) return u.uid; var c = vaiGet(); return c[p] === "an" ? "" : c[p] === "hv" ? c.hv : u.uid; }
-  function myName(p) { if (!isAdmin()) return String((tk.prof && tk.prof.ten) || ""); var c = vaiGet(); return c[p] === "hv" ? c.th : c.tq; }
+  function myName(p) { if (!isAdmin()) return String((tk.prof && tk.prof.ten) || ""); var c = vaiGet(); return c[p] === "hv" ? c.th : p === "bx" ? c.th || "Bạn" : c.tq; }
   function isMine(uid) { var u = fb.user; if (!u || !uid) return false; return uid === u.uid || (isAdmin() && uid === vaiGet().hv); }
   function myKeys() { var u = fb.user; if (!u) return []; var c = isAdmin() ? vaiGet() : {}; return c.hv ? [u.uid, c.hv] : [u.uid]; }
   HC.myKey = myKey; HC.isMine = isMine;
@@ -2240,6 +2244,7 @@
     var sp = BADGES.filter(function (b) { return S.badges[b.id]; }).length; if (sp) bd.sp = sp;
     Object.keys(S.cup || {}).forEach(function (k) { var v = S.cup[k]; if (v >= 1 && v <= 3) cp[v - 1]++; });
     var rc = { xd: st.xd, xk: st.xk, ex: examBest(), hb: (S.rec && S.rec.hb) || 0, pf: pfSum() };
+    if (S.rec && S.rec.lg) rc.lg = S.rec.lg; // giải đấu cao nhất từng đạt (hồ sơ công khai)
     var row = { ten: bxhTen(), xp: xp, w: pv("w"), wp: pv("wp"), m: pv("m"), q: pv("q"), y: pv("y"), sc: +S.streak.c || 0, sd: +S.streak.d || 0, sm: streakMax(), lv: lvl().l, bd: bd, cp: cp, rc: rc, xm: st.xm, r: r0 };
     var me = myKey("bx") || fb.user.uid, av = avMyV(me), old = BXH.u === fb.user.uid && BXH.d && BXH.d.u && BXH.d.u[me]; // a = phiên bản ảnh đại diện (27/11/2026); quản trị: ảnh của vai đang hiện
     if (old && +old.a > av) av = +old.a;
@@ -2302,9 +2307,10 @@
     var ref = bxhRef();
     return ref.update.apply(ref, args).then(function () { stale.forEach(function (k) { delete U[k]; }); return true; }, function () { return false; });
   }
-  // bảng xếp hạng + cúp tuần: hiện vai quản trị (qt) / vai người học (hv) / ẩn (an)
+  // bảng xếp hạng + cúp tuần + giải đấu: hiện vai người học (hv) / ẩn (an) — không có vai quản trị
   function vaiSetBx(mode) {
     if (!isAdmin() || !VAI.ld) return Promise.reject(new Error("Chưa đọc được cài đặt vai. Kiểm tra mạng rồi thử lại."));
+    if (mode !== "hv" && mode !== "an") return Promise.reject(new Error("Bảng xếp hạng chỉ hiện vai người học hoặc ẩn."));
     var c = vaiGet(); if (mode === "hv" && !(c.th && c.hv)) return Promise.reject(new Error("Hãy đặt tên vai người học trước."));
     VAI.busy = true;
     return vaiRef().set({ bx: mode }, { merge: true }).then(function () {
@@ -2765,14 +2771,19 @@
   }
   function bxhCupGet(k) {
     if (BXH.cup[k] !== undefined) return Promise.resolve(BXH.cup[k]);
-    return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) BXH.cup[k] = c; return c; });
+    if (Date.now() - (BXH.cupNo[k] || 0) < 600e3) return Promise.resolve(null); // vừa đọc thấy chưa có: 10 phút sau mới đọc lại (đỡ tốn lượt đọc)
+    return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) { BXH.cup[k] = c; delete BXH.cupNo[k]; } else BXH.cupNo[k] = Date.now(); return c; });
   }
   function bxhCupMake(k) { // chốt cúp tuần k: đẩy dòng của mình lên trước, đọc bảng, ai tới trước thì chốt (đã có thì đọc bản đã chốt)
     return bxhSend(true).then(function () { return bxhLoad(true); }).then(function (T) {
       if (!T) return null;
       var e = bxhRank(T, k);
-      return bxhRef("c" + k).set({ k: k, e: e, t: firebase.firestore.FieldValue.serverTimestamp() }).then(function () { BXH.cup[k] = { k: k, e: e }; return BXH.cup[k]; },
-        function () { delete BXH.cup[k]; return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) BXH.cup[k] = c; return c; }); });
+      // giải đấu: tính luôn giải + nhóm tuần sau (g) từ giải tuần k và XP tuần k — cùng bản chốt cúp, ai tới trước thì chốt
+      return gdState(k, 0).then(null, function () { return null; }).then(function (st) {
+        var g = gdCompute(T, k, e, st);
+        return bxhRef("c" + k).set({ k: k, e: e, g: g, t: firebase.firestore.FieldValue.serverTimestamp() }).then(function () { BXH.cup[k] = { k: k, e: e, g: g }; delete BXH.cupNo[k]; return BXH.cup[k]; },
+          function () { delete BXH.cup[k]; delete BXH.cupNo[k]; return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) BXH.cup[k] = c; return c; }); });
+      });
     });
   }
   function cupApply(c) { // bản chốt có mình: ghi cúp (top 3) + hạng tuần cao nhất
@@ -2794,8 +2805,137 @@
     bxhCupGet(k).then(function (c) { return c || (Date.now() >= cupAt(k) ? bxhCupMake(k) : null); }).then(function (c) {
       if (!c || !fb.user || fb.user.uid !== uid) return;
       cupApply(c); lsSet(BXH_CUP, key);
+      return gdFix(c, 0).then(function (c2) { if (fb.user && fb.user.uid === uid) gdSeen(gdFrom(c2, weekStart(today()))); });
     }).catch(function () { });
   }
+  // ---------- GIẢI ĐẤU TUẦN (người dùng yêu cầu 27/11/2026) ----------
+  // 7 giải (GD). Mỗi tuần (thứ Hai 0 giờ → Chủ nhật) mỗi người thi XP tuần với những người CÙNG NHÓM của cùng giải. Nhóm 5–10 người, tự co giãn:
+  // giải có n người: n ≤ 10 → 1 nhóm, n > 10 → ⌈n/10⌉ nhóm chia đều; xáo lại mỗi tuần (băm mã người + số tuần → máy nào cũng ra một kết quả).
+  // Chốt cùng lúc cúp tuần (12 giờ trưa thứ Hai tuần sau): bản chốt hanco_bxh/c<k> có thêm g = {mã dòng: giải × 100 + nhóm} = giải + nhóm
+  // của TUẦN SAU (k + 7); nhóm 0 = đang ẩn (giữ nguyên giải, không thi). Thăng: top gdUp(n) của nhóm VÀ ≥ GD_MIN × số giải XP trong tuần;
+  // xuống: gdDown(n) người cuối (nhóm ≥ 5 người) + mọi người 0 XP cả tuần. Đồng không xuống, Kim cương không thăng.
+  // Người chưa có trong g (mới vào) → giải Đồng, nhóm theo băm mã. Máy bản cũ chốt mà thiếu g → máy mới tự bổ sung (luật cho thêm g đúng 1 lần).
+  // Người học luôn tham gia (không có công tắc ẩn); quản trị tham gia bằng vai người học hoặc ẩn. Giải cao nhất từng đạt: S.rec.lg.
+  // localStorage MỚI: hanco-giai-xem {u mã, k tuần, t giải} = giải đã báo (để báo thăng / xuống hạng 1 lần). Không thuộc S.
+  var GD = [null, { t: "Đồng", h: "銅" }, { t: "Bạc", h: "銀" }, { t: "Vàng", h: "金" }, { t: "Ngọc bích", h: "玉" }, { t: "Trân châu", h: "珠" }, { t: "Pha lê", h: "晶" }, { t: "Kim cương", h: "鑽" }];
+  var GD_N = 7, GD_MIN = 50, GD_MAX = 10, GD_LS = "hanco-giai-xem";
+  HC.GD = GD;
+  function gdMul(a, b) { return ((a & 0xffff) * b + ((((a >>> 16) * b) & 0xffff) << 16)) >>> 0; } // nhân 32 bit chính xác (ES5, không Math.imul)
+  function gdHash(s) { var h = 2166136261; s = String(s); for (var i = 0; i < s.length; i++) { h = (h ^ s.charCodeAt(i)) >>> 0; h = gdMul(h, 16777619); } h = (h ^ (h >>> 15)) >>> 0; h = gdMul(h, 2246822519); h = (h ^ (h >>> 13)) >>> 0; return h; }
+  function gdUp(n) { return n < 8 ? 1 : Math.max(2, Math.round(n * 0.2)); }
+  function gdDown(n) { return n < 5 ? 0 : n < 8 ? 1 : Math.max(2, Math.round(n * 0.2)); }
+  function gdNeed(t) { return GD_MIN * t; } // XP tối thiểu trong tuần để thăng khỏi giải t
+  // trạng thái giải của 1 tuần: {k tuần áp dụng, g {mã: giải×100+nhóm}, G {giải: số nhóm}, src tuần chốt (bản c<src>), old = sáng thứ Hai chưa chốt tuần trước}
+  function gdFrom(c, kNow) {
+    if (!c || !c.g || typeof c.g !== "object") return null;
+    var G = {}; Object.keys(c.g).forEach(function (u) { var v = +c.g[u] || 0, t = Math.floor(v / 100), n = v % 100; if (t >= 1 && t <= GD_N && n > (G[t] || 0)) G[t] = n; });
+    var k = +c.k + 7;
+    return { k: k, g: c.g, G: G, src: +c.k, old: kNow != null && k < kNow };
+  }
+  function gdOf(st, uid) { // {t giải, n nhóm} của 1 người theo trạng thái st (null = tuần đầu tiên: mọi người ở Đồng, 1 nhóm)
+    var v = st && st.g ? +st.g[uid] || 0 : 0, t = Math.floor(v / 100), n = v % 100;
+    if (t < 1 || t > GD_N) { t = 1; n = 0; }
+    if (!n) { var G = (st && st.G && st.G[t]) || 1; n = 1 + gdHash(uid + "|m" + (st ? st.k : 0)) % G; } // mới vào / vừa thôi ẩn → nhóm theo băm mã
+    return { t: t, n: n };
+  }
+  // tính g (giải + nhóm TUẦN SAU) khi chốt tuần k: T bảng (dòng + an), e XP tuần k [{u, v}] (bản chốt cúp), st trạng thái tuần k
+  function gdCompute(T, k, e, st) {
+    var U = (T && T.u) || {}, an = (T && T.an) || {}, xp = {}, grp = {}, nt = {}, hid = {}, out = {};
+    (e || []).forEach(function (x) { if (x && x.u) xp[x.u] = +x.v || 0; });
+    Object.keys(U).forEach(function (uid) {
+      if (!U[uid]) return;
+      var o = gdOf(st, uid);
+      if (an[uid]) { nt[uid] = o.t; hid[uid] = 1; return; } // đang ẩn: giữ nguyên giải, không thi
+      var key = o.t + "|" + o.n; (grp[key] = grp[key] || []).push({ u: uid, v: xp[uid] || 0, t: o.t });
+    });
+    Object.keys(grp).forEach(function (key) {
+      var L = grp[key].sort(function (a, b) { return b.v - a.v || (a.u < b.u ? -1 : 1); }), n = L.length, up = gdUp(n), dn = gdDown(n);
+      L.forEach(function (x, i) { x.rank = i && L[i - 1].v === x.v ? L[i - 1].rank : i + 1; });
+      L.forEach(function (x) {
+        var t = x.t;
+        if (t < GD_N && x.v > 0 && x.rank <= up && x.v >= gdNeed(t)) t++;
+        else if (t > 1 && (x.v <= 0 || x.rank > n - dn)) t--;
+        nt[x.u] = t;
+      });
+    });
+    var salt = "|g" + (k + 7);
+    for (var t = 1; t <= GD_N; t++) {
+      var ids = Object.keys(nt).filter(function (u) { return nt[u] === t && !hid[u]; }), nG = ids.length <= GD_MAX ? 1 : Math.ceil(ids.length / GD_MAX);
+      ids.sort(function (a, b) { var ha = gdHash(a + salt), hb = gdHash(b + salt); return ha - hb || (a < b ? -1 : 1); });
+      ids.forEach(function (u, i) { out[u] = t * 100 + (i % nG) + 1; });
+    }
+    Object.keys(hid).forEach(function (u) { out[u] = nt[u] * 100; });
+    return out;
+  }
+  HC.gdCompute = gdCompute; HC.gdOf = gdOf; HC.gdFrom = gdFrom; HC.gdUp = gdUp; HC.gdDown = gdDown;
+  // trạng thái giải của tuần k (để chốt tuần k): bản chốt c<k−7> (thiếu g thì bổ sung), không có thì lùi tối đa 3 tuần; không có gì → null
+  function gdState(k, depth) {
+    var lim = k - 21;
+    function look(j) {
+      if (j < lim) return Promise.resolve(null);
+      return bxhCupGet(j).then(function (c) { if (!c) return look(j - 7); return gdFix(c, (depth || 0) + 1).then(function (c2) { return gdFrom(c2) || look(j - 7); }); });
+    }
+    return look(k - 7);
+  }
+  // bản chốt thiếu g (máy bản cũ chốt) → tính từ XP trong bản chốt + bảng hiện tại rồi ghi bổ sung (luật: chỉ thêm g, đúng 1 lần)
+  function gdFix(c, depth) {
+    if (!c || (c.g && typeof c.g === "object") || depth > 2 || !bxhOk()) return Promise.resolve(c);
+    var k = +c.k;
+    return Promise.all([bxhLoad(false), gdState(k, depth)]).then(function (r) {
+      var g = gdCompute(r[0], k, c.e || [], r[1]);
+      return bxhRef("c" + k).update({ g: g }).then(function () { c.g = g; return c; }, function () {
+        return bxhRef("c" + k).get().then(function (s) { var d = s.exists ? s.data() : c; BXH.cup[k] = d; return d; }, function () { return c; });
+      });
+    }, function () { return c; });
+  }
+  // quản trị: tính lại giải tuần này từ bản chốt gần nhất (vd sau khi sửa dòng / ẩn người) — ghi đè g
+  function gdRedo() {
+    if (!isAdmin()) return Promise.reject(new Error("Chỉ quản trị"));
+    var k = cupWeek();
+    return bxhCupGet(k).then(function (c) {
+      if (!c) throw new Error("Tuần " + dateOf(k) + " chưa chốt — chưa có gì để tính lại.");
+      return Promise.all([bxhLoad(true), gdState(k, 0)]).then(function (r) {
+        var g = gdCompute(r[0], k, c.e || [], r[1]);
+        return bxhRef("c" + k).update({ g: g }).then(function () { c.g = g; BXH.gd = null; return Object.keys(g).length; });
+      });
+    });
+  }
+  // trạng thái giải TUẦN NÀY (màn Giải đấu): bản chốt tuần gần nhất đã chốt được; sáng thứ Hai chưa chốt → bản trước đó (đánh dấu old)
+  function gdNow() {
+    var W = weekStart(today()), k = cupWeek();
+    function back() { return gdState(k + 7, 0).then(function (st) { if (st) st.old = st.k < W; return st; }); }
+    return bxhCupGet(k).then(function (c) {
+      if (!c && Date.now() >= cupAt(k)) return bxhCupMake(k);
+      return c;
+    }).then(function (c) {
+      if (!c) return back();
+      return gdFix(c, 0).then(function (c2) { cupApply(c2); return gdFrom(c2, W) || back(); });
+    }).then(function (st) { BXH.gd = st || { k: W, g: {}, G: {}, src: 0, first: 1 }; return BXH.gd; });
+  }
+  // báo đổi giải (lần đầu thấy trạng thái tuần mới): thăng → khung chúc mừng + nhạc; xuống → lời nhắc nhẹ; ghi giải cao nhất vào S.rec.lg
+  function gdSeen(st) {
+    if (!st || !st.g || !fb.user) return;
+    var me = myKey("bx"); if (!me) return;
+    var o = gdOf(st, me), t = o.t, z = jget(GD_LS), has = !!st.g[me];
+    recNorm(S.rec); if (has && t > (S.rec.lg || 0)) { S.rec.lg = t; save(); }
+    if (z.u === me && +z.k >= st.k) return;
+    var prev = z.u === me ? +z.t || 0 : 0;
+    lsSet(GD_LS, JSON.stringify({ u: me, k: st.k, t: t }));
+    if (!prev || !has) return;
+    if (t > prev) { tbxAdd("gd:" + st.k, "tt", "Bạn được thăng lên giải " + GD[t].t + "!", "#xh"); gdUpShow(t); }
+    else if (t < prev) { tbxAdd("gd:" + st.k, "tt", "Tuần này bạn ở giải " + GD[t].t + ". Học đều để thăng hạng lại nhé!", "#xh"); toast("Tuần này bạn ở giải " + GD[t].t + " — học đều để thăng hạng lại nhé!"); }
+  }
+  function gdShield(t, cls) { // khiên giải t: chữ Hán ở giữa (tự vẽ)
+    var g = GD[t] || GD[1];
+    return '<span class="gds t' + t + (cls ? " " + cls : "") + '" title="Giải ' + esc(g.t) + '" aria-hidden="true"><svg viewBox="0 0 64 72" focusable="false"><path class="gs1" d="M32 2 60 12V36C60 54 47 64 32 70 17 64 4 54 4 36V12Z"/><path class="gs2" d="M32 9 53 17V36C53 50 43 58 32 63 21 58 11 50 11 36V17Z"/></svg><b class="han">' + g.h + "</b></span>";
+  }
+  function gdUpShow(t) {
+    var o = document.createElement("div"); o.className = "lvup gdup"; o.setAttribute("role", "status");
+    o.innerHTML = '<div class="lvcard">' + gdShield(t, "big") + "<b>Thăng hạng!</b><span>Bạn đã lên giải " + esc(GD[t].t) + ".</span></div>";
+    document.body.appendChild(o); setTimeout(function () { o.remove(); }, 3200);
+    tones([392, 523, 659, 784, 1047, 1319], 0.11, 0.07);
+  }
+  HC.gdUpShow = gdUpShow;
   // quản trị: tạo tài liệu bảng lần đầu; ẩn khi khóa (an = 2) / hiện khi mở khóa; bỏ dòng khi xóa người
   function bxhEnsure() { var r = bxhRef(); r.get().then(function (s) { if (!s.exists) return r.set({ u: {}, an: {}, rs: {} }); }).catch(function () { }); }
   function bxhMap(f, uid, v) { var o = {}, m = {}; m[uid] = v === undefined ? firebase.firestore.FieldValue.delete() : v; o[f] = m; return o; }
@@ -2829,9 +2969,13 @@
     out.forEach(function (x, i) { x.rank = i && out[i - 1].v === x.v && out[i - 1].s2 === x.s2 ? out[i - 1].rank : i + 1; });
     return out;
   }
-  function rkHTML(n) { return '<span class="rk' + (n <= 3 ? " rk" + n : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>"; }
-  function bxhLi(x, unit, sub) {
-    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.r.ten, x.me ? avMyV(x.uid) : +x.r.a || 0, "", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
+  // hạng: 1–3 = huy chương có ruy băng (vàng / bạc / đồng, tự vẽ SVG); từ 4 = số (xanh: nhóm thăng hạng, đỏ: nhóm xuống hạng)
+  function rkHTML(n, zone) {
+    if (n <= 3) return '<span class="rk mdl m' + n + '" role="img" aria-label="Hạng ' + n + '"><svg viewBox="0 0 32 40" aria-hidden="true" focusable="false"><path class="mr" d="M9 21 4.5 37l5.8-2.4 3.4 4.4L16 27z"/><path class="mr r2" d="M23 21l4.5 16-5.8-2.4-3.4 4.4L16 27z"/><circle class="mo" cx="16" cy="15" r="13"/><circle class="mi" cx="16" cy="15" r="9.6"/><text x="16" y="19.4" text-anchor="middle">' + n + "</text></svg></span>";
+    return '<span class="rk' + (zone ? " " + zone : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>";
+  }
+  function bxhLi(x, unit, sub, zone) {
+    return '<li class="xhr' + (x.me ? " me" : "") + (zone ? " z" + zone : "") + '">' + rkHTML(x.rank, zone) + avHTML(x.uid, x.r.ten, x.me ? avMyV(x.uid) : +x.r.a || 0, "xm", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + (x.me ? '<span class="vh"> (bạn)</span>' : "") + "</button>" + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
       (sub ? '<small class="muted">' + sub + "</small>" : "") + '</span><b class="num">' + fmt(x.v) + " " + unit + "</b></li>";
   }
   function bxhBoard(list, unit, subf) {
@@ -2860,12 +3004,54 @@
     var x = list.filter(function (y) { return y.uid === uid; })[0]; if (!x) return;
     if (x.me) return HC.go("xh-toi");
     var r = x.r, t0 = today(), bd = r.bd || {};
-    var pm = modal('<div class="row avpf">' + avHTML(uid, r.ten, +r.a || 0, "xl", true) + '<div><h2>' + esc(r.ten || "?") + '</h2><p class="sub">Hồ sơ công khai — chỉ có tên hiển thị, ảnh đại diện và số liệu học.</p></div></div><div class="qtst sm"><div><small>Cấp</small><b>' + (+r.lv || 1) + "</b></div><div><small>Tổng XP</small><b>" + fmt(+r.xp || 0) + "</b></div><div><small>Chuỗi hiện tại</small><b>" + (r.sd >= t0 - 1 ? +r.sc || 0 : 0) + " ngày</b></div><div><small>XP tuần này</small><b>" + fmt(bxhVal(r, "w", t0)) + "</b></div></div>" +
+    var gt = BXH.gd ? gdOf(BXH.gd, uid).t : 0, gl = +(r.rc || {}).lg || 0;
+    var pm = modal('<div class="row avpf">' + avHTML(uid, r.ten, +r.a || 0, "xl", true) + '<div><h2>' + esc(r.ten || "?") + '</h2><p class="sub">Hồ sơ công khai — chỉ có tên hiển thị, ảnh đại diện và số liệu học.</p></div></div>' + (gt ? '<p class="gdpf">' + gdShield(gt, "sm") + "<span>Giải <b>" + esc(GD[gt].t) + "</b>" + (gl > gt ? ' <small class="muted">· cao nhất từng đạt: ' + esc(GD[gl].t) + "</small>" : "") + "</span></p>" : "") + '<div class="qtst sm"><div><small>Cấp</small><b>' + (+r.lv || 1) + "</b></div><div><small>Tổng XP</small><b>" + fmt(+r.xp || 0) + "</b></div><div><small>Chuỗi hiện tại</small><b>" + (r.sd >= t0 - 1 ? +r.sc || 0 : 0) + " ngày</b></div><div><small>XP tuần này</small><b>" + fmt(bxhVal(r, "w", t0)) + "</b></div></div>" +
       '<h3>Cúp tuần</h3><p class="cups">' + cupHTML(r.cp) + '</p><h3>Huy hiệu</h3><div class="badges">' + BFAM.map(function (f) { return famHTML(f, +bd[f.id] || 0); }).join("") + "</div>" + (bd.sp ? '<p class="sub">+ ' + bd.sp + " thành tích đặc biệt</p>" : "") +
       "<h3>Kỷ lục</h3>" + recGrid(r.rc || {}, r) + '<div class="row acts"><button class="btn" data-x>Đóng</button></div>');
     avFill(pm.el);
   }
-  var XH_TABS = [["", "Tuần"], ["thang", "Tháng"], ["quy", "Quý"], ["nam", "Năm"], ["tat", "Toàn thời gian"], ["toi", "Hồ sơ của tôi"]];
+  var XH_TABS = [["", "Giải đấu"], ["tuan", "Tuần"], ["thang", "Tháng"], ["quy", "Quý"], ["nam", "Năm"], ["tat", "Toàn thời gian"], ["toi", "Hồ sơ của tôi"]];
+  // màn Giải đấu: khiên 7 giải, nhóm của mình trong tuần này, vạch nhóm thăng / xuống hạng
+  function gdDraw(box, T, st) {
+    var t0 = today(), W = weekStart(t0), me = fb.user ? myKey("bx") : "", an = (T && T.an) || {};
+    var rules = '<details class="card gdrule"><summary>Luật giải đấu</summary><ul class="qtls"><li>Có 7 giải: ' + GD.slice(1).map(function (g) { return g.t; }).join(" → ") + ". Ai mới tham gia bắt đầu ở giải Đồng.</li>" +
+      "<li>Mỗi tuần (từ 0 giờ thứ Hai tới hết Chủ nhật) bạn thi XP với những người cùng nhóm, cùng giải. Mỗi nhóm khoảng 5–10 người, đổi nhóm mỗi tuần.</li>" +
+      "<li>Chốt lúc 12 giờ trưa thứ Hai tuần sau. Nhóm 5–7 người: top 1 thăng hạng, 1 người cuối xuống hạng; nhóm 8–10 người: top 2 thăng, 2 người cuối xuống; nhóm dưới 5 người: top 1 thăng, không ai xuống.</li>" +
+      "<li>Muốn thăng hạng còn cần đủ XP tối thiểu trong tuần: " + GD.slice(1, GD_N).map(function (g, i) { return g.t + " " + gdNeed(i + 1); }).join(" · ") + " XP. Cả tuần không có XP thì xuống 1 giải (trừ giải Đồng).</li></ul></details>";
+    if (!me) {
+      box.innerHTML = '<div class="card"><p class="tkmsg">Bạn đang ẩn khỏi bảng xếp hạng nên không tham gia giải đấu. Giải của bạn được giữ nguyên. <a href="#caidat">Đổi ở Cài đặt → Hai vai của tôi</a>.</p></div>' + rules;
+      return [];
+    }
+    var mo = gdOf(st, me), t = mo.t, U = Object.assign({}, (T && T.u) || {}), L = [];
+    myKeys().forEach(function (k) { if (k !== me) delete U[k]; });
+    if (bxhOk()) U[me] = bxhRow();
+    Object.keys(U).forEach(function (uid) {
+      var r = U[uid]; if (!r || (an[uid] && uid !== me)) return;
+      var o = gdOf(st, uid); if (o.t !== t || o.n !== mo.n) return;
+      L.push({ uid: uid, r: r, v: bxhVal(r, "w", t0), me: uid === me, hid: !!an[uid] });
+    });
+    L.sort(function (a, b) { return b.v - a.v || String(a.r.ten).localeCompare(String(b.r.ten), "vi"); });
+    L.forEach(function (x, i) { x.rank = i && L[i - 1].v === x.v ? L[i - 1].rank : i + 1; });
+    var n = L.length, up = t < GD_N ? gdUp(n) : 0, dn = t > 1 ? gdDown(n) : 0, left = W + 7 - t0, meX = L.filter(function (x) { return x.me; })[0];
+    var h = '<div class="card gdhd"><div class="gdrow" role="list" aria-label="Các giải">' + GD.slice(1).map(function (g, i) { var k = i + 1; return '<span role="listitem" class="gdi' + (k === t ? " cur" : k < t ? " qua" : " khoa") + '">' + gdShield(k, k === t ? "big" : "") + (k === t ? "" : '<span class="vh">Giải ' + esc(g.t) + "</span>") + "</span>"; }).join("") + "</div>" +
+      "<h2>Giải " + esc(GD[t].t) + "</h2>" +
+      '<p class="sub">' + (t < GD_N ? (n > up ? "Lọt top " + up + " để thăng lên giải " + esc(GD[t + 1].t) : "Đứng đầu nhóm để thăng lên giải " + esc(GD[t + 1].t)) + " (cần ít nhất " + gdNeed(t) + " XP trong tuần)." : "Giải cao nhất — giữ vững phong độ nhé!") + "</p>" +
+      '<p class="gdleft">' + (left <= 1 ? "Ngày cuối tuần" : "Còn " + left + " ngày") + "</p>" +
+      (st && st.first ? '<p class="sub">Tuần đầu tiên của giải đấu: mọi người bắt đầu ở giải Đồng.</p>' : "") +
+      (st && st.old ? '<p class="sub">Đang chờ chốt tuần trước (12 giờ trưa thứ Hai) — giải và nhóm có thể đổi sau khi chốt.</p>' : "") +
+      (meX && meX.hid ? '<p class="sub">Bạn đang tạm ẩn khỏi bảng xếp hạng: người khác không thấy bạn.</p>' : "") + "</div>";
+    var rows = "";
+    L.forEach(function (x, i) {
+      if (dn && i === n - dn && i > 0) rows += '<li class="gdsep dn" aria-hidden="true"><span>▼ Nhóm xuống hạng ▼</span></li>';
+      var z = i < up ? "up" : (dn && i >= n - dn) || (t > 1 && x.v <= 0) ? "dn" : "";
+      rows += bxhLi(x, "XP", "", z);
+      if (up && i === up - 1 && i < n - 1) rows += '<li class="gdsep up" aria-hidden="true"><span>▲ Nhóm thăng hạng ▲</span></li>';
+    });
+    h += '<div class="card"><ol class="xhls gdls">' + rows + "</ol>" +
+      '<p class="sub gdft">Nhóm ' + n + " người · tính XP từ 0 giờ thứ Hai · chốt 12 giờ trưa thứ Hai tuần sau.</p></div>" + rules;
+    box.innerHTML = h;
+    return L;
+  }
   function xhKind(sec, sub) { return sec === "tat" ? (sub === "chuoi" ? "st" : sub === "huy" ? "bd" : "xp") : ({ thang: "m", quy: "q", nam: "y" }[sec] || "w"); }
   function vRank(v, args) {
     var sec = args[0] || "", sub = args[1] || "xp", ep = HC.epoch;
@@ -2878,6 +3064,13 @@
     var kind = xhKind(sec, sub);
     function draw(T) {
       if (HC.epoch !== ep) return;
+      if (sec === "") { // Giải đấu
+        var GL = gdDraw(box, T, BXH.gd);
+        avFill(box);
+        $$("[data-pf]", box).forEach(function (b) { b.onclick = function () { bxhProfile(b.getAttribute("data-pf"), GL); }; });
+        gdSeen(BXH.gd && BXH.gd.g && !BXH.gd.first ? BXH.gd : null);
+        return;
+      }
       var t0 = today(), h = "", L = bxhList(T, kind);
       if (sec === "tat") {
         h += '<nav class="qtnav xhsub" aria-label="Toàn thời gian">' + [["xp", "Tổng XP"], ["chuoi", "Chuỗi ngày"], ["huy", "Huy hiệu"]].map(function (a) { return '<a class="btn sm" href="#xh-tat-' + a[0] + '"' + (a[0] === sub ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + "</nav>";
@@ -2908,7 +3101,11 @@
     function load(force) {
       if (!bxhOk()) return fail();
       box.innerHTML = '<p class="sub">Đang tải…</p>';
-      bxhLoad(force).then(function (T) { if (!T) return fail(); draw(T); bxhSend(false); bxhCupCheck(); }, fail);
+      bxhLoad(force).then(function (T) {
+        if (!T) return fail();
+        if (sec !== "") { draw(T); bxhSend(false); bxhCupCheck(); return; }
+        return (force || !BXH.gd || BXH.gd.k !== weekStart(today()) || BXH.gd.old ? gdNow() : Promise.resolve(BXH.gd)).then(null, function () { return BXH.gd || { k: weekStart(today()), g: {}, G: {}, src: 0, first: 1 }; }).then(function (st) { BXH.gd = st; draw(BXH.d || T); bxhSend(false); bxhCupCheck(); });
+      }, fail);
     }
     $("#xhre", v).onclick = function () { load(true); };
     load(false);
@@ -2922,7 +3119,7 @@
       for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)", a: r ? +r.a || 0 : 0 }); }
       top.forEach(function (x, j) { x.rank = j && top[j - 1].v === x.v ? top[j - 1].rank : j + 1; });
       top = top.filter(function (x) { return x.rank <= 3; });
-      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (isMine(x.uid) ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, isMine(x.uid) ? avVer(x.uid) : x.a, "", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (isMine(x.uid) ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, isMine(x.uid) ? avVer(x.uid) : x.a, "xm", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
       avFill(el);
     }
     if (!fin) return show(bxhRank(T, k), "tạm tính — chốt lúc 12 giờ trưa thứ Hai");
@@ -2932,10 +3129,12 @@
     var rc = myRecs(), cups = Object.keys(S.cup || {}).map(Number).sort(function (a, b) { return b - a; }), cp = [0, 0, 0], L = lvl();
     cups.forEach(function (k) { cp[S.cup[k] - 1]++; });
     // quản trị: hiện vai đang dùng trên bảng xếp hạng (ẩn → vai quản trị) + lời nhắc đổi ở Cài đặt
-    var mk = fb.user ? myKey("bx") || fb.user.uid : "", mt = fb.user ? (isAdmin() ? (vaiGet().bx === "hv" ? vaiGet().th : vaiGet().tq) : avMyTen()) : "";
-    var vn = isAdmin() ? ' <a href="#caidat">Đổi ở Cài đặt → Hai vai của tôi</a>.' : "", vx = isAdmin() ? { qt: "Bảng xếp hạng đang hiện vai quản trị.", hv: "Bảng xếp hạng đang hiện vai người học.", an: "Bạn đang ẩn khỏi bảng xếp hạng." }[vaiGet().bx] + vn : "Ảnh đại diện và tên hiển thị là những gì người khác thấy.";
+    var mk = fb.user ? myKey("bx") || (isAdmin() && vaiGet().hv) || fb.user.uid : "", mt = fb.user ? (isAdmin() ? myName("bx") : avMyTen()) : "";
+    var vn = isAdmin() ? ' <a href="#caidat">Đổi ở Cài đặt → Hai vai của tôi</a>.' : "", vx = isAdmin() ? { hv: "Bảng xếp hạng đang hiện vai người học.", an: "Bạn đang ẩn khỏi bảng xếp hạng." }[vaiGet().bx] + vn : "Ảnh đại diện và tên hiển thị là những gì người khác thấy.";
     var me = fb.user ? '<div class="card"><div class="row avpf">' + avHTML(mk, mt, avMyV(mk), "xl", true) + '<div><h2>' + esc(mt) + '</h2><p class="sub">' + vx + "</p>" +
       (avCan() ? '<button class="btn sm" type="button" id="xhavc">' + (avMyV(mk) > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" : "") + "</div></div></div>" : "";
+    var gk = mk && BXH.gd ? gdOf(BXH.gd, mk).t : 0, glg = (S.rec && S.rec.lg) || 0;
+    if (fb.user && (gk || glg)) me += '<div class="card"><h2>Giải đấu</h2><p class="gdpf">' + gdShield(gk || glg, "sm") + "<span>" + (gk ? "Tuần này: giải <b>" + esc(GD[gk].t) + "</b>" : "Giải cao nhất: <b>" + esc(GD[glg].t) + "</b>") + (gk && glg > gk ? ' <small class="muted">· cao nhất từng đạt: ' + esc(GD[glg].t) + "</small>" : "") + ' · <a href="#xh">Xem nhóm của tôi</a></span></p></div>';
     box.innerHTML = me + '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
       (rc.hb && rc.hk ? '<p class="sub" style="margin-top:8px">Hạng tuần cao nhất đạt ở ' + perName("w", rc.hk).toLowerCase() + ".</p>" : "") + "</div>" +
       '<div class="card"><h2>Huy hiệu</h2><div class="bfams">' + BFAM.map(function (f) { return famHTML(f, null, true); }).join("") + "</div><h3>Thành tích đặc biệt</h3>" +
