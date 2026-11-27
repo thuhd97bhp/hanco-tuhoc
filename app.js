@@ -3238,7 +3238,7 @@
   function xpShow(n, el, newLv) {
     try {
       var pill = document.querySelector("#stats .pill.xp");
-      if (pill) { pill.textContent = fmt(S.xp) + " XP"; pill.classList.remove("bump"); void pill.offsetWidth; pill.classList.add("bump"); }
+      if (pill) { if (!statsXP()) pill.textContent = fmt(S.xp) + " XP"; pill.classList.remove("bump"); void pill.offsetWidth; pill.classList.add("bump"); }
       var now = Date.now(), r = null;
       if (xpBox && now - xpTm < 600 && document.body.contains(xpBox)) xpTot += n;
       else {
@@ -5203,6 +5203,17 @@
     };
     menuGonSync();
   })();
+  function scPgHTML(L) { // thanh tiến độ lên cấp (chỉ hiện ở thẻ tài khoản trên thanh dọc mở rộng)
+    var p = Math.max(0, Math.min(100, Math.round(L.cur * 100 / L.need)));
+    return '<div class="sc-pg" title="Còn ' + fmt(L.need - L.cur) + " XP lên cấp " + (L.l + 1) + " (" + fmt(L.cur) + " / " + fmt(L.need) + ')"><div class="sc-bar" role="progressbar" aria-label="Tiến độ lên cấp ' + (L.l + 1) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + p + '"><i style="width:' + p + '%"></i></div><span class="sc-lb">còn ' + fmt(L.need - L.cur) + " XP</span></div>";
+  }
+  function statsXP() { // cộng XP: cập nhật ô XP + cấp + thanh lên cấp tại chỗ (không dựng lại cả thẻ)
+    var x = document.querySelector("#stats .pill.xp .sn"); if (!x) return false;
+    var L = lvl(); x.textContent = fmt(S.xp);
+    var l = document.querySelector("#stats .pill.lv .sn"); if (l) l.textContent = L.l;
+    var g = document.querySelector("#stats .sc-pg"); if (g) g.outerHTML = scPgHTML(L);
+    return true;
+  }
   function renderStats() {
     if (!S) return;
     var L = lvl();
@@ -5212,11 +5223,17 @@
       if (!fb.user) cloud = '<button class="pill cl" id="fbin" style="cursor:pointer;color:var(--seal)" title="Đăng nhập Google một lần để tự đồng bộ giữa các máy">☁ <span class="lb">Đăng nhập</span></button>';
       else {
         var fst = fb.status === "syncing" ? "Đang lưu…" : fb.status === "offline" ? "Ngoại tuyến · đã lưu trên máy" : fb.status === "error" ? "Chưa lưu được" : "Đã đồng bộ";
-        cloud = '<span class="pill cl" title="' + esc(fst + " · " + (fb.user.email || "")) + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '">☁ <span class="lb">' + fst + "</span></span>";
+        cloud = '<span class="pill cl" title="' + esc(fst + " · " + (fb.user.email || "")) + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '"><span class="sci">☁</span> <span class="lb">' + fst + "</span></span>";
       }
     }
-    var mOpen = !!document.getElementById("avmenu");
-    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>" + tbxBtnHTML() + (fb.on && fb.user ? avTopHTML() : "");
+    var mOpen = !!document.getElementById("avmenu"), inU = fb.on && fb.user, ten = inU ? avMyTen() : "";
+    // THẺ TÀI KHOẢN (người dùng yêu cầu 27/11/2026): thanh dọc mở rộng → ảnh + tên + đồng bộ + chuông / 3 ô số liệu / thanh lên cấp.
+    // Chỗ khác (thanh trên, thanh hẹp): các khung .sc-* là display: contents → các viên như cũ (CSS ở index.html).
+    $("#stats").innerHTML = '<div class="sc-hd">' + (inU ? avTopHTML() + '<div class="sc-who" id="scwho"><b class="sc-n" title="' + esc(ten) + '">' + esc(ten) + "</b>" + cloud + "</div>" : cloud) + tbxBtnHTML() + "</div>" +
+      '<div class="sc-st"><span class="pill streak" title="Chuỗi ngày học liên tục"><span class="sv">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="sk">ngày liền</span></span>' +
+      '<span class="pill lv" title="' + esc(sync) + '"><span class="sv"><span class="sp">Cấp </span><span class="sn">' + L.l + '</span></span><span class="sk">Cấp</span></span>' +
+      '<span class="pill xp num"><span class="sv"><span class="sn">' + fmt(S.xp) + '</span><span class="sp"> XP</span></span><span class="sk">XP</span></span></div>' + scPgHTML(L);
+    var sw = $("#scwho"); if (sw) sw.onclick = function () { var b = $("#avbtn"); if (b) avMenu(b); };
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
     var tq = $("#tbxbtn"); if (tq) tq.onclick = tbxOpen;
     var ab = $("#avbtn"); if (ab) { ab.onclick = function () { avMenu(ab); }; avFill(ab); if (mOpen) ab.setAttribute("aria-expanded", "true"); }

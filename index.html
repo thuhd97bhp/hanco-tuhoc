@@ -75,6 +75,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
 .pill.streak { color: var(--warn); }
 .pill.lv { color: var(--accent); }
+/* khung thẻ tài khoản (renderStats): ngoài thanh dọc mở rộng thì "trong suốt" → các viên xếp như cũ, giữ thứ tự cũ bằng order */
+.sc-hd, .sc-who, .sc-st { display: contents; }
+.sc-n, .sc-pg, .stats .sk { display: none; }
+.stats .pill.cl { order: 1; } .stats .pill.streak { order: 2; } .stats .pill.lv { order: 3; } .stats .pill.xp { order: 4; } .stats .tbxbtn { order: 5; } .stats .avtop { order: 6; }
 /* ảnh đại diện (27/11/2026): vòng tròn ảnh (chưa có ảnh → chữ cái đầu trên nền màu), nút ảnh trên thanh → menu tài khoản, khung xem ảnh to */
 .av { --avs: 34px; flex: none; display: inline-grid; place-items: center; width: var(--avs); height: var(--avs); border-radius: 50%; overflow: hidden;
   background: var(--avbg, var(--accent)) center / cover no-repeat; color: #fff; font-weight: 700; font-size: calc(var(--avs) * 0.44); line-height: 1;
@@ -927,6 +931,34 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
   html.menu-gon nav.menu .msrt { flex-direction: column; justify-content: center; gap: 1px; padding: 5px 2px; font-size: 0.64rem; line-height: 1.15; text-align: center; }
   html.menu-gon nav.menu .msrt .ic { width: auto; }
   html.menu-gon nav.menu .msrt span:not(.ic) { display: none; } /* thanh hẹp: chỉ ký hiệu ⇅ (có title), đỡ tốn chiều cao */
+}
+/* THẺ TÀI KHOẢN cuối thanh dọc MỞ RỘNG (người dùng yêu cầu 27/11/2026): ảnh + tên + tình trạng đồng bộ + chuông / 3 ô số liệu bằng nhau /
+   thanh tiến độ lên cấp. Thanh hẹp / thu gọn / thanh trên: giữ các viên như cũ (khung .sc-* display: contents ở trên). */
+@media (min-width: 1000px) and (orientation: landscape) {
+  html:not(.menu-gon) .topbar .stats { display: grid; gap: 8px; margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
+  html:not(.menu-gon) .topbar .stats .sc-hd > *, html:not(.menu-gon) .topbar .stats .sc-who > *, html:not(.menu-gon) .topbar .stats .sc-st > * { order: 0; }
+  html:not(.menu-gon) .sc-hd { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  html:not(.menu-gon) .sc-hd .avtop { margin: -3px; }
+  html:not(.menu-gon) .sc-hd .avtop .av { --avs: 36px; }
+  html:not(.menu-gon) .sc-hd .tbxbtn { margin: 0 -4px 0 0; }
+  html:not(.menu-gon) .sc-hd > .pill.cl { flex: 1; justify-content: center; padding: 6px 10px; } /* chưa đăng nhập: nút Đăng nhập cả hàng */
+  html:not(.menu-gon) .sc-who { flex: 1; min-width: 0; display: grid; line-height: 1.3; cursor: pointer; }
+  html:not(.menu-gon) .sc-n { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; font-weight: 700; color: var(--ink); }
+  html:not(.menu-gon) .topbar .sc-who .pill.cl { display: block; flex: none; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.76rem; font-weight: 600; line-height: 1.3; }
+  html:not(.menu-gon) .sc-who .pill.cl .sci { display: none; }
+  html:not(.menu-gon) .sc-who .pill.cl::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+  html:not(.menu-gon) .sc-st { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 8px; border-top: 1px solid var(--line); }
+  html:not(.menu-gon) .sc-st .pill { display: grid; justify-items: center; gap: 1px; min-width: 0; padding: 0 2px; border: 0; border-radius: 0; background: none; }
+  html:not(.menu-gon) .sc-st .pill + .pill { border-left: 1px solid var(--line); }
+  html:not(.menu-gon) .sc-st .pill.xp { color: var(--ink); }
+  html:not(.menu-gon) .sc-st .pill.xp.bump { color: var(--gold); }
+  html:not(.menu-gon) .sc-st .sv { font-size: 1rem; font-weight: 800; line-height: 1.2; }
+  html:not(.menu-gon) .sc-st .sp { display: none; }
+  html:not(.menu-gon) .stats .sk { display: block; font-size: 0.7rem; font-weight: 600; color: var(--muted); line-height: 1.2; }
+  html:not(.menu-gon) .sc-pg { display: flex; align-items: center; gap: 8px; }
+  html:not(.menu-gon) .sc-bar { flex: 1; min-width: 0; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  html:not(.menu-gon) .sc-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.4s ease-out; }
+  html:not(.menu-gon) .sc-lb { flex: none; font-size: 0.7rem; font-weight: 600; color: var(--muted); line-height: 1.2; font-variant-numeric: tabular-nums; }
 }
 /* máy tính bảng ngang thấp (1280×590): 12 mục vẫn vừa thanh dọc không phải cuộn */
 @media (min-width: 640px) and (orientation: landscape) and (max-height: 660px) {
