@@ -388,7 +388,7 @@
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () {
-        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub(); avmBoot();
+        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub(); avmBoot(); try { tbxSao(false); } catch (e) { }
         if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
       });
   }
@@ -1068,6 +1068,7 @@
     if (JSON.stringify(CHG.amx || []) !== oam) setTimeout(function () { try { avmBoot(true); } catch (e) { } }, 0); // ảnh mặc định bị xóa / khôi phục
     lsSet(CH_LS, JSON.stringify({ t: Date.now(), u: fb.user ? fb.user.uid : "", d: CHG }));
     if (!quiet && old !== JSON.stringify(CHG)) softRefresh();
+    setTimeout(function () { try { tbxScan(); } catch (e) { } }, 0); // thông báo chung / ngày thi chung mới → vào mục Thông báo
   }
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") chungLoad(); });
   function thiChung(k, t0) { var e = +((CHG.thi || {})[k]) || 0; return e > t0 ? e : 0; }
@@ -2145,8 +2146,8 @@
   function checkBadges() {
     if (!D) return;
     var got = [], t = today();
-    BFAM.forEach(function (f) { famLv(f).forEach(function (x, i) { if (x.on && !S.badges[x.id]) { S.badges[x.id] = t; got.push(f.t + " cấp " + (i + 1)); } }); });
-    BADGES.forEach(function (b) { if (!S.badges[b.id] && b.ok()) { S.badges[b.id] = t; got.push(b.t); } });
+    BFAM.forEach(function (f) { famLv(f).forEach(function (x, i) { if (x.on && !S.badges[x.id]) { S.badges[x.id] = t; got.push(f.t + " cấp " + (i + 1)); tbxAdd("bd:" + x.id, "tt", "Bạn nhận huy hiệu mới: " + f.t + " cấp " + (i + 1) + "!", "#xh-toi"); } }); });
+    BADGES.forEach(function (b) { if (!S.badges[b.id] && b.ok()) { S.badges[b.id] = t; got.push(b.t); tbxAdd("bd:" + b.id, "tt", "Bạn nhận huy hiệu mới: " + b.t + "!", "#xh-toi"); } });
     if (got.length === 1) toast("Huy hiệu mới: " + got[0]);
     else if (got.length) toast("Nhận " + got.length + " huy hiệu mới — xem ở Xếp hạng → Hồ sơ của tôi");
   }
@@ -2781,7 +2782,7 @@
     if (i < 0) return;
     var rank = 1; while (rank <= i && c.e[rank - 1].v > c.e[i].v) rank++; // đồng XP → đồng hạng
     var ch = false; recNorm(S.rec);
-    if (rank <= 3 && !(S.cup[k] <= rank)) { S.cup[k] = rank; ch = true; toast("Bạn đạt cúp " + MEDAL[rank] + " tuần " + dateOf(k) + " – " + dateOf(k + 6) + "!"); }
+    if (rank <= 3 && !(S.cup[k] <= rank)) { S.cup[k] = rank; ch = true; toast("Bạn đạt cúp " + MEDAL[rank] + " tuần " + dateOf(k) + " – " + dateOf(k + 6) + "!"); tbxAdd("cup:" + k + ":" + rank, "tt", "Bạn đạt cúp " + MEDAL[rank] + " tuần " + dateOf(k) + " – " + dateOf(k + 6) + "!", "#xh-toi"); }
     if (!S.rec.hb || rank < S.rec.hb) { S.rec.hb = rank; S.rec.hk = k; ch = true; }
     if (ch) { save(); checkBadges(); renderStats(); }
   }
@@ -3262,6 +3263,7 @@
     try { var r = visEl(el); if (!r || !xpBox || Date.now() - xpTm > 600) return; xpBox.className = "xpfly go"; xpBox.style.left = Math.max(8, Math.min(innerWidth - 90, r.left + r.width / 2 - 34)) + "px"; xpBox.style.top = Math.max(8, r.top - 8) + "px"; } catch (e) { }
   }
   function lvUp(L) {
+    tbxAdd("lv:" + L, "tt", "Chúc mừng bạn đã lên cấp " + L + "!", "#xh-toi");
     var o = document.createElement("div"); o.className = "lvup"; o.setAttribute("role", "status");
     o.innerHTML = '<div class="lvcard"><div class="lvs">★ ★ ★</div><b>Lên cấp ' + L + '!</b><span>Giỏi lắm, học tiếp nào!</span></div>';
     document.body.appendChild(o); setTimeout(function () { o.remove(); }, 2600);
@@ -3745,7 +3747,7 @@
   // Đăng: S.meo[id] = [html, ms, pub]; ms > pub → đăng 30 giây sau lần sửa cuối, ngay khi bấm Xong / đóng khung / sau mỗi lần đồng bộ
   // (gắn tài khoản, ẩn màn hình, có mạng lại) / rời app. Danh sách chỉ tải khi bấm "Cách nhớ của mọi người", giữ 5 phút.
   // Cách nhớ của người khác LUÔN hiện qua noteClean. Viết / chấm KHÔNG cộng XP (người dùng duyệt).
-  var MEO_GAP = 30000, MEO_TTL = 300000, MEO_BAO = "hanco-meo-bao", MEO_LY = ["Sai kiến thức", "Không liên quan tới mục này", "Lời lẽ không phù hợp", "Quảng cáo / spam", "Khác"];
+  var MEO_GAP = 30000, MEO_TTL = 300000; // "hanco-meo-bao" (dấu đã báo) bỏ từ 27/11/2026 — người học không còn nút báo cáo
   var MEO = { tm: 0, busy: false, gone: {}, cache: {} };
   function meoOk() { return bxhOk() && !!fb.db; }
   function meoCol() { return fb.db.collection("hanco_meo"); }
@@ -3843,12 +3845,11 @@
       return p.then(function () { return r[0].size; });
     });
   }
-  function meoBao() { return jget(MEO_BAO); }
   function meoItemHTML(x, mine, my) {
-    var bao = !mine && fb.user && meoBao()[x.k + "_" + fb.user.uid], adm = isAdmin() && !isMine(x.uid); // dấu "đã báo" theo từng tài khoản (khóa = mã báo cáo)
+    var adm = isAdmin() && !isMine(x.uid); // 27/11/2026 (người dùng yêu cầu): bỏ nút "Báo không phù hợp" → dòng khích lệ chấm sao
     var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd">' + (x.uid ? (mine ? avHTML(x.uid, x.ten, avVer(x.uid), "sm", true) : avSlot(x.uid, x.ten)) : "") + '<b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
-    if (bao && !x._show) return h + '<div class="row meo-ft"><span class="muted">Bạn đã báo cách nhớ này cho quản trị viên.</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-mact="hien">Hiện</button></div></div>';
     h += '<div class="nt">' + noteClean(x.h || "") + "</div>";
+    if (!mine && !my) h += '<p class="meo-khich">👉 Hãy cho tôi biết đánh giá của bạn về mẹo này nếu thấy nó hữu ích nhé</p>';
     h += '<div class="row meo-ft">';
     if (!mine) {
       h += '<span class="stars" role="group" aria-label="Chấm sao cho cách nhớ này">';
@@ -3856,7 +3857,6 @@
       h += "</span>" + (my ? '<span class="muted nsm">bạn chấm ' + my + " sao</span>" : "");
     } else h += '<span class="muted nsm">Không chấm được cách nhớ của chính mình</span>';
     h += '<span class="spacer"></span>';
-    if (!mine) h += bao ? '<span class="muted nsm">Đã báo</span>' : '<button type="button" class="btn sm ghost" data-mact="bao">Báo không phù hợp</button>';
     if (adm && !mine) h += '<button type="button" class="btn sm bad" data-mact="qxoa">Xóa (quản trị)</button>';
     return h + '</div><div class="meo-form"></div></div>';
   }
@@ -3872,8 +3872,8 @@
     var it = ITEM[id]; if (!it) return;
     closePop();
     var SEL = '[data-note="' + id + '"][data-nk="meo"]', prev = $(SEL + " .ned"), back = [], opened = false;
-    var el = plSheet('<h2 style="margin:0 40px 4px 0">Cách nhớ · <span class="han">' + esc(itemTitle(it)) + '</span></h2><p class="sub">Cách nhớ mọi người chia sẻ, hay nhất ở trên. Bấm sao để chấm (1–5, đổi được; bấm lại sao đang chọn để bỏ).</p>' +
-      '<div id="meoapp"></div><div id="meoed"></div><div class="meo-list" id="meol"><p class="sub">Đang tải…</p></div>' +
+    var el = plSheet('<h2 style="margin:0 40px 4px 0">Cách nhớ · <span class="han">' + esc(itemTitle(it)) + '</span></h2><p class="sub">Cách nhớ mọi người chia sẻ. Bấm sao để chấm, bấm lại sao đang chọn để bỏ.</p>' +
+      '<div id="meoed"></div><div class="meo-list" id="meol"><p class="sub">Đang tải…</p></div>' +
       '<div class="row acts"><button type="button" class="btn primary" id="meow">✎ ' + (noteOf(id, "meo") ? "Sửa cách nhớ của bạn" : "Viết cách nhớ của bạn") + '</button><span class="spacer"></span><button type="button" class="btn ghost" id="meor">Tải lại</button></div>', function () {
         if (!opened) { if (prev && prev.isConnected) noteRestore(prev); return; } // đang soạn ở dưới → gõ tiếp
         noteFlush(); meoPub(true); refreshNotes(id, null, "meo");
@@ -3881,9 +3881,6 @@
       });
     el.classList.add("meosheet");
     var list = el.querySelector("#meol"), L = null, uid = fb.user ? fb.user.uid : "";
-    if (it.type === "c" || it.type === "r") giaiData(it.key).then(function (j) {
-      if (j && j.mn && el.isConnected) el.querySelector("#meoapp").innerHTML = '<div class="meo-it app"><div class="row meo-hd"><b>Mẹo nhớ của app</b><span class="spacer"></span><span class="nb">tự soạn, không có trong tài liệu · không chấm sao</span></div><div class="nt">' + hanTxt(j.mn) + "</div></div>";
-    }, function () { });
     function draw() {
       if (!L) return;
       var my = S.meo[id], mk = myKey("me"), mineDoc = L.filter(function (x) { return x.uid === mk; })[0];
@@ -3916,7 +3913,7 @@
       try { w.scrollIntoView({ block: "nearest" }); } catch (e) { }
     };
     list.addEventListener("click", function (e) {
-      var b = e.target.closest("[data-star],[data-mact],[data-ly]"); if (!b || !L) return;
+      var b = e.target.closest("[data-star],[data-mact]"); if (!b || !L) return;
       var card = b.closest("[data-mk]"), k = card && card.getAttribute("data-mk"), x = L.filter(function (y) { return y.k === k; })[0]; if (!x) return;
       var a = b.getAttribute("data-mact");
       if (b.hasAttribute("data-star")) {
@@ -3926,22 +3923,8 @@
         $$("[data-star]", card).forEach(function (s) { s.disabled = true; });
         meoCol().doc(k).update(o).then(function () {
           x.r = x.r || {}; if (v === cur) delete x.r[uid]; else x.r[uid] = v;
-          toast(v === cur ? "Đã bỏ chấm" : "Đã chấm " + v + " sao"); draw();
+          toast(v === cur ? "Đã bỏ chấm" : "Cảm ơn bạn đã chấm " + v + " sao!"); draw();
         }, function (er) { toast("Chưa chấm được (" + tkErr(er) + ")"); draw(); });
-      } else if (a === "hien") { x._show = 1; draw(); }
-      else if (a === "bao") {
-        var f = card.querySelector(".meo-form");
-        f.innerHTML = '<div class="meo-bao"><div class="facts"><span class="k">Báo cách nhớ này cho quản trị viên</span></div><div class="lyck">' + MEO_LY.map(function (t, i) { return '<label><input type="radio" name="ly-' + esc(k) + '" value="' + i + '"' + (i ? "" : " checked") + "> " + esc(t) + "</label>"; }).join("") + '</div><input type="text" maxlength="200" placeholder="Ghi thêm (không bắt buộc)" aria-label="Ghi thêm lý do"><div class="row"><span class="muted nsm">Người viết không biết ai đã báo.</span><span class="spacer"></span><button type="button" class="btn sm" data-mact="thoi">Thôi</button><button type="button" class="btn sm bad" data-mact="gui">Gửi báo cáo</button></div></div>';
-        b.disabled = true;
-      } else if (a === "thoi") { draw(); }
-      else if (a === "gui") {
-        var fm = card.querySelector(".meo-bao"), ck = fm.querySelector("input[type=radio]:checked"), more = fm.querySelector("input[type=text]").value.trim().slice(0, 200);
-        var ly = MEO_LY[ck ? +ck.value : 0] + (more ? ": " + more : "");
-        b.disabled = true; b.textContent = "Đang gửi…";
-        var mark = function () { var m = meoBao(); m[k + "_" + uid] = Date.now(); lsSet(MEO_BAO, JSON.stringify(m)); draw(); };
-        fb.db.collection("hanco_bao").doc(k + "_" + uid).set({ m: k, id: id, a: x.uid, u: uid, ly: ly, t: firebase.firestore.FieldValue.serverTimestamp() }).then(function () { toast("Đã gửi báo cáo cho quản trị viên. Cảm ơn bạn!"); mark(); }, function (er) {
-          if (er && er.code === "permission-denied") { toast("Có thể bạn đã báo cách nhớ này rồi."); mark(); } else { toast("Chưa gửi được (" + tkErr(er) + ")"); draw(); }
-        });
       } else if (a === "qxoa") {
         if (!b.classList.contains("sure")) { b.classList.add("sure"); b.textContent = "Bấm lần nữa để xóa"; setTimeout(function () { if (b.isConnected) { b.classList.remove("sure"); b.textContent = "Xóa (quản trị)"; } }, 4000); return; }
         b.disabled = true;
@@ -3951,6 +3934,135 @@
     load(false);
   }
   HC.meoSheet = meoSheet;
+
+  // ---------- THÔNG BÁO (người dùng yêu cầu 27/11/2026) ----------
+  // Nút chuông cạnh nút ảnh (thanh trên / thanh dọc) + khung danh sách. Lưu RIÊNG từng máy, theo tài khoản, KHÔNG thuộc S:
+  // localStorage "hanco-tb-<uid | khach>" = {L: [{k khóa riêng, t ms, g loại (tt thành tích · vl việc cần làm · qt thông báo chung · sao), m chữ,
+  //   h địa chỉ #… hoặc "meo:<id mục>", r 1 = đã đọc}] (mới nhất trước, giữ TBX_MAX), s {mã cách nhớ: {mã người chấm: sao}} mốc sao đã thấy,
+  //   sk mã vai lúc lấy mốc, sc ms lần đọc sao gần nhất}. Trùng khóa → bỏ qua (không báo 2 lần).
+  // Sao: KHÔNG có Cloud Functions → máy tự đọc cách nhớ của mình (hanco_meo where uid == myKey("me")) tối đa 1 lần/giờ; lượt chấm MỚI hoặc
+  //   vừa nâng lên 4–5 sao → báo (1–3 sao không báo; không nói tên người chấm). Lần đầu (hoặc đổi vai) chỉ ghi mốc, không báo dồn.
+  var TBX_MAX = 50, TBX_SAO_GAP = 3600e3, TBX_IC = { tt: "🏆", vl: "📌", qt: "📣", sao: "⭐" };
+  function tbxKey() { return "hanco-tb-" + (fb.user ? fb.user.uid : "khach"); }
+  function tbxGet() { var o = jget(tbxKey()); if (!o.L || !o.L.push) o.L = []; return o; }
+  function tbxPut(o) { if (o.L.length > TBX_MAX) o.L = o.L.slice(0, TBX_MAX); lsSet(tbxKey(), JSON.stringify(o)); tbxBadge(); }
+  function tbxAdd(k, g, m, h) {
+    try {
+      var o = tbxGet(); if (o.L.some(function (x) { return x.k === k; })) return false;
+      o.L.unshift({ k: k, t: Date.now(), g: g, m: m, h: h || "" }); tbxPut(o);
+      if (tbxOpenEl && tbxOpenEl.isConnected) { tbxSeen[k] = 1; o = tbxGet(); o.L[0].r = 1; tbxPut(o); tbxDraw(); }
+      return true;
+    } catch (e) { return false; }
+  }
+  HC.tbxAdd = tbxAdd;
+  function tbxUnread() { return tbxGet().L.filter(function (x) { return !x.r; }).length; }
+  function tbxBtnHTML() {
+    var n = tbxUnread();
+    return '<button type="button" class="tbxbtn" id="tbxbtn" aria-haspopup="dialog" aria-label="Thông báo' + (n ? ": " + n + " chưa đọc" : "") + '" title="Thông báo"><span aria-hidden="true">🔔</span>' + (n ? '<span class="tbxn num">' + (n > 9 ? "9+" : n) + "</span>" : "") + "</button>";
+  }
+  function tbxBadge() {
+    var b = document.getElementById("tbxbtn"); if (!b) return;
+    var n = tbxUnread(), s = b.querySelector(".tbxn");
+    b.setAttribute("aria-label", "Thông báo" + (n ? ": " + n + " chưa đọc" : ""));
+    if (!n) { if (s) s.remove(); return; }
+    if (!s) { s = document.createElement("span"); s.className = "tbxn num"; b.appendChild(s); }
+    s.textContent = n > 9 ? "9+" : n;
+  }
+  function tbxDay(t) { return Math.floor((t - new Date(t).getTimezoneOffset() * 60000) / 864e5); }
+  function tbxAgo(t) {
+    var m = Math.floor((Date.now() - t) / 60000);
+    if (m < 1) return "vừa xong";
+    if (m < 60) return m + " phút trước";
+    if (m < 1440) return Math.floor(m / 60) + " giờ trước";
+    var d = today() - tbxDay(t);
+    return d <= 1 ? "hôm qua" : d < 7 ? d + " ngày trước" : dateY(tbxDay(t));
+  }
+  var tbxOpenEl = null, tbxSeen = {};
+  function tbxDraw() {
+    var el = tbxOpenEl; if (!el || !el.isConnected) return;
+    var L = tbxGet().L, box = el.querySelector("#tbxl");
+    box.innerHTML = L.length ? L.map(function (x, i) {
+      var nw = !x.r || tbxSeen[x.k];
+      return '<button type="button" class="tbx-it' + (nw ? " moi" : "") + (x.h ? "" : " tinh") + '" data-tbi="' + i + '"><span class="tbx-ic" aria-hidden="true">' + (TBX_IC[x.g] || "🔔") + '</span><span class="tbx-m"><span>' + hanTxt(x.m || "") + '</span><small class="muted">' + tbxAgo(x.t) + (nw ? " · mới" : "") + "</small></span></button>";
+    }).join("") : '<p class="sub">Chưa có thông báo nào. Thành tích, việc cần làm và lượt chấm 4–5 sao cho cách nhớ của bạn sẽ hiện ở đây.</p>';
+    el.querySelector("#tbxx").style.display = L.length ? "" : "none";
+  }
+  function tbxOpen() {
+    closePop();
+    var o = tbxGet(); tbxSeen = {};
+    o.L.forEach(function (x) { if (!x.r) { tbxSeen[x.k] = 1; x.r = 1; } }); // mở khung = đã đọc (mục mới vẫn tô nổi tới khi đóng)
+    tbxPut(o);
+    tbxOpenEl = plSheet('<h2 style="margin:0 40px 4px 0">Thông báo</h2><div class="tbx-list" id="tbxl"></div>' +
+      '<div class="row acts"><span class="spacer"></span><button type="button" class="btn ghost" id="tbxx">Xóa hết</button></div>', function () { tbxOpenEl = null; tbxSeen = {}; });
+    tbxOpenEl.classList.add("tbxsheet");
+    tbxDraw();
+    tbxOpenEl.querySelector("#tbxl").addEventListener("click", function (e) {
+      var b = e.target.closest("[data-tbi]"); if (!b) return;
+      var x = tbxGet().L[+b.getAttribute("data-tbi")]; if (!x || !x.h) return;
+      closeSheet();
+      if (x.h.indexOf("meo:") === 0) { if (ITEM[x.h.slice(4)]) meoSheet(x.h.slice(4)); }
+      else if (location.hash === x.h) route(); else location.hash = x.h;
+    });
+    tbxOpenEl.querySelector("#tbxx").onclick = function () {
+      var b = this;
+      if (!b.classList.contains("sure")) { b.classList.add("sure"); b.textContent = "Bấm lần nữa để xóa hết"; setTimeout(function () { if (b.isConnected) { b.classList.remove("sure"); b.textContent = "Xóa hết"; } }, 4000); return; }
+      var o = tbxGet(); o.L = []; tbxPut(o); tbxDraw();
+    };
+    tbxSao(false);
+  }
+  HC.tbxOpen = tbxOpen;
+  // việc cần làm + thông báo chung + ngày thi (tính trên máy, không đọc/ghi Firestore); gọi khi mở app, hiện lại màn hình, mỗi 10 phút
+  function tbxScan() {
+    if (!S || !D) return;
+    try {
+      var t0 = today(), hr = new Date().getHours(), tb = CHG.tb;
+      if (tb && tb.h && tb.t) { var s = String(tb.h).replace(/\s+/g, " ").trim(); tbxAdd("qt:" + tb.t, "qt", "Thông báo chung: " + (s.length > 160 ? s.slice(0, 157) + "…" : s), "#home"); }
+      thiRows(t0).forEach(function (r) { tbxAdd("thic:" + r.k + ":" + r.e, "vl", "Quản trị viên đặt ngày thi chung " + r.T.name + ": " + dateY(r.e) + ". Bấm để xem và áp dụng cho lộ trình của bạn.", "#home"); });
+      TERMS.forEach(function (T) {
+        var p = S.plans[T.k]; if (!p || p.x || t0 > p.e) return;
+        var left = p.e - t0; if ([7, 3, 1, 0].indexOf(left) < 0) return;
+        tbxAdd("thi:" + T.k + ":" + p.e + ":" + left, "vl", left ? "Còn " + left + " ngày nữa là thi " + T.name + " (" + dateY(p.e) + "). Nhớ làm đề thi thử và ôn phần còn yếu nhé!" : "Hôm nay thi " + T.name + ". Chúc bạn thi thật tốt!", left && T.exam ? "#thi-" + T.exam : "#home");
+      });
+      var dr = due("r").length, dw = due("w").length;
+      if (dr || dw) tbxAdd("on:" + t0, "vl", "Hôm nay có " + [dr && dr + " thẻ cần ôn", dw && dw + " chữ / từ cần viết lại"].filter(Boolean).join(" và ") + ".", "#home");
+      var sc = S.streak.d === t0 - 1 ? S.streak.c : 0;
+      if (hr >= 18 && sc >= 2) tbxAdd("chuoi:" + t0, "vl", "Hôm nay bạn chưa học. Ôn vài thẻ để giữ chuỗi " + sc + " ngày nhé!", "#home");
+    } catch (e) { }
+    tbxSao(false);
+  }
+  HC.tbxScan = tbxScan;
+  function tbxSao(force) {
+    try {
+      if (!fb.user || !meoOk()) return;
+      var mk = myKey("me"); if (!mk) return;
+      var o = tbxGet(); if (!force && Date.now() - (+o.sc || 0) < TBX_SAO_GAP) return;
+      o.sc = Date.now(); tbxPut(o);
+      var key = tbxKey();
+      meoCol().where("uid", "==", mk).get().then(function (q) {
+        if (tbxKey() !== key) return; // đã đổi tài khoản trong lúc đọc
+        var o = tbxGet(), first = !o.s || o.sk !== mk, s0 = o.s || {}, s1 = {}, got = [];
+        q.forEach(function (d) {
+          var x = d.data(), r = x.r || {}, old = s0[d.id] || {}, keep = {};
+          Object.keys(r).forEach(function (u) {
+            var v = +r[u] || 0; if (v < 1 || v > 5) return; keep[u] = v;
+            if (!first && v >= 4 && v > (+old[u] || 0)) got.push({ k: "sao:" + d.id + ":" + u + ":" + v, v: v, id: x.id });
+          });
+          s1[d.id] = keep;
+        });
+        o.s = s1; o.sk = mk; lsSet(key, JSON.stringify(o));
+        got.forEach(function (g) {
+          var it = ITEM[g.id], nm = it ? itemTitle(it) : "";
+          tbxAdd(g.k, "sao", "Có bạn vừa chấm " + g.v + " ★ cho cách nhớ của bạn" + (nm ? " ở " + nm : "") + ". Cảm ơn bạn đã chia sẻ!", it ? "meo:" + g.id : "");
+        });
+        if (got.length) toast(got.length === 1 ? "Cách nhớ của bạn vừa được chấm " + got[0].v + " sao!" : "Cách nhớ của bạn vừa nhận " + got.length + " lượt chấm 4–5 sao!");
+      }, function () { });
+    } catch (e) { }
+  }
+  HC.tbxSao = tbxSao;
+  try {
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") tbxScan(); });
+    setInterval(tbxScan, 600e3);
+  } catch (e) { }
 
   // ---------- QUẢN TRỊ → CÁCH NHỚ (Bước 8): báo cáo "không phù hợp" + cách nhớ mới viết ----------
   var qtMeoN = 50;
@@ -5105,8 +5217,9 @@
       }
     }
     var mOpen = !!document.getElementById("avmenu");
-    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>" + (fb.on && fb.user ? avTopHTML() : "");
+    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>" + tbxBtnHTML() + (fb.on && fb.user ? avTopHTML() : "");
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
+    var tq = $("#tbxbtn"); if (tq) tq.onclick = tbxOpen;
     var ab = $("#avbtn"); if (ab) { ab.onclick = function () { avMenu(ab); }; avFill(ab); if (mOpen) ab.setAttribute("aria-expanded", "true"); }
     else avMenuClose();
   }
@@ -5980,6 +6093,7 @@
     route();
     initRemote();
     fbInit();
+    setTimeout(tbxScan, 1500); // thông báo: việc cần làm hôm nay, ngày thi…
     if ("serviceWorker" in navigator && location.protocol === "https:" && !(window.claude && typeof window.claude.use === "function")) {
       navigator.serviceWorker.register("sw.js").catch(function () { });
     }

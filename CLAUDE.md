@@ -121,8 +121,16 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   cúp tuần `hanco_bxh/c<thứ Hai>` chốt sau 12:00 thứ Hai; ghi dòng mình ≤ 1 lần/15 phút + khi rời app (`bxhSend`). Huy hiệu nhiều cấp `BFAM`
   (giữ id huy hiệu cũ). `S.cup`, `S.rec`. localStorage `hanco-bxh-gui`, `hanco-bxh-cup`, `hanco-qt-xpla`. Chỉ hiện TÊN HIỂN THỊ.
 - CÁCH NHỚ CHUNG (Bước 8): ô "Cách nhớ" (`S.meo`, mọi người thấy, đăng ở `hanco_meo/{id}_{uid}` — KHÔNG đăng chữ đang gõ dở: `meoPub`/
-  `meoEditing`) + ô "Ghi chú khác" (= `S.note` cũ, chỉ mình thấy, quản trị cũng không thấy). Chấm 1–5 sao (không chấm của mình), báo không phù hợp
-  `hanco_bao` (chỉ quản trị đọc), Quản trị → Cách nhớ. Cách nhớ người khác LUÔN qua `noteClean`. localStorage `hanco-meo-bao`.
+  `meoEditing`) + ô "Ghi chú khác" (= `S.note` cũ, chỉ mình thấy, quản trị cũng không thấy). Chấm 1–5 sao (không chấm của mình), Quản trị → Cách nhớ.
+  Cách nhớ người khác LUÔN qua `noteClean`. Khung "Cách nhớ" (người dùng yêu cầu 27/11/2026): KHÔNG hiện mẹo nhớ của app (vẫn ở ※ Giải thích),
+  KHÔNG có nút "Báo không phù hợp" — thay bằng dòng khích lệ chấm sao `.meo-khich` (chỉ hiện ở cách nhớ mình chưa chấm). `hanco_bao` + phần "Bị báo"
+  ở Quản trị giữ để đọc báo cáo cũ; localStorage `hanco-meo-bao` cũ không dùng nữa (không xóa).
+- THÔNG BÁO (người dùng yêu cầu 27/11/2026): nút chuông `#tbxbtn` (số chưa đọc) cạnh nút ảnh, khung danh sách `tbxOpen`. Thêm thông báo CHỈ qua
+  `tbxAdd(khóa riêng, loại tt|vl|qt|sao, chữ, "#địa chỉ" | "meo:<id>")` (trùng khóa → bỏ qua). Đang có: huy hiệu (`checkBadges`), lên cấp (`lvUp`),
+  cúp tuần (`cupApply`), thông báo chung + ngày thi chung, còn 7/3/1/0 ngày tới ngày thi, thẻ cần ôn hôm nay, chuỗi sắp đứt (sau 18 giờ) — `tbxScan`
+  (mở app, hiện lại màn hình, 10 phút/lần, không đọc Firestore); lượt chấm 4–5 sao cho cách nhớ của mình (`tbxSao`: đọc `hanco_meo` where uid ==
+  `myKey("me")` ≤ 1 lần/giờ, lần đầu / đổi vai chỉ ghi mốc; 1–3 sao không báo; không nói tên người chấm). Lưu RIÊNG từng máy theo tài khoản ở
+  localStorage `hanco-tb-<uid | khach>` {L ≤ 50, s mốc sao, sk, sc} — không thuộc `S`, không có luật Firestore mới. Tính năng mới có sự kiện đáng báo → thêm `tbxAdd`.
 - ẢNH ĐẠI DIỆN (người dùng yêu cầu 27/11/2026): `hanco_anh/{uid}` = {d data URL webp/jpeg ≤ 200.000 ký tự (cắt vuông giữa, 384px), v phiên bản ms, upd}.
   Thành viên "ok" đọc; chủ ảnh tạo / ĐỔI (ghi đè → ảnh cũ mất); KHÔNG có gỡ ảnh — chỉ quản trị xóa (khi xóa người, `qtDelete`). Dòng bảng xếp hạng
   có `a` = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi `a` đổi (`avVer`/`avGet`); ảnh đã tải ở Cache Storage `anh-v1`. Nút ảnh cuối thanh mục →
