@@ -67,7 +67,6 @@
     QR = d.rads.slice().sort(function (a, b) { return b.fuse - a.fuse || b.use - a.use || a.no - b.no; });
     QS = d.sents.slice();
     prepTerms(d);
-    BADGES.forEach(function (b) { if (b.id === "c1222") b.t = "Học hết " + fmt(d.chars.length) + " chữ"; });
     HC.ITEM = ITEM; HC.CHAR = CHAR; HC.WORD = WORD; HC.RAD = RAD; HC.QC = QC; HC.QW = QW;
     // loại từ lookup
     HC.LT = {}; Object.keys(d.loaitu).forEach(function (g) { d.loaitu[g].forEach(function (x) { HC.LT[x] = g; }); });
@@ -78,7 +77,7 @@
   // ---------- state + storage ----------
   var LS = "hanco-tuhoc-v1";
   var S, remote = { db: null, ref: null, status: "local", writing: false, pending: false };
-  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {}, hard: {}, pl: {}, note: {}, plans: {}, lt: {} }; }
+  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {}, hard: {}, pl: {}, note: {}, plans: {}, lt: {}, cup: {}, rec: {} }; }
   // plans[kỳ] = {s ngày bắt đầu, e ngày thi, t ms sửa, x ms bỏ (0 = đang học)} · lt[từ ngữ pháp] = [hộp, hạn ôn, số lần sai, ngày học, ms chấm]
   // hard[id] = t (ms thêm vào kho khó; âm = −ms lúc bỏ) · pl[plId] = {n tên, nt ms đặt tên, x ms xóa (0 = còn), ids {id: t như hard}}
   // note[id] = ["văn bản", ms] (văn bản rỗng = đã xóa). Gộp đồng bộ theo từng mục (mergeT) để máy nào thêm/xóa cũng không mất.
@@ -214,6 +213,13 @@
         x.ids = mergeT(x.ids, y.ids);
       });
     });
+    // Bước 7: cúp tuần {thứ Hai của tuần: hạng 1–3} — lấy hạng tốt hơn; kỷ lục: hạng tuần cao nhất (số nhỏ nhất), bài không sai theo ngày lấy số lớn hơn
+    m.cup = {};
+    [a.cup || {}, b.cup || {}].forEach(function (o) { Object.keys(o).forEach(function (k) { var v = +o[k]; if (v >= 1 && v <= 3 && !(m.cup[k] <= v)) m.cup[k] = v; }); });
+    var ra = recNorm(JSON.parse(JSON.stringify(a.rec || {}))), rb = recNorm(JSON.parse(JSON.stringify(b.rec || {})));
+    m.rec = { hb: ra.hb, hk: ra.hk, pf: ra.pf };
+    if (rb.hb && (!ra.hb || rb.hb < ra.hb || (rb.hb === ra.hb && rb.hk && (!ra.hk || rb.hk < ra.hk)))) { m.rec.hb = rb.hb; m.rec.hk = rb.hk; }
+    Object.keys(rb.pf).forEach(function (d) { m.rec.pf[d] = Math.max(+m.rec.pf[d] || 0, +rb.pf[d] || 0); });
     return m;
   }
   // gộp {id: t}: t > 0 = thêm lúc t, t < 0 = bỏ lúc −t. Lấy |t| lớn hơn; bằng nhau thì "bỏ" thắng (gộp theo thứ tự nào cũng ra một kết quả)
@@ -334,6 +340,9 @@
     a = s.pl || {}; b = r.pl || {};
     for (k in a) { if (!b[k] || gt(a[k].nt, b[k].nt) || gt(a[k].x, b[k].x)) return true; for (j in a[k].ids || {}) if (!(b[k].ids || {})[j] || Math.abs(a[k].ids[j]) > Math.abs(b[k].ids[j])) return true; }
     a = s.streak || {}; b = r.streak || {}; if (gt(a.d, b.d) || (a.d === b.d && gt(a.c, b.c))) return true;
+    a = s.cup || {}; b = r.cup || {}; for (k in a) if (!b[k] || gt(b[k], a[k])) return true;
+    a = s.rec || {}; b = r.rec || {}; if (a.hb > 0 && (!(b.hb > 0) || a.hb < b.hb)) return true;
+    a = a.pf || {}; b = b.pf || {}; for (k in a) if (gt(a[k], b[k])) return true;
     return gt(s.xp, r.xp) || (gt(s.upd, r.upd) && (s.start !== r.start || JSON.stringify(s.set) !== JSON.stringify(r.set)));
   }
   // nhận bản của tài khoản từ máy chủ (get hoặc onSnapshot): gộp vào S; máy còn phần tài khoản chưa có → dirty (sẽ ghi)
@@ -351,7 +360,7 @@
     if (!fb.ref) return Promise.resolve();
     if (fb.busy) { fb.again = true; return Promise.resolve(); }
     if (navigator.onLine === false) { fb.status = "offline"; renderStats(); return Promise.resolve(); }
-    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); tkSend(); return Promise.resolve(); } // không có gì mới: không ghi
+    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); tkSend(); bxhSend(false); return Promise.resolve(); } // không có gì mới: không ghi
     fb.busy = true; fb.status = "syncing"; renderStats();
     var ref = fb.ref;
     var got = fb.remOk ? Promise.resolve() : ref.get({ source: "server" }).then(function (snap) { if (ref === fb.ref) fbGot(snap.exists ? snap.data() : null, false); });
@@ -367,7 +376,7 @@
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () {
-        fb.busy = false; renderStats(); tkSend();
+        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck();
         if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
       });
   }
@@ -790,6 +799,7 @@
   function qtCfgEnsure() {
     var ref = fb.db.collection("hanco_cfg").doc("dk");
     ref.get().then(function (c) { if (!c.exists) return ref.set({ tran: 120, dem: 0, mo: true }); }).catch(function () { });
+    bxhEnsure(); // bảng xếp hạng (Bước 7)
   }
 
   // màn tài khoản (thay cho mọi màn khi chưa vào được app)
@@ -1193,6 +1203,7 @@
     return b.commit().then(function () {
       u.st = st; if (auto) QT.kh[u.uid] = t0; else delete QT.kh[u.uid];
       qtLog(auto ? "Tự khóa" : st === "khoa" ? "Khóa" : "Mở khóa", u, why);
+      return bxhLock(u.uid, st); // khóa → ẩn khỏi bảng xếp hạng; mở khóa → hiện lại (trừ khi quản trị ẩn tay)
     });
   }
   function qtWipe(uid) { // xóa tiến độ + sao lưu + hình sách riêng của 1 người
@@ -1216,6 +1227,7 @@
       if (u.st !== "xoa") QT.dk.dem = Math.max(0, (+QT.dk.dem || 0) - 1);
       QT.dx.push(entry); delete QT.ma.so[u.uid]; delete QT.kh[u.uid];
       if (cach === "lai") QT.users = QT.users.filter(function (x) { return x !== u; }); else u.st = "xoa";
+      bxhDrop(u.uid); // bỏ dòng trên bảng xếp hạng
       return qtWipe(u.uid).catch(function () { toast("Đã xóa tài khoản nhưng chưa xóa hết tiến độ. Bấm Tải lại rồi thử lại sau."); });
     });
   }
@@ -1415,14 +1427,14 @@
   function vAdmin(v, args) {
     if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
     var sec = args[0] || "tong", ep = HC.epoch;
-    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["nk", "Nhật ký"]];
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["bxh", "Xếp hạng"], ["nk", "Nhật ký"]];
     v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
       '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtwarn"></div><div id="qtb"><p class="sub">Đang tải…</p></div>';
     var box = $("#qtb", v);
     function draw() {
       if (HC.epoch !== ep) return;
       try { qtWarn($("#qtwarn", v)); } catch (e) { }
-      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, bxh: qtBxh, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
     function load() {
       box.innerHTML = '<p class="sub">Đang tải…</p>';
@@ -1430,6 +1442,79 @@
     }
     $("#qtre", v).onclick = load;
     if (!QT || Date.now() - QT.t > 120000) load(); else draw();
+  }
+  // ---------- QUẢN TRỊ → XẾP HẠNG (Bước 7): ẩn 1 người khỏi bảng, đặt lại XP bất thường, soát XP lạ, chốt lại cúp tuần ----------
+  // Ngưỡng "XP lạ" (XP 1 ngày trong 7 ngày gần nhất) nhớ ở localStorage máy quản trị QT_XPLA (mặc định 1.500). Đặt lại = rs[uid] = hôm nay
+  // + xóa dòng: máy người đó tự tính lại XP bảng từ hôm nay (XP + cấp thật trong tiến độ KHÔNG đổi). Bỏ đặt lại = xóa rs + xóa dòng.
+  var QT_XPLA = "hanco-qt-xpla";
+  function qtXpla() { var n = +lsGet(QT_XPLA); return n >= 100 ? n : 1500; }
+  function qtBxh(box, redraw) {
+    box.innerHTML = '<p class="sub">Đang tải bảng xếp hạng…</p>';
+    var k = cupWeek();
+    Promise.all([bxhLoad(true), bxhRef("c" + k).get().then(function (s) { return s.exists ? s.data() : null; }).catch(function () { return null; })]).then(function (r) {
+      if (cur !== "qt-bxh") return;
+      var T = r[0], c = r[1], t0 = today(), lim = qtXpla(), h = "";
+      if (!T) { box.innerHTML = '<div class="card"><h2>Bảng xếp hạng</h2><p class="tkmsg">Chưa có tài liệu bảng (hanco_bxh/tong). Tải lại trang để app tạo, hoặc kiểm tra luật Firestore đã deploy chưa.</p></div>'; return; }
+      var U = T.u || {}, an = T.an || {}, rs = T.rs || {}, byId = {};
+      QT.users.forEach(function (u) { byId[u.uid] = u; });
+      var ids = Object.keys(U); Object.keys(an).concat(Object.keys(rs)).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
+      var rows = ids.map(function (uid) {
+        var x = U[uid] || {}, u = byId[uid] || (uid === ADMIN_UID ? { uid: uid, ten: "Quản trị viên", hoten: "(quản trị)" } : null);
+        return { uid: uid, x: x, u: u, ma: uid === ADMIN_UID ? "000" : u ? qtMa(uid) : "—", xw: bxhVal(x, "w", t0), xm: +x.xm || 0, xp: +x.xp || 0, an: an[uid] || 0, rs: rs[uid] || 0, la: (+x.xm || 0) > lim };
+      }).sort(function (a, b) { return (b.la ? 1 : 0) - (a.la ? 1 : 0) || b.xw - a.xw || b.xp - a.xp; });
+      var nla = rows.filter(function (x) { return x.la; }).length;
+      h += '<div class="card"><h2>Bảng xếp hạng</h2><p class="sub">' + Object.keys(U).length + " dòng trên bảng · " + Object.keys(an).length + " người đang ẩn · " + Object.keys(rs).length + " người đã đặt lại XP. Bảng chỉ hiện TÊN HIỂN THỊ (cột Họ tên chỉ bạn thấy). Người bị khóa tự ẩn, mở khóa thì hiện lại; xóa người thì bỏ luôn dòng.</p>" +
+        '<div class="row" style="align-items:end"><div class="field"><label for="qtxl">Ngưỡng XP lạ (XP trong 1 ngày)</label><input id="qtxl" type="number" min="100" step="100" value="' + lim + '"></div><button class="btn" type="button" id="qtxlok">Lưu ngưỡng</button></div>' +
+        (nla ? '<p class="tkmsg" role="status">' + nla + " người có ngày nhiều hơn " + fmt(lim) + " XP trong 7 ngày gần nhất (đánh dấu XP lạ, xếp đầu bảng). Xem chi tiết người đó ở mục Người học trước khi đặt lại.</p>" : '<p class="sub">Không ai vượt ngưỡng XP lạ trong 7 ngày gần nhất.</p>') + "</div>";
+      h += '<div class="card"><div class="qtwrap"><table class="t qtbx"><thead><tr><th>Mã</th><th>Tên hiển thị</th><th>Họ tên</th><th>XP tuần</th><th>XP/ngày cao nhất (7 ngày)</th><th>Tổng XP bảng</th><th>Trạng thái</th><th></th></tr></thead><tbody>' +
+        (rows.length ? rows.map(function (x) {
+          var st = x.an === 1 ? '<span class="chip warn">ẩn (tay)</span>' : x.an === 2 ? '<span class="chip warn">ẩn (đang khóa)</span>' : '<span class="chip ok">đang hiện</span>';
+          if (x.rs) st += ' <span class="chip">tính từ ' + dateY(x.rs) + "</span>";
+          if (!x.u) st += ' <span class="chip k10">không còn tài khoản</span>';
+          var bt = (x.u ? '<button class="btn sm" data-an="' + esc(x.uid) + '">' + (x.an ? "Hiện lại" : "Ẩn khỏi bảng") + "</button>" +
+            (x.rs ? '<button class="btn sm ghost" data-unrs="' + esc(x.uid) + '">Bỏ đặt lại</button>' : '<button class="btn sm bad" data-rs="' + esc(x.uid) + '">Đặt lại XP</button>') : '<button class="btn sm bad" data-drop="' + esc(x.uid) + '">Bỏ dòng</button>');
+          return "<tr><td class=\"num\">" + x.ma + "</td><td>" + esc(x.x.ten || (x.u && x.u.ten) || "?") + "</td><td>" + esc(x.u ? x.u.hoten || "" : "") + '</td><td class="num">' + fmt(x.xw) + '</td><td class="num">' + fmt(x.xm) + (x.la ? ' <span class="chip k10">XP lạ</span>' : "") + '</td><td class="num">' + fmt(x.xp) + "</td><td>" + st + '</td><td><div class="row" style="gap:4px;flex-wrap:nowrap">' + bt + "</div></td></tr>";
+        }).join("") : '<tr><td colspan="8" class="muted">Chưa ai có dòng trên bảng.</td></tr>') + "</tbody></table></div></div>";
+      var top = c && c.e ? c.e.slice(0, 3) : [];
+      h += '<div class="card"><h2>Cúp tuần ' + dateOf(k) + " – " + dateY(k + 6) + "</h2>" + (c ? '<p class="sub">Đã chốt' + (c.t && c.t.toMillis ? " lúc " + hm(c.t.toMillis()) : "") + ". " + (top.length ? top.map(function (e, i) { var x = U[e.u] || {}; return "Hạng " + (i + 1) + ": " + esc(x.ten || "?") + " (" + fmt(e.v) + " XP)"; }).join(" · ") : "Không ai có XP tuần đó.") + "</p>" : '<p class="sub">Chưa chốt (người đầu tiên mở app sau 12 giờ trưa thứ Hai sẽ chốt).</p>') +
+        '<p class="sub">Chốt lại = xóa bản chốt rồi tính lại từ bảng hiện tại (vd sau khi ẩn / đặt lại XP một người gian lận). Cúp người học đã nhận ở máy họ không tự mất.</p><div class="row"><button class="btn" id="qtcup">Chốt lại cúp tuần này</button></div></div>';
+      box.innerHTML = h;
+      function who(uid) { return byId[uid] || { uid: uid, ten: (U[uid] || {}).ten || "", hoten: "" }; }
+      function busy(b) { $$("button", box).forEach(function (x) { x.disabled = true; }); b.textContent = "Đang lưu…"; }
+      function fail(e) { toast("Chưa lưu được (" + tkErr(e) + ")"); redraw(); }
+      $("#qtxlok", box).onclick = function () { var n = Math.max(100, Math.round(+$("#qtxl", box).value || 1500)); lsSet(QT_XPLA, String(n)); toast("Đã lưu ngưỡng XP lạ: " + fmt(n)); redraw(); };
+      $$("[data-an]", box).forEach(function (b) { b.onclick = function () {
+        var uid = b.getAttribute("data-an"), on = !an[uid], u = who(uid);
+        busy(b); bxhRef().set(bxhMap("an", uid, on ? 1 : undefined), { merge: true }).then(function () { qtLog(on ? "Ẩn khỏi bảng xếp hạng" : "Hiện lại trên bảng xếp hạng", u, ""); toast(on ? "Đã ẩn khỏi bảng xếp hạng" : "Đã hiện lại"); redraw(); }, fail);
+      }; });
+      $$("[data-rs]", box).forEach(function (b) { b.onclick = function () {
+        var uid = b.getAttribute("data-rs"), u = who(uid), ma = uid === ADMIN_UID ? "000" : qtMa(uid);
+        var a = prompt("Đặt lại XP bảng xếp hạng của " + ma + " " + (u.hoten || u.ten || "") + ": bảng chỉ tính XP từ hôm nay (" + dateY(t0) + ").\nXP và cấp thật trong tiến độ người học KHÔNG đổi; cúp đã nhận vẫn giữ.\nGõ mã số " + ma + " để xác nhận:");
+        if (a == null) return; if (String(a).trim() !== ma) { toast("Mã số không khớp — chưa đặt lại"); return; }
+        var o = bxhMap("rs", uid, t0); o.u = bxhMap("u", uid).u;
+        busy(b); bxhRef().set(o, { merge: true }).then(function () { qtLog("Đặt lại XP bảng xếp hạng", u, "tính từ " + dateY(t0) + " · trước đó " + fmt(+(U[uid] || {}).xp || 0) + " XP"); toast("Đã đặt lại. Máy người đó tự tính lại khi mở app."); redraw(); }, fail);
+      }; });
+      $$("[data-unrs]", box).forEach(function (b) { b.onclick = function () {
+        var uid = b.getAttribute("data-unrs"), u = who(uid);
+        if (!confirm("Bỏ đặt lại XP: bảng tính lại toàn bộ XP của người này (máy họ tự gửi lại khi mở app)?")) return;
+        var o = bxhMap("rs", uid); o.u = bxhMap("u", uid).u;
+        busy(b); bxhRef().set(o, { merge: true }).then(function () { qtLog("Bỏ đặt lại XP bảng xếp hạng", u, ""); redraw(); }, fail);
+      }; });
+      $$("[data-drop]", box).forEach(function (b) { b.onclick = function () {
+        var uid = b.getAttribute("data-drop");
+        if (!confirm("Bỏ dòng của tài khoản không còn tồn tại khỏi bảng?")) return;
+        busy(b); bxhDrop(uid).then(function () { qtLog("Bỏ dòng bảng xếp hạng", who(uid), "không còn tài khoản"); redraw(); });
+      }; });
+      $("#qtcup", box).onclick = function () {
+        var b = this; if (!confirm("Chốt lại cúp tuần " + dateOf(k) + " – " + dateY(k + 6) + " từ bảng hiện tại?")) return;
+        busy(b); delete BXH.cup[k];
+        (c ? bxhRef("c" + k).delete() : Promise.resolve()).then(function () { return bxhCupMake(k); }).then(function (n) {
+          var e = (n && n.e) || [];
+          qtLog("Chốt lại cúp tuần", null, dateOf(k) + " – " + dateY(k + 6) + ": " + e.slice(0, 3).map(function (x) { return ((U[x.u] || {}).ten || "?") + " " + x.v; }).join(", "));
+          toast(n ? "Đã chốt lại cúp tuần" : "Chưa chốt được"); redraw();
+        }, fail);
+      };
+    }, function (e) { if (cur === "qt-bxh") box.innerHTML = '<div class="card"><h2>Bảng xếp hạng</h2><p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Luật Firestore mới (Bước 7) đã deploy chưa?</p></div>"; });
   }
   function qtActive() { return QT.users.filter(function (u) { return u.st !== "xoa"; }); }
   function qtTong(box) {
@@ -1706,7 +1791,9 @@
     Object.keys(s.lt).forEach(function (k) { if (!Array.isArray(s.lt[k]) || s.lt[k].length < 5) delete s.lt[k]; });
     return normalize0(s);
   }
-  function normalize0(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); return s; }
+  function normalize0(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note", "cup", "rec"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); recNorm(s.rec); return s; }
+  // kỷ lục (Bước 7): rec = {hb hạng tuần cao nhất (0 = chưa có), hk tuần đạt hạng đó, pf {ngày: số bài không sai}}
+  function recNorm(r) { r.hb = +r.hb > 0 ? +r.hb : 0; r.hk = +r.hk || 0; if (typeof r.pf !== "object" || !r.pf || Array.isArray(r.pf)) r.pf = {}; return r; }
 
   // ---------- SRS ----------
   // it[id] = [rBox, rDue, wBox, wDue, lapses, introDay]; wBox = -1 when the item has no writing card
@@ -1886,22 +1973,313 @@
   }
   HC.addXP = function (n, el) { addXP(n, el); };
   function lvl() { var x = S.xp, l = 1, need = 100; while (x >= need) { x -= need; l++; need = Math.round(need * 1.15); } return { l: l, cur: x, need: need }; }
-  var BADGES = [
-    { id: "c100", g: "百", t: "100 chữ", ok: function () { return learnedOf("c").length >= 100; } },
-    { id: "c300", g: "三", t: "300 chữ", ok: function () { return learnedOf("c").length >= 300; } },
+  var BADGES = [ // thành tích đặc biệt 1 cấp (các huy hiệu cũ khác nay là cấp của nhóm huy hiệu — BFAM bên dưới)
     { id: "c594", g: "通", t: "Xong chữ thông dụng", ok: function () { return QC.slice(0, COMMON_C).every(function (c) { return introduced(c.id); }); } },
     { id: "w492", g: "詞", t: "Xong từ thông dụng", ok: function () { return QW.slice(0, COMMON_W).every(function (w) { return introduced(w.id); }); } },
-    { id: "c1222", g: "全", t: "Học hết 1.222 chữ", ok: function () { return learnedOf("c").length >= D.chars.length; } },
-    { id: "r214", g: "部", t: "Đủ 214 bộ", ok: function () { return learnedOf("r").length >= 214; } },
-    { id: "s7", g: "七", t: "Chuỗi 7 ngày", ok: function () { return S.streak.c >= 7; } },
-    { id: "s30", g: "恆", t: "Chuỗi 30 ngày", ok: function () { return S.streak.c >= 30; } },
-    { id: "w50", g: "筆", t: "Viết đúng 50 lần", ok: function () { return (S.best.writeOk || 0) >= 50; } },
-    { id: "exam", g: "試", t: "Thi thử ≥ 80 điểm", ok: function () { return Object.keys(S.best).some(function (k) { return k.indexOf("exam") === 0 && S.best[k] >= 80; }); } }
+    { id: "r214", g: "部", t: "Đủ 214 bộ", ok: function () { return learnedOf("r").length >= 214; } }
   ];
+  // ---------- HUY HIỆU NHIỀU CẤP + KỶ LỤC (Bước 7, 27/11/2026) ----------
+  // Mỗi nhóm huy hiệu có nhiều cấp (kiểu Duolingo). S.badges[id] = ngày nhận (giữ id huy hiệu cũ: s7, s30, c100, c300, c1222, w50, exam
+  // là các cấp tương ứng → ngày đã nhận không mất). BADGES (ở trên) còn lại = thành tích đặc biệt 1 cấp.
+  function streakMax(s) { // chuỗi dài nhất: số ngày liên tiếp có học / ôn / XP trong nhật ký (không nhỏ hơn chuỗi hiện tại)
+    s = s || S; var ds = [], best = 0, run = 0, prev = null;
+    Object.keys(s.log || {}).forEach(function (k) { var l = s.log[k] || {}; if ((+l.x || 0) + (+l.n || 0) + (+l.r || 0) > 0) ds.push(+k); });
+    ds.sort(function (a, b) { return a - b; }).forEach(function (d) { run = prev != null && d === prev + 1 ? run + 1 : 1; prev = d; if (run > best) best = run; });
+    return Math.max(best, +((s.streak || {}).c) || 0);
+  }
+  function examBest() { var b = 0; Object.keys(S.best || {}).forEach(function (k) { if (k.indexOf("exam") === 0 && typeof S.best[k] === "number" && S.best[k] > b) b = S.best[k]; }); return b; }
+  function lvTo(a, all) { return a.filter(function (x) { return x < all; }).concat([all]); }
+  function pfSum() { var n = 0, p = (S.rec && S.rec.pf) || {}; Object.keys(p).forEach(function (d) { n += +p[d] || 0; }); return n; }
+  var BFAM = [
+    { id: "st", g: "火", t: "Chuỗi ngày", u: "ngày", lv: function () { return [3, 7, 14, 30, 60, 100, 180, 365]; }, old: { 7: "s7", 30: "s30" }, val: function () { return streakMax(); } },
+    { id: "xp", g: "經", t: "Kinh nghiệm", u: "XP", lv: function () { return [100, 500, 1000, 2500, 5000, 10000, 25000, 50000]; }, val: function () { return S.xp || 0; } },
+    { id: "ch", g: "字", t: "Chữ đã học", u: "chữ", lv: function () { return lvTo([50, 100, 300, 600, 1000], D.chars.length); }, old: { 100: "c100", 300: "c300" }, het: "c1222", val: function () { return learnedOf("c").length; } },
+    { id: "tu", g: "詞", t: "Từ đã học", u: "từ", lv: function () { return lvTo([50, 100, 300, 600], D.words.length); }, het: "tuhet", val: function () { return learnedOf("w").length; } },
+    { id: "vi", g: "筆", t: "Viết đúng", u: "lần", lv: function () { return [10, 50, 100, 300, 1000, 3000]; }, old: { 50: "w50" }, val: function () { return +S.best.writeOk || 0; } },
+    { id: "th", g: "試", t: "Thi thử", u: "điểm", lv: function () { return [50, 65, 80, 90, 100]; }, old: { 80: "exam" }, val: examBest },
+    { id: "cu", g: "冠", t: "Top 3 tuần", u: "lần", lv: function () { return [1, 3, 5, 10, 25, 52]; }, val: function () { return Object.keys(S.cup || {}).length; } }
+  ];
+  // các cấp của 1 nhóm: [{th mốc, id, on đã đạt, v số hiện có}] — đã nhận rồi thì giữ (dù số hiện tại thấp hơn)
+  function famLv(f) {
+    var ls = f.lv(), v = 0; try { v = f.val(); } catch (e) { }
+    return ls.map(function (th, i) {
+      var id = i === ls.length - 1 && f.het ? f.het : (f.old && f.old[th]) || f.id + th;
+      return { th: th, id: id, on: !!S.badges[id] || v >= th, v: v };
+    });
+  }
+  function famN(f) { return famLv(f).filter(function (x) { return x.on; }).length; }
   function checkBadges() {
-    BADGES.forEach(function (b) { if (!S.badges[b.id] && b.ok()) { S.badges[b.id] = today(); toast("Huy hiệu mới: " + b.t); } });
+    if (!D) return;
+    var got = [], t = today();
+    BFAM.forEach(function (f) { famLv(f).forEach(function (x, i) { if (x.on && !S.badges[x.id]) { S.badges[x.id] = t; got.push(f.t + " cấp " + (i + 1)); } }); });
+    BADGES.forEach(function (b) { if (!S.badges[b.id] && b.ok()) { S.badges[b.id] = t; got.push(b.t); } });
+    if (got.length === 1) toast("Huy hiệu mới: " + got[0]);
+    else if (got.length) toast("Nhận " + got.length + " huy hiệu mới — xem ở Xếp hạng → Hồ sơ của tôi");
   }
   HC.checkBadges = checkBadges;
+  // bài không sai câu nào (trò chơi xong không sai mục nào / thi thử 100 điểm) — games.js gọi
+  HC.perfect = function () { var t = today(); recNorm(S.rec); S.rec.pf[t] = (+S.rec.pf[t] || 0) + 1; };
+  // nhật ký XP: tổng các kỳ (chỉ tính từ ngày r0 nếu bị đặt lại XP bảng xếp hạng) + kỷ lục (tính trên cả nhật ký)
+  function perKey(p, d) { if (p === "w" || p === "wp") return weekStart(d) - (p === "wp" ? 7 : 0); var x = new Date(d * 864e5), y = x.getUTCFullYear(), m = x.getUTCMonth(); return p === "m" ? y * 12 + m : p === "q" ? y * 4 + Math.floor(m / 3) : y; }
+  function perName(p, k) { return p === "m" ? "Tháng " + (k % 12 + 1) + "/" + Math.floor(k / 12) : p === "q" ? "Quý " + (k % 4 + 1) + "/" + Math.floor(k / 4) : p === "y" ? "Năm " + k : "Tuần " + dateOf(k) + " – " + dateY(k + 6); }
+  function xpStat(r0) {
+    var t0 = today(), P = ["w", "wp", "m", "q", "y"], K = {}, V = {}, all = 0, xd = 0, xm = 0, wk = {}, xk = 0;
+    P.forEach(function (p) { K[p] = perKey(p, t0); V[p] = 0; });
+    Object.keys(S.log || {}).forEach(function (k) {
+      var d = +k, x = +((S.log[k] || {}).x) || 0; if (x <= 0 || d > t0) return;
+      if (x > xd) xd = x;
+      var w = weekStart(d); wk[w] = (wk[w] || 0) + x; if (wk[w] > xk) xk = wk[w];
+      if (r0 && d < r0) return;
+      all += x; if (d >= t0 - 6 && x > xm) xm = x;
+      P.forEach(function (p) { if (perKey(p === "wp" ? "w" : p, d) === K[p]) V[p] += x; });
+    });
+    return { K: K, V: V, all: all, xd: xd, xk: xk, xm: xm };
+  }
+  function myRecs() {
+    var s = xpStat(0);
+    return { sm: streakMax(), xd: s.xd, xk: s.xk, hb: (S.rec && S.rec.hb) || 0, hk: (S.rec && S.rec.hk) || 0, ex: examBest(), pf: pfSum() };
+  }
+
+  // ---------- BẢNG XẾP HẠNG (Bước 7, 27/11/2026) ----------
+  // Firestore hanco_bxh/tong = {u {uid: dòng}, an {uid: 1 ẩn tay | 2 đang khóa}, rs {uid: ngày đặt lại}} — CẢ bảng 1 tài liệu: mở bảng = 1 lượt
+  // đọc (đệm 3 phút); mỗi người chỉ sửa dòng của mình (luật kiểm), ≤ 1 lần/15 phút khi đang học + ngay khi rời app (chỉ khi có gì mới).
+  // Dòng = {ten tên hiển thị (KHÔNG BAO GIỜ họ tên thật), xp, w/wp/m/q/y [mã kỳ, XP] (tuần này / tuần trước / tháng / quý / năm),
+  // sc + sd chuỗi hiện tại + ngày cuối, sm chuỗi dài nhất, lv cấp, bd {nhóm huy hiệu: cấp, sp: số thành tích đặc biệt}, cp [số cúp vàng,
+  // bạc, đồng], rc {xd, xk, ex, hb, pf} kỷ lục, xm XP nhiều nhất 1 ngày trong 7 ngày (quản trị soát XP lạ), r ngày đặt lại, upd}.
+  // Bị quản trị đặt lại XP: chỉ tính XP từ ngày đặt lại (XP + cấp thật trong S KHÔNG đổi). Cúp tuần: hanco_bxh/c<thứ Hai> = {k, e [{u uid, v XP}]
+  // giảm dần, t}, người đầu tiên mở app sau 12 giờ trưa thứ Hai tuần sau chốt (luật kiểm 3 người đầu khớp bảng) → ai trong top 3 tự ghi
+  // vào S.cup; hạng tuần cao nhất vào S.rec. localStorage MỚI: hanco-bxh-gui (lần ghi dòng gần nhất), hanco-bxh-cup (tuần đã kiểm cúp),
+  // hanco-qt-xpla (ngưỡng XP lạ của máy quản trị). Không thuộc S.
+  var BXH = { d: null, t: 0, u: "", rs: 0, err: "", sending: false, timer: null, cup: {}, cupTry: {} }, BXH_LS = "hanco-bxh-gui", BXH_CUP = "hanco-bxh-cup", BXH_GAP = 15 * 60e3, BXH_TTL = 180e3;
+  var MEDAL = ["", "vàng", "bạc", "đồng"];
+  HC.bxh = BXH;
+  function bxhRef(d) { return fb.db.collection("hanco_bxh").doc(d || "tong"); }
+  function bxhOk() { return !!(TK_GATE && fb.on && fb.user && tk.st === "ok" && fb.ref && (isAdmin() || (tk.prof && tk.prof.ten))); }
+  function bxhTen() { return isAdmin() ? "Quản trị viên" : String((tk.prof && tk.prof.ten) || ""); }
+  function bxhRow() {
+    var r0 = BXH.u === fb.user.uid ? +BXH.rs || 0 : 0, st = xpStat(r0), xp = r0 ? st.all : Math.max(S.xp || 0, st.all), bd = {}, cp = [0, 0, 0];
+    function pv(p) { return [st.K[p], Math.min(st.V[p], xp)]; }
+    BFAM.forEach(function (f) { var n = famN(f); if (n) bd[f.id] = n; });
+    var sp = BADGES.filter(function (b) { return S.badges[b.id]; }).length; if (sp) bd.sp = sp;
+    Object.keys(S.cup || {}).forEach(function (k) { var v = S.cup[k]; if (v >= 1 && v <= 3) cp[v - 1]++; });
+    var rc = { xd: st.xd, xk: st.xk, ex: examBest(), hb: (S.rec && S.rec.hb) || 0, pf: pfSum() };
+    return { ten: bxhTen(), xp: xp, w: pv("w"), wp: pv("wp"), m: pv("m"), q: pv("q"), y: pv("y"), sc: +S.streak.c || 0, sd: +S.streak.d || 0, sm: streakMax(), lv: lvl().l, bd: bd, cp: cp, rc: rc, xm: st.xm, r: r0 };
+  }
+  function bxhLoad(force) {
+    var uid = fb.user && fb.user.uid;
+    if (!force && BXH.d && BXH.u === uid && Date.now() - BXH.t < BXH_TTL) return Promise.resolve(BXH.d);
+    return bxhRef().get().then(function (s) {
+      BXH.d = s.exists ? s.data() : null; BXH.t = Date.now(); BXH.u = uid; BXH.err = s.exists ? "" : "none";
+      BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[uid] || 0;
+      return BXH.d;
+    }, function (e) { BXH.err = e && e.code === "permission-denied" ? "denied" : "net"; throw e; });
+  }
+  // ghi dòng của mình: chỉ khi khác lần trước; force = bỏ qua nhịp 15 phút (rời app / ẩn màn hình / chốt cúp)
+  function bxhSend(force, again) {
+    if (!bxhOk() || BXH.sending) return Promise.resolve(false);
+    var u = fb.user, row; try { row = bxhRow(); } catch (e) { return Promise.resolve(false); }
+    if (!row.ten) return Promise.resolve(false);
+    var sig = JSON.stringify(row), g = jget(BXH_LS); if (g.u !== u.uid) g = {};
+    if (sig === g.h) return Promise.resolve(true);
+    var wait = BXH_GAP - (Date.now() - (+g.t || 0));
+    if (!force && wait > 0) { if (!BXH.timer) BXH.timer = setTimeout(function () { BXH.timer = null; bxhSend(false); }, wait + 1000); return Promise.resolve(false); }
+    clearTimeout(BXH.timer); BXH.timer = null; BXH.sending = true;
+    var FS = firebase.firestore, val = JSON.parse(sig), job;
+    try { val.upd = FS.FieldValue.serverTimestamp(); job = bxhRef().update(new FS.FieldPath("u", u.uid), val); } catch (e) { BXH.sending = false; return Promise.resolve(false); }
+    return job.then(function () {
+      BXH.sending = false;
+      lsSet(BXH_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: sig }));
+      if (BXH.d && BXH.u === u.uid) { BXH.d.u = BXH.d.u || {}; BXH.d.u[u.uid] = JSON.parse(sig); }
+      return true;
+    }, function (e) {
+      BXH.sending = false;
+      // bị từ chối: có thể quản trị vừa đặt lại XP (cần ghi đúng ngày đặt lại) → đọc lại bảng rồi thử đúng 1 lần
+      if (!again && e && e.code === "permission-denied" && fb.user === u) return bxhLoad(true).then(function () { return bxhSend(true, true); }, function () { return false; });
+      lsSet(BXH_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: g.h || "" })); // chờ đủ nhịp rồi mới thử lại
+      return false;
+    });
+  }
+  HC.bxhSend = bxhSend;
+  try { addEventListener("pagehide", function () { bxhSend(true); }); document.addEventListener("visibilitychange", function () { if (document.hidden) bxhSend(true); else bxhCupCheck(); }); } catch (e) { }
+  // ---- cúp tuần ----
+  function cupAt(k) { return (k + 7) * 864e5 - 7 * 3600e3 + 12 * 3600e3; } // 12 giờ trưa thứ Hai tuần sau (giờ VN)
+  function cupWeek() { var ws = weekStart(today()); return Date.now() >= cupAt(ws - 7) ? ws - 7 : ws - 14; } // tuần gần nhất đã chốt được
+  function wkVal(r, k) { return r && r.w && r.w[0] === k ? +r.w[1] || 0 : r && r.wp && r.wp[0] === k ? +r.wp[1] || 0 : 0; }
+  function bxhRank(T, k) { // xếp hạng tuần k từ bảng (bỏ người bị ẩn, XP > 0): [{u uid, v XP}] giảm dần (Firestore không cho mảng lồng mảng)
+    var an = (T && T.an) || {}, U = (T && T.u) || {}, out = [];
+    Object.keys(U).forEach(function (uid) { if (an[uid]) return; var v = wkVal(U[uid], k); if (v > 0) out.push({ u: uid, v: v }); });
+    return out.sort(function (a, b) { return b.v - a.v || (a.u < b.u ? -1 : 1); }).slice(0, 300);
+  }
+  function bxhCupGet(k) {
+    if (BXH.cup[k] !== undefined) return Promise.resolve(BXH.cup[k]);
+    return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) BXH.cup[k] = c; return c; });
+  }
+  function bxhCupMake(k) { // chốt cúp tuần k: đẩy dòng của mình lên trước, đọc bảng, ai tới trước thì chốt (đã có thì đọc bản đã chốt)
+    return bxhSend(true).then(function () { return bxhLoad(true); }).then(function (T) {
+      if (!T) return null;
+      var e = bxhRank(T, k);
+      return bxhRef("c" + k).set({ k: k, e: e, t: firebase.firestore.FieldValue.serverTimestamp() }).then(function () { BXH.cup[k] = { k: k, e: e }; return BXH.cup[k]; },
+        function () { delete BXH.cup[k]; return bxhRef("c" + k).get().then(function (s) { var c = s.exists ? s.data() : null; if (c) BXH.cup[k] = c; return c; }); });
+    });
+  }
+  function cupApply(c) { // bản chốt có mình: ghi cúp (top 3) + hạng tuần cao nhất
+    if (!c || !c.e || !fb.user) return;
+    var uid = fb.user.uid, i = -1, k = +c.k;
+    c.e.forEach(function (x, j) { if (x && x.u === uid && i < 0) i = j; });
+    if (i < 0) return;
+    var rank = 1; while (rank <= i && c.e[rank - 1].v > c.e[i].v) rank++; // đồng XP → đồng hạng
+    var ch = false; recNorm(S.rec);
+    if (rank <= 3 && !(S.cup[k] <= rank)) { S.cup[k] = rank; ch = true; toast("Bạn đạt cúp " + MEDAL[rank] + " tuần " + dateOf(k) + " – " + dateOf(k + 6) + "!"); }
+    if (!S.rec.hb || rank < S.rec.hb) { S.rec.hb = rank; S.rec.hk = k; ch = true; }
+    if (ch) { save(); checkBadges(); renderStats(); }
+  }
+  function bxhCupCheck() {
+    if (!bxhOk()) return;
+    var uid = fb.user.uid, k = cupWeek(), key = uid + "|" + k;
+    if (lsGet(BXH_CUP) === key || Date.now() - (BXH.cupTry[key] || 0) < 3600e3) return;
+    BXH.cupTry[key] = Date.now();
+    bxhCupGet(k).then(function (c) { return c || (Date.now() >= cupAt(k) ? bxhCupMake(k) : null); }).then(function (c) {
+      if (!c || !fb.user || fb.user.uid !== uid) return;
+      cupApply(c); lsSet(BXH_CUP, key);
+    }).catch(function () { });
+  }
+  // quản trị: tạo tài liệu bảng lần đầu; ẩn khi khóa (an = 2) / hiện khi mở khóa; bỏ dòng khi xóa người
+  function bxhEnsure() { var r = bxhRef(); r.get().then(function (s) { if (!s.exists) return r.set({ u: {}, an: {}, rs: {} }); }).catch(function () { }); }
+  function bxhMap(f, uid, v) { var o = {}, m = {}; m[uid] = v === undefined ? firebase.firestore.FieldValue.delete() : v; o[f] = m; return o; }
+  function bxhLock(uid, st) {
+    return bxhLoad(true).then(function (T) {
+      if (!T) return; var a = (T.an || {})[uid];
+      if (st === "khoa" && !a) return bxhRef().set(bxhMap("an", uid, 2), { merge: true });
+      if (st === "ok" && a === 2) return bxhRef().set(bxhMap("an", uid), { merge: true });
+    }).catch(function () { });
+  }
+  function bxhDrop(uid) { var o = bxhMap("u", uid); o.an = bxhMap("an", uid).an; o.rs = bxhMap("rs", uid).rs; return bxhRef().set(o, { merge: true }).catch(function () { }); }
+
+  // ---- màn Xếp hạng ----
+  function bxhVal(r, kind, t0) {
+    if (kind === "xp") return +r.xp || 0;
+    if (kind === "st") return r.sd >= t0 - 1 ? +r.sc || 0 : 0;
+    if (kind === "bd") { var n = 0, b = r.bd || {}; Object.keys(b).forEach(function (k) { if (k !== "sp") n += +b[k] || 0; }); return n; }
+    var k = perKey(kind, t0); return r[kind] && r[kind][0] === k ? +r[kind][1] || 0 : 0;
+  }
+  function bxhList(T, kind) { // [{uid, r, v, rank, me, hid}] — dòng của mình luôn là bản tính tại máy
+    var t0 = today(), me = fb.user ? fb.user.uid : "", an = (T && T.an) || {}, U = Object.assign({}, (T && T.u) || {}), out = [];
+    if (bxhOk()) U[me] = bxhRow();
+    Object.keys(U).forEach(function (uid) {
+      var r = U[uid]; if (!r || (an[uid] && uid !== me)) return;
+      var v = bxhVal(r, kind, t0); if (v <= 0 && uid !== me) return;
+      out.push({ uid: uid, r: r, v: v, me: uid === me, hid: !!an[uid], s2: kind === "st" ? +r.sm || 0 : kind === "bd" ? (r.cp || []).reduce(function (a, b) { return a + (+b || 0); }, 0) : 0 });
+    });
+    out.sort(function (a, b) { return b.v - a.v || b.s2 - a.s2 || String(a.r.ten).localeCompare(String(b.r.ten), "vi"); });
+    out.forEach(function (x, i) { x.rank = i && out[i - 1].v === x.v && out[i - 1].s2 === x.s2 ? out[i - 1].rank : i + 1; });
+    return out;
+  }
+  function rkHTML(n) { return '<span class="rk' + (n <= 3 ? " rk" + n : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>"; }
+  function bxhLi(x, unit, sub) {
+    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
+      (sub ? '<small class="muted">' + sub + "</small>" : "") + '</span><b class="num">' + fmt(x.v) + " " + unit + "</b></li>";
+  }
+  function bxhBoard(list, unit, subf) {
+    var top = list.slice(0, 50), me = list.filter(function (x) { return x.me; })[0];
+    var h = '<ol class="xhls">' + top.map(function (x) { return bxhLi(x, unit, subf && subf(x)); }).join("") + "</ol>";
+    if (me && top.indexOf(me) < 0) h += '<ol class="xhls xhme">' + bxhLi(me, unit, subf && subf(me)) + "</ol>";
+    return h;
+  }
+  function famHTML(f, lvN, full) {
+    var ls = f.lv(), n = lvN != null ? lvN : famN(f), all = ls.length;
+    if (!full) return '<div class="bdg' + (n ? " on" : "") + '" title="' + esc(f.t) + '"><div class="m">' + f.g + "</div>" + esc(f.t) + "<small>" + (n ? "cấp " + n + "/" + all : "chưa có") + "</small></div>";
+    var L = famLv(f), next = L.filter(function (x) { return !x.on; })[0], v = L[0].v;
+    return '<div class="bfam' + (n ? " on" : "") + '"><div class="m" aria-hidden="true">' + f.g + '</div><div class="bft"><b>' + esc(f.t) + ' <span class="muted num">cấp ' + n + "/" + all + "</span></b>" +
+      '<div class="bfl" aria-hidden="true">' + L.map(function (x) { return "<i" + (x.on ? ' class="on"' : "") + ' title="' + fmt(x.th) + " " + f.u + '"></i>'; }).join("") + "</div>" +
+      "<small>" + (next ? "Hiện có " + fmt(v) + " " + f.u + " · cấp " + (n + 1) + " khi đạt " + fmt(next.th) + " " + f.u : "Đã đạt cấp cao nhất (" + fmt(ls[all - 1]) + " " + f.u + ")") + "</small></div></div>";
+  }
+  function badgesHome() { // thẻ Hôm nay: huy hiệu nhiều cấp (tóm tắt)
+    return '<div class="badges">' + BFAM.map(function (f) { return famHTML(f); }).join("") + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div>";
+  }
+  function recGrid(rc, r) { // kỷ lục cá nhân
+    var it = [["Chuỗi dài nhất", fmt(r.sm || 0) + " ngày"], ["XP nhiều nhất 1 ngày", fmt(rc.xd || 0)], ["XP nhiều nhất 1 tuần", fmt(rc.xk || 0)], ["Hạng tuần cao nhất", rc.hb ? "hạng " + rc.hb : "chưa có"], ["Thi thử cao nhất", rc.ex ? fmt(rc.ex) + " điểm" : "chưa thi"], ["Bài không sai câu nào", fmt(rc.pf || 0)]];
+    return '<div class="qtst sm">' + it.map(function (x) { return "<div><small>" + x[0] + "</small><b>" + x[1] + "</b></div>"; }).join("") + "</div>";
+  }
+  function cupHTML(cp) { cp = cp || [0, 0, 0]; return [1, 2, 3].map(function (i) { return '<span class="cupc rk' + i + '" title="Cúp ' + MEDAL[i] + '"><span class="han">冠</span> ' + MEDAL[i] + " <b>" + (+cp[i - 1] || 0) + "</b></span>"; }).join(""); }
+  function bxhProfile(uid, list) {
+    var x = list.filter(function (y) { return y.uid === uid; })[0]; if (!x) return;
+    if (x.me) return HC.go("xh-toi");
+    var r = x.r, t0 = today(), bd = r.bd || {};
+    modal('<h2>' + esc(r.ten || "?") + '</h2><p class="sub">Hồ sơ công khai — chỉ có tên hiển thị và số liệu học.</p><div class="qtst sm"><div><small>Cấp</small><b>' + (+r.lv || 1) + "</b></div><div><small>Tổng XP</small><b>" + fmt(+r.xp || 0) + "</b></div><div><small>Chuỗi hiện tại</small><b>" + (r.sd >= t0 - 1 ? +r.sc || 0 : 0) + " ngày</b></div><div><small>XP tuần này</small><b>" + fmt(bxhVal(r, "w", t0)) + "</b></div></div>" +
+      '<h3>Cúp tuần</h3><p class="cups">' + cupHTML(r.cp) + '</p><h3>Huy hiệu</h3><div class="badges">' + BFAM.map(function (f) { return famHTML(f, +bd[f.id] || 0); }).join("") + "</div>" + (bd.sp ? '<p class="sub">+ ' + bd.sp + " thành tích đặc biệt</p>" : "") +
+      "<h3>Kỷ lục</h3>" + recGrid(r.rc || {}, r) + '<div class="row acts"><button class="btn" data-x>Đóng</button></div>');
+  }
+  var XH_TABS = [["", "Tuần"], ["thang", "Tháng"], ["quy", "Quý"], ["nam", "Năm"], ["tat", "Toàn thời gian"], ["toi", "Hồ sơ của tôi"]];
+  function xhKind(sec, sub) { return sec === "tat" ? (sub === "chuoi" ? "st" : sub === "huy" ? "bd" : "xp") : ({ thang: "m", quy: "q", nam: "y" }[sec] || "w"); }
+  function vRank(v, args) {
+    var sec = args[0] || "", sub = args[1] || "xp", ep = HC.epoch;
+    if (XH_TABS.every(function (a) { return a[0] !== sec; })) sec = "";
+    v.innerHTML = '<div class="row"><h1 style="margin:0">Xếp hạng</h1><span class="spacer"></span>' + (sec === "toi" ? "" : '<button class="btn sm ghost" type="button" id="xhre">Tải lại</button>') + "</div>" +
+      '<nav class="qtnav" aria-label="Các bảng xếp hạng">' + XH_TABS.map(function (a) { return '<a class="btn sm" href="#xh' + (a[0] ? "-" + a[0] : "") + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="xhb"></div>';
+    var box = $("#xhb", v);
+    checkBadges();
+    if (sec === "toi") { xhMe(box); return; }
+    var kind = xhKind(sec, sub);
+    function draw(T) {
+      if (HC.epoch !== ep) return;
+      var t0 = today(), h = "", L = bxhList(T, kind);
+      if (sec === "tat") {
+        h += '<nav class="qtnav xhsub" aria-label="Toàn thời gian">' + [["xp", "Tổng XP"], ["chuoi", "Chuỗi ngày"], ["huy", "Huy hiệu"]].map(function (a) { return '<a class="btn sm" href="#xh-tat-' + a[0] + '"' + (a[0] === sub ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + "</nav>";
+        h += '<div class="card"><h2>' + (kind === "st" ? "Chuỗi ngày học (hiện tại · dài nhất)" : kind === "bd" ? "Huy hiệu (tổng số cấp · cúp tuần)" : "Tổng XP từ trước tới nay") + "</h2>" +
+          (L.length ? bxhBoard(L, kind === "st" ? "ngày" : kind === "bd" ? "cấp" : "XP", kind === "st" ? function (x) { return "dài nhất " + fmt(+x.r.sm || 0) + " ngày"; } : kind === "bd" ? function (x) { var c = x.r.cp || []; return "cúp vàng " + (+c[0] || 0) + " · bạc " + (+c[1] || 0) + " · đồng " + (+c[2] || 0); } : function (x) { return "cấp " + (+x.r.lv || 1); }) : '<p class="sub">Chưa có ai trên bảng.</p>') + "</div>";
+      } else {
+        var K = perKey(kind, t0), me = L.filter(function (x) { return x.me; })[0], has = L.filter(function (x) { return x.v > 0 || x.me; });
+        h += '<div class="card"><h2>' + perName(kind, K) + "</h2>";
+        if (kind === "w") h += '<p class="sub">Tính từ 0 giờ thứ Hai · còn ' + (K + 7 - t0) + " ngày (hết Chủ nhật " + dateY(K + 6) + "). Top 3 nhận cúp vàng · bạc · đồng.</p>";
+        if (me) {
+          var i = L.indexOf(me), up = null; for (var j = i - 1; j >= 0; j--) if (L[j].v > me.v) { up = L[j]; break; }
+          h += '<p class="xhyou">' + (me.v > 0 ? "Bạn đang hạng <b>" + me.rank + "</b> với <b>" + fmt(me.v) + " XP</b>." + (up ? " Cần <b>" + fmt(up.v - me.v + 1) + " XP</b> để vượt " + esc(up.r.ten) + "." : me.rank === 1 ? " Bạn đang dẫn đầu!" : "") : "Bạn chưa có XP trong " + ({ w: "tuần", m: "tháng", q: "quý", y: "năm" }[kind]) + " này — học hoặc ôn để lên bảng.") + (me.hid ? " (Quản trị viên đang ẩn bạn khỏi bảng: người khác không thấy bạn.)" : "") + "</p>";
+        }
+        var nz = Object.keys((T && T.u) || {}).filter(function (uid) { return !(T.an || {})[uid] && (!fb.user || uid !== fb.user.uid) && bxhVal(T.u[uid], kind, t0) <= 0; }).length;
+        h += (L.some(function (x) { return x.v > 0; }) ? bxhBoard(has, "XP") : '<p class="sub">Chưa ai có XP trong kỳ này.</p>') + (nz > 0 ? '<p class="sub">' + nz + " người khác chưa có XP trong kỳ này.</p>" : "") + "</div>";
+        if (kind === "w") h += '<div class="card" id="xhlw"><h2>Cúp tuần trước</h2><p class="sub">Đang tải…</p></div>';
+      }
+      box.innerHTML = h;
+      $$("[data-pf]", box).forEach(function (b) { b.onclick = function () { bxhProfile(b.getAttribute("data-pf"), L); }; });
+      if (kind === "w") xhLastWeek($("#xhlw", box), T, ep);
+    }
+    function fail(e) {
+      if (HC.epoch !== ep) return;
+      var m = !bxhOk() ? "Bảng xếp hạng cần đăng nhập tài khoản và đồng bộ xong. Chờ một lát rồi bấm Tải lại." : BXH.err === "denied" || BXH.err === "none" ? "Bảng xếp hạng chưa sẵn sàng (quản trị viên chưa bật). Hồ sơ, huy hiệu và kỷ lục của bạn vẫn xem được ở \"Hồ sơ của tôi\"." : "Chưa tải được bảng xếp hạng (" + esc(tkErr(e)) + "). Kiểm tra mạng rồi bấm Tải lại.";
+      box.innerHTML = '<div class="card"><p class="tkmsg">' + m + '</p><p><a class="btn" href="#xh-toi">Hồ sơ của tôi</a></p></div>';
+    }
+    function load(force) {
+      if (!bxhOk()) return fail();
+      box.innerHTML = '<p class="sub">Đang tải…</p>';
+      bxhLoad(force).then(function (T) { if (!T) return fail(); draw(T); bxhSend(false); bxhCupCheck(); }, fail);
+    }
+    $("#xhre", v).onclick = function () { load(true); };
+    load(false);
+  }
+  function xhLastWeek(el, T, ep) {
+    if (!el) return;
+    var k = perKey("wp", today()), fin = Date.now() >= cupAt(k);
+    function show(e, note) {
+      if (HC.epoch !== ep || !el.isConnected) return;
+      var top = [], i;
+      for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)" }); }
+      top.forEach(function (x, j) { x.rank = j && top[j - 1].v === x.v ? top[j - 1].rank : j + 1; });
+      top = top.filter(function (x) { return x.rank <= 3; });
+      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (fb.user && x.uid === fb.user.uid ? " me" : "") + '">' + rkHTML(x.rank) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+    }
+    if (!fin) return show(bxhRank(T, k), "tạm tính — chốt lúc 12 giờ trưa thứ Hai");
+    bxhCupGet(k).then(function (c) { return c || bxhCupMake(k); }).then(function (c) { if (c) { cupApply(c); show(c.e || [], "đã chốt"); } else show(bxhRank(T, k), "chưa chốt được — tạm tính"); }, function () { show(bxhRank(T, k), "tạm tính"); });
+  }
+  function xhMe(box) {
+    var rc = myRecs(), cups = Object.keys(S.cup || {}).map(Number).sort(function (a, b) { return b - a; }), cp = [0, 0, 0], L = lvl();
+    cups.forEach(function (k) { cp[S.cup[k] - 1]++; });
+    box.innerHTML = '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
+      (rc.hb && rc.hk ? '<p class="sub" style="margin-top:8px">Hạng tuần cao nhất đạt ở ' + perName("w", rc.hk).toLowerCase() + ".</p>" : "") + "</div>" +
+      '<div class="card"><h2>Huy hiệu</h2><div class="bfams">' + BFAM.map(function (f) { return famHTML(f, null, true); }).join("") + "</div><h3>Thành tích đặc biệt</h3>" +
+      '<div class="badges">' + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div></div>" +
+      '<div class="card"><h2>Cúp tuần</h2><p class="cups">' + cupHTML(cp) + "</p>" + (cups.length ? '<ul class="qtls">' + cups.slice(0, 30).map(function (k) { return "<li>" + perName("w", k) + ": cúp " + MEDAL[S.cup[k]] + "</li>"; }).join("") + "</ul>" : '<p class="sub">Chưa có. Vào top 3 XP của một tuần để nhận cúp (chốt 12 giờ trưa thứ Hai tuần sau).</p>') + "</div>";
+  }
+
 
   // ---------- LỘ TRÌNH THEO KỲ (người dùng yêu cầu 26/11/2026; kế hoạch: .claude/ke-hoach/lo-trinh-nhieu-ky.md) ----------
   // Người học tự chọn kỳ (D.terms) + ngày thi từng kỳ, học nhiều kỳ cùng lúc được. S.plans[k] = {s ngày bắt đầu, e ngày thi, t, x}.
@@ -3643,13 +4021,13 @@
   // ---------- router ----------
   var VIEWS = [
     ["home", "Hôm nay"], ["hoc", "Học mới"], ["on", "Ôn tập"], ["kho", "Kho khó"], ["viet", "Tập viết"], ["choi", "Trò chơi"],
-    ["bo", "Bộ thủ"], ["loaitu", "Loại từ"], ["cau", "Câu"], ["thi", "Thi thử"], ["tra", "Tra cứu"], ["caidat", "Tiến độ & cài đặt"], ["qt", "Quản trị"]
+    ["bo", "Bộ thủ"], ["loaitu", "Loại từ"], ["cau", "Câu"], ["thi", "Thi thử"], ["xh", "Xếp hạng"], ["tra", "Tra cứu"], ["caidat", "Tiến độ & cài đặt"], ["qt", "Quản trị"]
   ];
   function viewList() { return VIEWS.filter(function (v) { return v[0] !== "qt" || isAdmin(); }); } // tab Quản trị: chỉ quản trị viên
   // ký hiệu chữ Hán (chỉ để trang trí, không phải nội dung thi) + nhãn ngắn cho thanh mục dọc hẹp
   var MENU_IC = {
     home: ["今", "Hôm nay"], hoc: ["新", "Học mới"], on: ["溫", "Ôn tập"], kho: ["難", "Kho khó"], viet: ["書", "Tập viết"], choi: ["戲", "Trò chơi"],
-    bo: ["部", "Bộ thủ"], loaitu: ["類", "Loại từ"], cau: ["句", "Câu"], thi: ["試", "Thi thử"], tra: ["查", "Tra cứu"], caidat: ["設", "Cài đặt"], qt: ["管", "Quản trị"]
+    bo: ["部", "Bộ thủ"], loaitu: ["類", "Loại từ"], cau: ["句", "Câu"], thi: ["試", "Thi thử"], xh: ["榜", "Xếp hạng"], tra: ["查", "Tra cứu"], caidat: ["設", "Cài đặt"], qt: ["管", "Quản trị"]
   };
   var cleanup = null;
   // THỨ TỰ các mục trên thanh menu: người học tự xếp (người dùng yêu cầu 25/11/2026), nhớ RIÊNG từng máy ở localStorage
@@ -3807,7 +4185,7 @@
     var name = h[0]; if (!viewList().some(function (v) { return v[0] === name; })) name = "home";
     renderMenu(name); renderStats();
     var view = $("#view"); view.innerHTML = "";
-    var fn = { home: vHome, hoc: vLearn, on: vReview, kho: vKho, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, tra: vLookup, caidat: vSettings, qt: vAdmin }[name];
+    var fn = { home: vHome, hoc: vLearn, on: vReview, kho: vKho, viet: vWrite, choi: vGames, bo: vRad, loaitu: vLT, cau: vSent, thi: vExam, xh: vRank, tra: vLookup, caidat: vSettings, qt: vAdmin }[name];
     cleanup = fn(view, h.slice(1)) || null;
     planGate(); // người mới chưa có lộ trình: hộp thoại bắt buộc chọn (route vừa xóa lớp hộp thoại)
     try { view.focus({ preventScroll: true }); } catch (e) { }
@@ -3891,7 +4269,7 @@
     h += bars("Chữ thông dụng", COMMON_C, s1[0], s1[1], s1[2]) + bars("Từ thông dụng", COMMON_W, s3[0], s3[1], s3[2]) + bars("Toàn bộ chữ", D.chars.length, s2[0], s2[1], s2[2]) + bars("Toàn bộ từ", D.words.length, s4[0], s4[1], s4[2]) + bars("214 bộ thủ", 214, s5[0], s5[1], -1) + bars(D.sents.length + " câu đề cương", D.sents.length, s6[0], s6[1], -1);
     h += "</div>";
     h += '<div class="card"><h2>Cấp ' + L.l + ' · ' + fmt(S.xp) + ' XP</h2><div class="bar" aria-label="Kinh nghiệm"><i class="b" style="width:' + Math.round(100 * L.cur / L.need) + '%"></i></div><p class="sub" style="margin-top:6px">Còn ' + (L.need - L.cur) + " XP để lên cấp " + (L.l + 1) + ". Chuỗi ngày học: " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>";
-    h += '<h3>Huy hiệu</h3><div class="badges">' + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div>";
+    h += '<div class="row" style="margin-top:14px"><h3 style="margin:0">Huy hiệu</h3><span class="spacer"></span><a class="btn sm" href="#xh-toi">Kỷ lục &amp; huy hiệu</a></div>' + badgesHome();
     var hard = HC.hard().slice(0, 12);
     var nk = HC.hardList().length;
     h += '<h3>Chữ hay quên</h3>' + (hard.length ? '<div class="minis">' + hard.map(miniHTML).join("") + '</div><p style="margin-top:8px"><a class="btn sm" href="#on-kho">Ôn riêng chữ hay quên</a></p>' : '<p class="sub">Chưa có. Chữ nào bạn quên từ 2 lần trở lên sẽ tự vào đây.</p>');

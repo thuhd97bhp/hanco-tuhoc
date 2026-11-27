@@ -14,6 +14,7 @@ rules_version = '2';
 // - hanco_qt/*: chỉ quản trị (mã số tài khoản, lịch sử người bị xóa, tự xóa, nhật ký quản trị — Bước 4).
 // - hanco_cfg/chung (Bước 4): thông báo chung, ngày thi chung, cài đặt tự xóa — người đã đăng nhập đọc, chỉ quản trị ghi.
 // - tk (Bước 4) = bản thống kê tóm tắt người học tự gửi (≤ 1 lần/giờ): phải là map đúng các khóa đã định.
+// - hanco_bxh (Bước 7) = bảng xếp hạng: tong (cả bảng 1 tài liệu, mỗi người sửa đúng dòng của mình) + c<tuần> (bản chốt cúp tuần).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null; }
@@ -112,6 +113,48 @@ service cloud.firestore {
           || (k != 'info' && d.keys().hasOnly(['b', 'vt', 'upd']) && d.keys().hasAll(['b', 'vt'])
             && d.vt is int && d.vt > 0 && d.vt < 10000 && k == 'p' + string(d.vt)
             && d.b is string && d.b.size() > 0 && d.b.size() <= 400000 && (!('upd' in d) || d.upd is int));
+      }
+    }
+
+    // BẢNG XẾP HẠNG (Bước 7): tong = {u {uid: dòng}, an {uid: 1 ẩn tay | 2 đang khóa}, rs {uid: ngày đặt lại XP}} — 1 tài liệu cho cả
+    // bảng (mở bảng = 1 lượt đọc). Thành viên "ok" đọc; chỉ sửa ĐÚNG dòng của mình: đúng khuôn, tên = tên hiển thị trong hồ sơ, XP
+    // không tăng quá 2.000 + 0,5 XP/giây kể từ lần ghi trước, XP từng kỳ ≤ tổng, đã bị đặt lại thì phải ghi đúng ngày đặt lại.
+    // an / rs / xóa dòng: chỉ quản trị. c<tuần> = bản chốt cúp tuần {k thứ Hai của tuần (số ngày), e [{u uid, v XP}] giảm dần, t}: tạo 1 lần
+    // sau 12 giờ trưa thứ Hai tuần sau (giờ VN); 3 người đầu phải khớp dòng trên bảng; chỉ quản trị xóa (chốt lại).
+    match /hanco_bxh/{k} {
+      allow read: if isAdmin() || okSt();
+      allow create: if (k == 'tong' && isAdmin())
+        || (k.matches('c[0-9]+') && (isAdmin() || okSt()) && cupOk(k, request.resource.data));
+      allow update: if isAdmin() || (k == 'tong' && okSt()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['u'])
+        && request.resource.data.u.diff(resource.data.u).affectedKeys().hasOnly([request.auth.uid])
+        && rowOk(request.resource.data.u[request.auth.uid], resource.data.u.get(request.auth.uid, null), resource.data));
+      allow delete: if isAdmin();
+      function okSt() { return signed() && exists(userPath(request.auth.uid)) && get(userPath(request.auth.uid)).data.st == 'ok'; }
+      function perOk(n, f) { return !(f in n) || (n[f] is list && n[f].size() == 2 && n[f][0] is int && n[f][1] is int && n[f][1] >= 0 && n[f][1] <= n.xp); }
+      function rowOk(n, o, T) {
+        return n is map
+          && n.keys().hasOnly(['ten', 'xp', 'w', 'wp', 'm', 'q', 'y', 'sc', 'sd', 'sm', 'lv', 'bd', 'cp', 'rc', 'xm', 'r', 'upd'])
+          && n.keys().hasAll(['ten', 'xp', 'upd'])
+          && n.ten == get(userPath(request.auth.uid)).data.ten
+          && n.xp is int && n.xp >= 0 && n.xp <= 100000000 && n.upd == request.time
+          && perOk(n, 'w') && perOk(n, 'wp') && perOk(n, 'm') && perOk(n, 'q') && perOk(n, 'y')
+          && (!('bd' in n) || (n.bd is map && n.bd.size() <= 12)) && (!('rc' in n) || (n.rc is map && n.rc.size() <= 8))
+          && (!('cp' in n) || (n.cp is list && n.cp.size() <= 3))
+          && (!(request.auth.uid in T.get('rs', {})) || n.get('r', 0) == T.rs[request.auth.uid])
+          && (o == null || n.xp <= o.xp || n.xp - o.xp <= 2000 + (request.time.toMillis() - o.upd.toMillis()) / 2000);
+      }
+      function wkHas(r, wk, v) { return ('w' in r && r.w[0] == wk && r.w[1] == v) || ('wp' in r && r.wp[0] == wk && r.wp[1] == v); }
+      function cupE(T, wk, e) { return e is map && e.keys().hasOnly(['u', 'v']) && e.u is string && e.v is int && e.v > 0 && e.u in T.u && !(e.u in T.get('an', {})) && wkHas(T.u[e.u], wk, e.v); }
+      function cupOk(k, d) {
+        let T = get(/databases/$(database)/documents/hanco_bxh/tong).data;
+        return d.keys().hasOnly(['k', 'e', 't']) && d.keys().hasAll(['k', 'e', 't'])
+          && d.k is int && k == 'c' + string(d.k) && d.t == request.time
+          && request.time.toMillis() >= (d.k + 7) * 86400000 - 25200000 + 43200000
+          && d.e is list && d.e.size() <= 300
+          && (d.e.size() < 1 || cupE(T, d.k, d.e[0]))
+          && (d.e.size() < 2 || (cupE(T, d.k, d.e[1]) && d.e[1].v <= d.e[0].v && d.e[1].u != d.e[0].u))
+          && (d.e.size() < 3 || (cupE(T, d.k, d.e[2]) && d.e[2].v <= d.e[1].v && d.e[2].u != d.e[1].u && d.e[2].u != d.e[0].u));
       }
     }
 

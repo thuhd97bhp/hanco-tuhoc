@@ -28,6 +28,7 @@
     opts = opts || {};
     var best = HC.setBest(g.id, score, opts.lowerBetter ? false : true);
     var bonus = opts.bonus != null ? opts.bonus : Math.max(2, Math.round(score / 2));
+    if (opts.rec && opts.rec.good_.length && !opts.rec.bad_.length && HC.perfect) HC.perfect(); // kỷ lục "bài không sai câu nào" (Bước 7)
     HC.addXP(bonus); HC.after();
     v.innerHTML = '<div class="card result pop"><div class="muted">' + esc(g.name) + '</div><div class="score-big">' + esc(opts.label || score) + "</div>" + (best ? '<span class="chip ok">Kỷ lục mới!</span>' : '<span class="muted">Kỷ lục: ' + esc(HC.state().best[g.id]) + "</span>") + "<p>" + esc(opts.msg || "") + "</p>" + recHTML(opts.rec) + '<p class="muted">+' + bonus + ' XP thưởng</p><div class="row" style="justify-content:center"><button class="btn primary" id="again">Chơi lại</button><a class="btn" href="' + (g.back || "#choi") + '">' + (g.back ? "Bài ôn khác" : "Trò khác") + '</a><a class="btn" href="#home">Trang chính</a></div></div>';
     v.querySelector("#again").onclick = function () { HC.route(); };
@@ -927,7 +928,7 @@
     var hd = '<div class="ghead"><a class="btn sm ghost" href="#thi">← Thi thử</a><h1 style="margin:0;font-size:1.25rem">' + (ex ? "Đề thi thử " + esc(ex.name.replace(/^Đề\s*/, "")) : which === "hk1" ? "Đề thi thử Kỳ 1 (Hán 1)" : "Đề thi thử Kỳ 2 (Hán 2)") + "</h1></div>";
     runQuiz(v, hd, qs, function (score, max, parts, byPart) {
       var sc = Math.round(score * 10) / 10, key = ex ? ex.best : which === "hk1" ? "examHK1" : "examHK2";
-      var best = HC.setBest(key, sc, true); HC.addXP(Math.round(sc / 3)); HC.after();
+      var best = HC.setBest(key, sc, true); if (sc >= 100 && HC.perfect) HC.perfect(); HC.addXP(Math.round(sc / 3)); HC.after();
       v.innerHTML = hd + '<div class="card result pop"><div class="score-big">' + sc + '</div><div class="muted">/ 100 điểm</div>' + (best ? '<span class="chip ok">Điểm cao nhất mới!</span>' : "") + '<div class="tablebox" style="width:min(480px,100%)"><table class="t"><tbody>' + Object.keys(byPart).map(function (p) { return "<tr><td>" + esc(p) + '</td><td class="num">' + (Math.round(byPart[p].got * 10) / 10) + " / " + byPart[p].max + "</td></tr>"; }).join("") + '</tbody></table></div><div class="row" style="justify-content:center"><button class="btn primary" id="again">Làm đề khác</button><a class="btn" href="#thi">Chọn đề</a></div></div>';
       v.querySelector("#again").onclick = function () { HC.route(); };
     });
