@@ -554,20 +554,62 @@ button.lnk { background: none; border: 0; padding: 4px 0; font: inherit; font-we
 /* tab Xếp hạng + huy hiệu nhiều cấp (Bước 7, 27/11/2026) */
 #xhb > .card { margin-bottom: 14px; }
 .xhsub { margin-top: 0; }
-.xhls { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.xhls { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
 .xhls.xhme { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
-.xhr { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; border: 1px solid transparent; }
-.xhr:nth-child(odd) { background: var(--surface-2); }
-.xhr.me { border-color: var(--accent); background: var(--accent-soft); }
+/* dòng bảng xếp hạng kiểu thoáng (27/11/2026): cột hạng · ảnh · tên · XP; dòng của mình tô nền cả dòng */
+.xhr { display: grid; grid-template-columns: 40px auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 14px; min-height: 60px; border-radius: 14px; border: 2px solid transparent; }
+.xhr:hover { background: var(--surface-2); }
+.xhr.me, .xhr.me:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.xhr .av.xm { --avs: 44px; font-size: 1.05rem; }
 .xht { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
 .xht small { flex-basis: 100%; font-size: 0.78rem; }
-.xhn { background: none; border: 0; padding: 4px 0; font: inherit; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; min-height: 32px; overflow-wrap: anywhere; }
+.xhn { background: none; border: 0; padding: 4px 0; font: inherit; font-weight: 700; color: var(--ink); text-align: left; cursor: pointer; min-height: 32px; overflow-wrap: anywhere; }
 button.xhn:hover { color: var(--accent); text-decoration: underline; }
-.xhr b.num { white-space: nowrap; }
+.xhr b.num { white-space: nowrap; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.xhr.me b.num { color: var(--ink); font-weight: 700; }
 .rk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 999px; font-weight: 700; font-size: 0.9rem; color: var(--muted); border: 1px solid var(--line); }
-.rk.rk1 { background: var(--gold); border-color: var(--gold); color: #fff; }
-.rk.rk2 { background: var(--silver); border-color: var(--silver); color: #fff; }
-.rk.rk3 { background: var(--bronze); border-color: var(--bronze); color: #fff; }
+.xhr span.rk { justify-self: center; border: 0; min-width: 32px; padding: 0; font-weight: 800; font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+.xhr span.rk.up { color: var(--good); } .xhr span.rk.dn { color: var(--seal); }
+/* huy chương hạng 1–3: vòng tròn có số + 2 dải ruy băng (SVG tự vẽ) */
+span.rk.mdl { width: 32px; height: 40px; min-width: 0; padding: 0; border: 0; display: block; }
+.mdl svg { display: block; width: 32px; height: 40px; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.22)); }
+.mdl text { font: 800 12.5px var(--f-ui); }
+.mdl .mi { stroke-width: 1.2; }
+.m1 .mo { fill: #f1b12c; } .m1 .mi { fill: #ffd85c; stroke: #e39d17; } .m1 .mr { fill: #e2871b; } .m1 .r2 { fill: #c87212; } .m1 text { fill: #8a5800; }
+.m2 .mo { fill: #b5c1cc; } .m2 .mi { fill: #e4eaf0; stroke: #98a7b5; } .m2 .mr { fill: #8193a5; } .m2 .r2 { fill: #6c7e90; } .m2 text { fill: #4b5967; }
+.m3 .mo { fill: #d8894c; } .m3 .mi { fill: #f3bb8c; stroke: #c27233; } .m3 .mr { fill: #b3642b; } .m3 .r2 { fill: #985321; } .m3 text { fill: #6d3712; }
+/* giải đấu tuần (27/11/2026): khiên 7 giải (chữ Hán giữa khiên), vạch nhóm thăng / xuống hạng */
+.gds { --gc: #c98446; position: relative; flex: none; display: inline-grid; place-items: center; width: 44px; height: 50px; }
+.gds svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gds .gs1 { fill: var(--gc); } .gds .gs2 { fill: color-mix(in srgb, var(--gc) 62%, #fff); }
+.gds b.han { position: relative; top: -2px; font-family: var(--f-han); font-weight: normal; font-size: 22px; line-height: 1; color: color-mix(in srgb, var(--gc) 40%, #000); }
+.gds.gbig { width: 76px; height: 86px; } .gds.gbig b.han { font-size: 38px; top: -3px; }
+.gds.sm { width: 30px; height: 34px; } .gds.sm b.han { font-size: 15px; top: -1px; }
+.gds.t1 { --gc: #c98446; } .gds.t2 { --gc: #a7b3bf; } .gds.t3 { --gc: #efb325; } .gds.t4 { --gc: #2fae84; } .gds.t5 { --gc: #dcc3ae; } .gds.t6 { --gc: #4fb6e4; } .gds.t7 { --gc: #8b7cf4; }
+.gdhd { text-align: center; }
+.gdhd h2 { margin: 4px 0 2px; }
+.gdhd .sub { margin: 4px auto; max-width: 52ch; }
+.gdrow { display: flex; align-items: center; justify-content: center; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: none; }
+.gdrow::-webkit-scrollbar { display: none; }
+.gdi { display: inline-grid; flex: none; }
+.gdi.khoa .gds { filter: grayscale(1); opacity: 0.4; }
+.gdi.qua .gds { opacity: 0.85; }
+.gdleft { margin: 4px 0 0; font-weight: 800; color: var(--warn); }
+.gdsep { display: flex; align-items: center; gap: 10px; margin: 8px 4px; font-weight: 800; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.gdsep::before, .gdsep::after { content: ""; flex: 1; height: 2px; border-radius: 2px; background: currentColor; opacity: 0.35; }
+.gdsep.up { color: var(--good); } .gdsep.dn { color: var(--seal); }
+.gdft { margin: 10px 0 0; }
+.gdpf { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.gdrule summary { cursor: pointer; font-weight: 700; min-height: 32px; display: flex; align-items: center; }
+.gdup .lvcard { border-color: var(--good); } .gdup .lvcard b { color: var(--good); }
+.vh { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@media (max-width: 480px) {
+  .xhr { gap: 8px; padding: 6px 8px; grid-template-columns: 34px auto minmax(0, 1fr) auto; }
+  .xhr .av.xm { --avs: 38px; }
+  .gdrow { gap: 4px; }
+  .gdrow .gds { width: 34px; height: 39px; } .gdrow .gds b.han { font-size: 17px; }
+  .gdrow .gds.gbig { width: 60px; height: 68px; } .gdrow .gds.gbig b.han { font-size: 30px; }
+}
 .xhyou { margin: 8px 0 4px; }
 .cups { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
 .cupc { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; border: 2px solid var(--line); font-size: 0.85rem; }

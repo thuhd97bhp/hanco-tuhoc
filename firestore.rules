@@ -15,6 +15,7 @@ rules_version = '2';
 // - hanco_cfg/chung (Bước 4): thông báo chung, ngày thi chung, cài đặt tự xóa — người đã đăng nhập đọc, chỉ quản trị ghi.
 // - tk (Bước 4) = bản thống kê tóm tắt người học tự gửi (≤ 1 lần/giờ): phải là map đúng các khóa đã định.
 // - hanco_bxh (Bước 7) = bảng xếp hạng: tong (cả bảng 1 tài liệu, mỗi người sửa đúng dòng của mình) + c<tuần> (bản chốt cúp tuần).
+//   Bản chốt c<tuần> có thể có g = giải + nhóm tuần sau của từng người (giải đấu, 27/11/2026; máy bản cũ chốt thiếu g → bổ sung 1 lần).
 //   Dòng có thể có mc (số ảnh đại diện mặc định 0–999), ms = 1 (dùng ảnh mặc định thay ảnh tự tải), mt (ms lúc chọn) — 27/11/2026.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -132,8 +133,13 @@ service cloud.firestore {
       allow update: if isAdmin() || (k == 'tong' && okSt()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['u'])
         && request.resource.data.u.diff(resource.data.u).affectedKeys().hasOnly([request.auth.uid])
-        && rowOk(request.resource.data.u[request.auth.uid], resource.data.u.get(request.auth.uid, null), resource.data));
+        && rowOk(request.resource.data.u[request.auth.uid], resource.data.u.get(request.auth.uid, null), resource.data))
+        // giải đấu (27/11/2026): bản chốt do máy bản cũ tạo (thiếu g) → thành viên bổ sung g ĐÚNG 1 LẦN, không đổi gì khác
+        || (k.matches('c[0-9]+') && okSt() && !('g' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['g']) && gOk(request.resource.data.g));
       allow delete: if isAdmin();
+      // g = {mã dòng: giải × 100 + nhóm} (giải 1–7, nhóm 0–99) — luật không duyệt được từng giá trị, chỉ kiểm khuôn + cỡ
+      function gOk(g) { return g is map && g.size() <= 1000; }
       function okSt() { return signed() && exists(userPath(request.auth.uid)) && get(userPath(request.auth.uid)).data.st == 'ok'; }
       function perOk(n, f) { return !(f in n) || (n[f] is list && n[f].size() == 2 && n[f][0] is int && n[f][1] is int && n[f][1] >= 0 && n[f][1] <= n.xp); }
       function rowOk(n, o, T) {
@@ -156,7 +162,7 @@ service cloud.firestore {
       function cupE(T, wk, e) { return e is map && e.keys().hasOnly(['u', 'v']) && e.u is string && e.v is int && e.v > 0 && e.u in T.u && !(e.u in T.get('an', {})) && wkHas(T.u[e.u], wk, e.v); }
       function cupOk(k, d) {
         let T = get(/databases/$(database)/documents/hanco_bxh/tong).data;
-        return d.keys().hasOnly(['k', 'e', 't']) && d.keys().hasAll(['k', 'e', 't'])
+        return d.keys().hasOnly(['k', 'e', 't', 'g']) && d.keys().hasAll(['k', 'e', 't']) && (!('g' in d) || gOk(d.g))
           && d.k is int && k == 'c' + string(d.k) && d.t == request.time
           && request.time.toMillis() >= (d.k + 7) * 86400000 - 25200000 + 43200000
           && d.e is list && d.e.size() <= 300

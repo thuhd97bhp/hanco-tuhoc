@@ -1567,7 +1567,16 @@
       var top = c && c.e ? c.e.slice(0, 3) : [];
       h += '<div class="card"><h2>Cúp tuần ' + dateOf(k) + " – " + dateY(k + 6) + "</h2>" + (c ? '<p class="sub">Đã chốt' + (c.t && c.t.toMillis ? " lúc " + hm(c.t.toMillis()) : "") + ". " + (top.length ? top.map(function (e, i) { var x = U[e.u] || {}; return "Hạng " + (i + 1) + ": " + esc(x.ten || "?") + " (" + fmt(e.v) + " XP)"; }).join(" · ") : "Không ai có XP tuần đó.") + "</p>" : '<p class="sub">Chưa chốt (người đầu tiên mở app sau 12 giờ trưa thứ Hai sẽ chốt).</p>') +
         '<p class="sub">Chốt lại = xóa bản chốt rồi tính lại từ bảng hiện tại (vd sau khi ẩn / đặt lại XP một người gian lận). Cúp người học đã nhận ở máy họ không tự mất.</p><div class="row"><button class="btn" id="qtcup">Chốt lại cúp tuần này</button></div></div>';
+      // giải đấu: số người mỗi giải tuần sau (theo bản chốt) + tính lại
+      var gs = c ? gdFrom(c) : null, gn = {};
+      if (gs) Object.keys(gs.g).forEach(function (u) { var t = Math.floor((+gs.g[u] || 0) / 100); if (t >= 1 && t <= GD_N) gn[t] = (gn[t] || 0) + 1; });
+      h += '<div class="card"><h2>Giải đấu</h2>' + (gs ? '<p class="sub">Tuần ' + dateOf(gs.k) + " – " + dateY(gs.k + 6) + ": " + GD.slice(1).map(function (g, i) { return g.t + " " + (gn[i + 1] || 0); }).join(" · ") + " người" + (Object.keys(gs.G).length ? " · số nhóm: " + Object.keys(gs.G).map(function (t) { return GD[t].t + " " + gs.G[t]; }).join(", ") : "") + ".</p>" : '<p class="sub">' + (c ? "Bản chốt tuần này chưa có giải (máy bản cũ chốt) — bấm Tính lại." : "Chưa chốt tuần nào — tuần đầu mọi người ở giải Đồng.") + "</p>") +
+        '<p class="sub">Tính lại = tính giải + nhóm tuần này từ bản chốt cúp và bảng hiện tại (vd sau khi chốt lại cúp hoặc ẩn một người).</p><div class="row"><button class="btn" id="qtgd"' + (c ? "" : " disabled") + ">Tính lại giải đấu</button></div></div>";
       box.innerHTML = h;
+      $("#qtgd", box).onclick = function () {
+        var b = this; busy(b);
+        gdRedo().then(function (n) { qtLog("Tính lại giải đấu", null, dateOf(k + 7) + ": " + n + " người"); toast("Đã tính lại giải đấu (" + n + " người)"); redraw(); }, function (e) { toast(e && e.message && !e.code ? e.message : tkErr(e)); redraw(); });
+      };
       function who(uid) { return byId[uid] || { uid: uid, ten: (U[uid] || {}).ten || "", hoten: "" }; }
       function busy(b) { $$("button", box).forEach(function (x) { x.disabled = true; }); b.textContent = "Đang lưu…"; }
       function fail(e) { toast("Chưa lưu được (" + tkErr(e) + ")"); redraw(); }
@@ -2929,7 +2938,7 @@
   }
   function gdUpShow(t) {
     var o = document.createElement("div"); o.className = "lvup gdup"; o.setAttribute("role", "status");
-    o.innerHTML = '<div class="lvcard">' + gdShield(t, "big") + "<b>Thăng hạng!</b><span>Bạn đã lên giải " + esc(GD[t].t) + ".</span></div>";
+    o.innerHTML = '<div class="lvcard">' + gdShield(t, "gbig") + "<b>Thăng hạng!</b><span>Bạn đã lên giải " + esc(GD[t].t) + ".</span></div>";
     document.body.appendChild(o); setTimeout(function () { o.remove(); }, 3200);
     tones([392, 523, 659, 784, 1047, 1319], 0.11, 0.07);
   }
@@ -3031,7 +3040,7 @@
     L.sort(function (a, b) { return b.v - a.v || String(a.r.ten).localeCompare(String(b.r.ten), "vi"); });
     L.forEach(function (x, i) { x.rank = i && L[i - 1].v === x.v ? L[i - 1].rank : i + 1; });
     var n = L.length, up = t < GD_N ? gdUp(n) : 0, dn = t > 1 ? gdDown(n) : 0, left = W + 7 - t0, meX = L.filter(function (x) { return x.me; })[0];
-    var h = '<div class="card gdhd"><div class="gdrow" role="list" aria-label="Các giải">' + GD.slice(1).map(function (g, i) { var k = i + 1; return '<span role="listitem" class="gdi' + (k === t ? " cur" : k < t ? " qua" : " khoa") + '">' + gdShield(k, k === t ? "big" : "") + (k === t ? "" : '<span class="vh">Giải ' + esc(g.t) + "</span>") + "</span>"; }).join("") + "</div>" +
+    var h = '<div class="card gdhd"><div class="gdrow" role="list" aria-label="Các giải">' + GD.slice(1).map(function (g, i) { var k = i + 1; return '<span role="listitem" class="gdi' + (k === t ? " cur" : k < t ? " qua" : " khoa") + '">' + gdShield(k, k === t ? "gbig" : "") + (k === t ? "" : '<span class="vh">Giải ' + esc(g.t) + "</span>") + "</span>"; }).join("") + "</div>" +
       "<h2>Giải " + esc(GD[t].t) + "</h2>" +
       '<p class="sub">' + (t < GD_N ? (n > up ? "Lọt top " + up + " để thăng lên giải " + esc(GD[t + 1].t) : "Đứng đầu nhóm để thăng lên giải " + esc(GD[t + 1].t)) + " (cần ít nhất " + gdNeed(t) + " XP trong tuần)." : "Giải cao nhất — giữ vững phong độ nhé!") + "</p>" +
       '<p class="gdleft">' + (left <= 1 ? "Ngày cuối tuần" : "Còn " + left + " ngày") + "</p>" +
