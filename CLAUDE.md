@@ -11,7 +11,9 @@
 - `games.js` = 11 trò chơi (`reg({...})`) + `runQuiz` + thi thử (`HC.exam`: đề HK1, kỳ 2 viết trong mã; đề khai trong
   app-data.json → `exams` chạy chung một bộ, vd đề giữa kỳ 3). Dùng API qua `window.HC`.
 - `sw.js` = service worker cho chạy ngoại tuyến (mã app: mạng trước, mất mạng dùng đệm; Firebase
-  SDK/phông: đệm trước; KHÔNG bao giờ đệm request Firestore/Auth).
+  SDK/phông: đệm trước; KHÔNG bao giờ đệm request Firestore/Auth). Ảnh `han/` ở đệm RIÊNG `hanchu-v1` (không bị xóa khi đổi
+  VERSION; lúc kích hoạt so `han-dau.json` = dấu md5 từng ảnh do release.py sinh → chỉ tải lại ảnh đã vẽ lại). Đệm `dem-v1` = số byte
+  Hosting đã tải (bộ đếm hạn mức). Đệm không bắt đầu bằng "hanco-" (`hanchu-v1`, `dem-v1`, `sach-v1`) không bị xóa khi phát hành.
 - `app-data.json` = dữ liệu sinh từ `tools/` (chars, words, sents, rads, loaitu; `ltq` câu ví dụ loại từ theo kỳ;
   `exams` đề thi thử; `terms` các kỳ thi (tên đầy đủ / gọi tắt, đề thi thử, bảng loại từ, bộ câu); mục có `kt` = thuộc kỳ nào; `plan` cũ chỉ để bản app cũ còn chạy; `srcs` tên tài liệu; mục có `fo: 1` = thuộc kỳ thi đang ưu tiên). KHÔNG sửa tay.
 - `app-strokes.json` = đường giữa từng nét (Make Me a Hanzi, giấy phép Arphic: `strokes-LICENSE.txt`) để app TỰ CHẤM
@@ -55,8 +57,9 @@
   `tools/work/sach/khop.txt` sinh bằng `cd tools && python sach_khop.py` (S có trong sách / T chỉ có thành phần / - không có).
   HÌNH TRANG SÁCH (người dùng duyệt 25/11/2026): `cd tools && python sach_pack.py` → `sach.json` ở gốc (chữ/bộ id → vị trí hoặc
   [[thành phần, vị trí]], KHÔNG có hình, lên hosting) + `tools/work/sach/sach.pack` (hình PNG base64 630 trang ~46 MB, CHỈ ở máy).
-  Người dùng đưa gói lên 1 lần: Cài đặt → "Hình trang sách" → Firestore riêng `hanco_progress/{uid}/sach/p<vị trí>` (+ `sach/info`
-  = độ dài từng trang đã đưa, để đưa tiếp / đưa lại trang đổi). App hiện khung `.sach` trong chi tiết chữ + bộ thủ (`sachFill`,
+  Quản trị đưa gói lên KHO CHUNG (Bước 6, 27/11/2026): tab Quản trị → Hình sách → Firestore `hanco_sach/p<vị trí>` (+ `hanco_sach/info`
+  = độ dài từng trang đã đưa, để đưa tiếp / chỉ đưa trang mới/đổi); mọi thành viên đang hoạt động đọc, chỉ quản trị ghi. Bản riêng cũ
+  `hanco_progress/{uid}/sach/` chỉ còn đọc/xóa (app đọc kho chung trước, bản riêng sau). "Tải hết về máy này" CHỈ quản trị. App hiện khung `.sach` trong chi tiết chữ + bộ thủ (`sachFill`,
   khung xem to `sachView`, thẻ Cài đặt `sachSettings` trong app.js); máy giữ hình đã xem ở Cache Storage `sach-v1` (không "hanco-"),
   công tắc localStorage `hanco-sach-noluu`. Không thuộc `S`. Số trang in = vị trí (< 251) hoặc vị trí − 2. Thử ở máy không đụng
   tài khoản: `python .claude/make-sach-test.py` → `/.claude/sach-test.html?signedin` (Firebase giả).
@@ -77,7 +80,7 @@
     trong sw.js + deploy hosting. `--check` = chỉ kiểm tra (không đổi sw.js, không deploy).
 
 ## Luật dữ liệu người học — BẮT BUỘC
-- Tiến độ = `S` (`{v,start,set,it,xp,streak,best,log,badges,upd}` + về sau `itT,gm,hard,pl,note,plans,lt`), `it[id] = [rBox,rDue,wBox,wDue,lapses,introDay]`
+- Tiến độ = `S` (`{v,start,set,it,xp,streak,best,log,badges,upd}` + về sau `itT,gm,hard,pl,note,plans,lt,cup,rec,meo`), `it[id] = [rBox,rDue,wBox,wDue,lapses,introDay]`
   (ngày = số ngày kể từ epoch theo giờ máy; wBox = -1 nếu không có thẻ viết). Lưu 3 nơi:
   localStorage `hanco-tuhoc-v1`, Firestore `hanco_progress/{uid}` (`data` = chuỗi JSON của S, `upd`, `ver`),
   sao lưu ngày `hanco_progress/{uid}/backups/{YYYY-MM-DD}` (giữ 14 bản).
@@ -89,8 +92,39 @@
   KHÔNG phải vị trí trong mảng (mảng xếp theo tần suất, đổi tự do). Mục mới nhận số tiếp theo; `build_app.py` tự dừng nếu
   mục cũ mất hoặc đổi id. CẤM sửa/xóa mục cũ trong ids.json, đổi tên bộ câu hay đổi chữ chính của mục cũ (muốn gộp chữ
   thì thêm vào cột biến thể). Nếu buộc phải đổi id thì PHẢI viết ánh xạ id cũ → mới trong `normalize()` trước khi phát hành.
-- Quy tắc Firestore ở `firestore.rules` (mỗi người chỉ đọc/ghi `hanco_progress/{uid}` của mình, kể cả `backups/` và `sach/`).
-  Deploy hosting không động tới Firestore; chỉ deploy rules khi được yêu cầu.
+- Quy tắc Firestore ở `firestore.rules` (từ Bước 3: thành viên trạng thái "ok" đọc/ghi `hanco_progress/{uid}` của mình + `backups/`;
+  quản trị đọc + xóa mọi người, không ghi đè; các bộ `hanco_users/ten/cfg/qt/sach/bxh/meo/bao` xem mục "Nhiều người dùng").
+  Thử luật bằng BỘ GIẢ LẬP (không đụng dự án thật) + `node .claude/test-rules.js` — PHẢI ĐẠT hết trước khi deploy luật.
+  Deploy hosting không động tới Firestore; chỉ deploy rules khi được yêu cầu (`firebase deploy --only firestore:rules`).
+  Mã mới cần luật mới → deploy luật rồi hosting ngay sau (luật lên trước vẫn an toàn vì quản trị luôn được phép).
+
+## Nhiều người dùng (Bước 1–8 kế hoạch `.claude/ke-hoach/nhieu-nguoi-dung.md`, phát hành Bước 9) — gói Firebase MIỄN PHÍ (Spark)
+Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + trình duyệt. Mọi tính năng mới phải tiết kiệm hạn mức (đọc/ghi/tải).
+- ĐỒNG BỘ (Bước 1): gom thay đổi, ghi tối đa ~1 lần/`FB_GAP` = 60 s khi đang học; ghi NGAY khi ẩn màn hình / pagehide / có mạng lại /
+  "Đồng bộ ngay"; không có gì mới thì không ghi. Không `get()` trước mỗi lần ghi: gộp với bản mới nhất nhận qua `onSnapshot` (`fbGot`/
+  `applyRemote`/`fbAhead`), trường `w` = mã lần ghi. localStorage `hanco-fb-ok` = "uid|S.upd" lúc khớp tài khoản.
+- TIẾN ĐỘ THEO TÀI KHOẢN trên 1 máy (Bước 2): `hanco-chu` = uid chủ của `hanco-tuhoc-v1` ("" = khách), `hanco-cat-<uid>` = bản đã cất của
+  từng tài khoản, sessionStorage `hanco-dn`; `fbOwn` chạy TRƯỚC `fbAttach`: người khác đăng nhập → KHÔNG gộp (cất bản người trước); khách
+  có tiến độ → hỏi gộp; máy bản cũ đang đăng nhập → tự nhận. "Đăng xuất và xóa tiến độ khỏi máy này".
+- TÀI KHOẢN (Bước 3): Google hoặc email + mật khẩu (xác nhận email); họ tên đầy đủ phải khớp danh sách (`nameKey`, dấu phải đúng; mỗi tên
+  1 tài khoản); trần số người; chưa đăng ký xong / bị khóa → cổng `html.gate` (chỉ màn tài khoản), khóa tức thì (nghe hồ sơ). `ADMIN_UID`
+  ghi cứng ở app.js + firestore.rules. Firestore: `hanco_users/{uid}` (ten, hoten, hk, email, st ok|khoa|xoa, tao, upd, tk), `hanco_ten/{khóa}`,
+  `hanco_cfg/dk` {tran, dem, mo} (ai cũng đọc), `hanco_qt/**` chỉ quản trị. localStorage `hanco-tk`, `hanco-dk`. `?emu` (chỉ localhost) =
+  nối bộ giả lập (cách chạy ở file kế hoạch, mục "Cách làm việc").
+- QUẢN TRỊ (Bước 4): tab `qt` (chỉ quản trị thấy): tổng quan, người học (mã số 000/001… chỉ quản trị biết, `hanco_qt/ma`), chi tiết, khóa/mở/
+  xóa (chặn hoặc cho đăng ký lại, lịch sử `hanco_qt/daxoa`), cần nhắc, họ tên, cài đặt (`hanco_cfg/chung`: thông báo, ngày thi chung, tự xóa),
+  nhật ký `hanco_qt/nk-YYYY-MM`. Người học gửi bản tóm tắt `hanco_users/{uid}.tk` ≤ 1 lần/giờ (`sumOf`/`tkSend`, KHÔNG có ghi chú riêng).
+  Người mới bắt buộc chọn lộ trình (`planGate`). localStorage `hanco-tk-gui`, `hanco-chung`, `hanco-tb-an`, `hanco-thi-an`, `hanco-qt-nhac`.
+- HẠN MỨC (Bước 5): mỗi máy tự đếm đọc/ghi/xóa Firestore + byte (`demPatch`, localStorage `hanco-dem`, sw.js đệm `dem-v1`), gửi kèm `tk.q`/`tk.nb`;
+  Quản trị → Hạn mức cộng mọi máy (ước tính), ngày theo giờ Thái Bình Dương. `dung-luong.json` do release.py ghi (cần commit).
+- BẢNG XẾP HẠNG (Bước 7): tab `xh`; TOÀN BỘ bảng = 1 tài liệu `hanco_bxh/tong` (mỗi người chỉ sửa `u.<uid mình>`, luật giới hạn mức tăng XP),
+  cúp tuần `hanco_bxh/c<thứ Hai>` chốt sau 12:00 thứ Hai; ghi dòng mình ≤ 1 lần/15 phút + khi rời app (`bxhSend`). Huy hiệu nhiều cấp `BFAM`
+  (giữ id huy hiệu cũ). `S.cup`, `S.rec`. localStorage `hanco-bxh-gui`, `hanco-bxh-cup`, `hanco-qt-xpla`. Chỉ hiện TÊN HIỂN THỊ.
+- CÁCH NHỚ CHUNG (Bước 8): ô "Cách nhớ" (`S.meo`, mọi người thấy, đăng ở `hanco_meo/{id}_{uid}` — KHÔNG đăng chữ đang gõ dở: `meoPub`/
+  `meoEditing`) + ô "Ghi chú khác" (= `S.note` cũ, chỉ mình thấy, quản trị cũng không thấy). Chấm 1–5 sao (không chấm của mình), báo không phù hợp
+  `hanco_bao` (chỉ quản trị đọc), Quản trị → Cách nhớ. Cách nhớ người khác LUÔN qua `noteClean`. localStorage `hanco-meo-bao`.
+- Thêm bộ sưu tập Firestore mới → viết luật + thêm trường hợp vào `.claude/test-rules.js`; thêm trường vào `S` → blank/normalize/merge/`fbAhead`
+  + `.claude/test-merge.js`.
 
 ## Luật nội dung
 - Âm, nghĩa, câu, phiên âm, dịch phải lấy từ các tài liệu trong `tools/sources.json` (giáo trình, đề cương, đề thi người
@@ -156,6 +190,8 @@ Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 F
 - Chỉ sửa file được yêu cầu, không refactor lan man; giữ ES5 + `HC.u` helpers, chuỗi giao diện tiếng Việt.
 - Hẹn giờ trong trò chơi dùng `HC.later` (tự hủy khi rời màn hình). Điều hướng dùng `HC.go(tên)`.
 - Kiểm tra: `node --check app.js games.js sw.js`; chạy thử bằng `python -m http.server` rồi mở trình duyệt.
+  Bài thử ở máy (`.claude/`): `node .claude/test-merge.js app.js`, `test-sync.js app.js`, `test-owner.js app.js`, `test-sw-dem.js`; với giả lập:
+  `test-rules.js`, dữ liệu thử `qt-seed.js`, bố cục `layout-check.js` (+ màn quản trị khi đăng nhập quản trị), `tk-layout.js`, `meo-layout.js`.
 - Phát hành: `python tools/release.py` → commit (kèm dòng Co-Authored-By) → `git push` (GitHub Pages tự cập nhật).
   Báo người dùng link https://hanco-tuhoc.web.app sau khi deploy.
 - KHÔNG quét toàn repo trừ khi được yêu cầu; `app-data.json` rất lớn — đừng đọc cả file, dùng script để tra.
