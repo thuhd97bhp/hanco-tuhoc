@@ -554,6 +554,16 @@ button.lnk { background: none; border: 0; padding: 4px 0; font: inherit; font-we
 /* tab Xếp hạng + huy hiệu nhiều cấp (Bước 7, 27/11/2026) */
 #xhb > .card { margin-bottom: 14px; }
 .xhsub { margin-top: 0; }
+/* PHÂN TẦNG TAB (người dùng yêu cầu 28/11/2026): chỗ nào có tab lớn + tab con của nó cùng hiện →
+   .tabs1 = tab lớn (nút to, đậm, đang chọn nền xanh đặc); .tabs2 = tab con (dải nền nhạt lùi vào, vạch nối bên trái,
+   nút viên nhỏ, đang chọn nền xanh NHẠT + viền xanh). Tab con mới thêm sau này dùng đúng 2 lớp này. */
+.tabs1 { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.tabs1 .btn { min-height: 42px; padding: 8px 16px; font-size: 0.97rem; font-weight: 700; border-radius: 10px; }
+.tabs1 .btn.primary, .tabs1 .btn[aria-current] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 2px 6px rgba(20, 40, 70, 0.18); }
+.tabs2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 14px 14px; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; }
+.tabs2-lb { font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.tabs2 .btn { min-height: 32px; padding: 4px 12px; font-size: 0.82rem; font-weight: 600; border-radius: 999px; background: var(--surface); color: var(--muted); }
+.tabs2 .btn.primary, .tabs2 .btn[aria-current] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .xhls { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
 .xhls.xhme { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 /* dòng bảng xếp hạng kiểu thoáng (27/11/2026): cột hạng · ảnh · tên · XP; dòng của mình tô nền cả dòng */
@@ -904,6 +914,7 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
 
 @media (max-width: 600px) {
   .stats .pill.xp { display: none; }
+  .stats span.pill.cl .lb { display: none; } /* màn hẹp: viên đồng bộ chỉ còn ☁ (màu = trạng thái, chữ ở title); nút Đăng nhập giữ chữ */
   .brand span.name { display: none; }
   .weeks { grid-template-columns: repeat(5, minmax(56px, 1fr)); overflow-x: auto; }
   .baskets { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); }

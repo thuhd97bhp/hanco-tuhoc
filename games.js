@@ -13,7 +13,8 @@
   }
   // trò chơi chỉ dùng mục đã học: chưa đủ thì khóa, mời học thêm
   function lock(v, g, msg) {
-    v.innerHTML = head(g) + '<div class="card"><p>' + esc(msg) + '</p><p class="sub">Trò chơi chỉ dùng chữ, từ, câu bạn đã học.</p><div class="row"><a class="btn primary" href="#hoc">Học mới</a><a class="btn" href="#choi">Trò khác</a></div></div>';
+    var T = HC.gscope();
+    v.innerHTML = head(g) + '<div class="card"><p>' + esc(msg) + '</p><p class="sub">' + (T ? "Trò chơi của " + esc(T.name) + " chỉ dùng chữ, từ, câu, loại từ của kỳ này mà bạn đã học." : "Trò chơi chỉ dùng chữ, từ, câu bạn đã học.") + '</p><div class="row"><a class="btn primary" href="#hoc">Học mới</a><a class="btn" href="' + (g.back || "#choi") + '">Trò khác</a></div></div>';
   }
   // tóm tắt ghi nhận của lượt chơi: mục nhớ / mục sai (sai = chưa thuộc, sẽ ôn lại sớm)
   function recHTML(rec) {
@@ -30,7 +31,7 @@
     var bonus = opts.bonus != null ? opts.bonus : Math.max(2, Math.round(score / 2));
     if (opts.rec && opts.rec.good_.length && !opts.rec.bad_.length && HC.perfect) HC.perfect(); // kỷ lục "bài không sai câu nào" (Bước 7)
     HC.addXP(bonus); HC.after();
-    v.innerHTML = '<div class="card result pop"><div class="muted">' + esc(g.name) + '</div><div class="score-big">' + esc(opts.label || score) + "</div>" + (best ? '<span class="chip ok">Kỷ lục mới!</span>' : '<span class="muted">Kỷ lục: ' + esc(HC.state().best[g.id]) + "</span>") + "<p>" + esc(opts.msg || "") + "</p>" + recHTML(opts.rec) + '<p class="muted">+' + bonus + ' XP thưởng</p><div class="row" style="justify-content:center"><button class="btn primary" id="again">Chơi lại</button><a class="btn" href="' + (g.back || "#choi") + '">' + (g.back ? "Bài ôn khác" : "Trò khác") + '</a><a class="btn" href="#home">Trang chính</a></div></div>';
+    v.innerHTML = '<div class="card result pop"><div class="muted">' + esc(g.name) + '</div><div class="score-big">' + esc(opts.label || score) + "</div>" + (best ? '<span class="chip ok">Kỷ lục mới!</span>' : '<span class="muted">Kỷ lục: ' + esc(HC.state().best[g.id]) + "</span>") + "<p>" + esc(opts.msg || "") + "</p>" + recHTML(opts.rec) + '<p class="muted">+' + bonus + ' XP thưởng</p><div class="row" style="justify-content:center"><button class="btn primary" id="again">Chơi lại</button><a class="btn" href="' + (g.back || "#choi") + '">' + (g.backTxt || (g.back ? "Bài ôn khác" : "Trò khác")) + '</a><a class="btn" href="#home">Trang chính</a></div></div>';
     v.querySelector("#again").onclick = function () { HC.route(); };
   }
   function reg(g) { HC.games.push(g); }
@@ -152,7 +153,7 @@
     run: function (v) {
       var P = HC.pool("w", 3); if (P.need) return lock(v, this, "Cần học thêm " + P.need + " từ để chơi trò này.");
       var words = HC.pickWeak(P.items, 10), N = words.length, g = this, i = 0, score = 0, tries = 0, rec = HC.gameRec();
-      var lc = HC.learnedOf("c"), allC = lc.length >= 8 ? lc : HC.D.chars.slice(0, 500);
+      var lc = HC.pool("c").items, allC = lc.length >= 8 ? lc : HC.D.chars.slice(0, 500);
       function round() {
         var w = words[i], need = U().chars(w.w);
         var extra = U().pick(allC.filter(function (c) { return need.indexOf(c.c) < 0; }), Math.max(2, 6 - need.length)).map(function (c) { return c.c; });
@@ -185,9 +186,11 @@
   // learned = true: chỉ hỏi từ ngữ pháp đã học, ưu tiên từ chưa thuộc (trò chơi); thi thử để trống = mọi từ
   function ltItem(x) { return U().chars(x).length > 1 ? HC.WORD[x] : HC.CHAR[x]; }
   function ltKeys(groups, set, learned) {
-    var LT = HC.LT, Q = HC.D.ltq || {}, pool = set ? (Q[set] || {}) : null;
-    return Object.keys(LT).filter(function (x) { var it; return groups.indexOf(LT[x]) >= 0 && (!pool || pool[x]) && (!learned || ((it = ltItem(x)) && HC.introduced(it.id))); });
+    var LT = HC.LT, Q = HC.D.ltq || {}, pool = set ? (Q[set] || {}) : null, T = HC.gscope(); // trò chơi theo kỳ: chỉ từ ngữ pháp trong bảng loại từ của kỳ
+    return Object.keys(LT).filter(function (x) { var it; return groups.indexOf(LT[x]) >= 0 && (!pool || pool[x]) && (!T || T.has["lt:" + x]) && (!learned || ((it = ltItem(x)) && HC.introduced(it.id))); });
   }
+  function ltG(T) { return G7.filter(function (g) { return T.groups.indexOf(g) >= 0; }).concat(T.groups.filter(function (g) { return G7.indexOf(g) < 0; })); } // loại của đề kỳ đó
+  function ltSet(T) { return T.lt === "gk3" ? "gk3" : "hk12"; }
   function ltQuestion(groups, set, learned) {
     var LT = HC.LT, Q = HC.D.ltq || {}, pool = set ? (Q[set] || {}) : null;
     var keys = ltKeys(groups, set, learned);
@@ -202,8 +205,10 @@
   var G5 = ["Số từ", "Phương vị từ", "Phó từ", "Lượng từ", "Liên từ"];
   var G7 = ["Trợ từ kết cấu", "Trợ động từ", "Lượng từ", "Phương vị từ", "Liên từ", "Phó từ", "Số từ"];
   reg({ id: "basket", icon: "類", name: "Năm rổ loại từ", desc: "Chữ được gạch chân thuộc loại từ nào? Thả vào đúng rổ: Số từ, Phương vị từ, Phó từ, Lượng từ, Liên từ.",
-    run: function (v) { basketRun(this, v, G5); } });
+    forT: function (T) { var GG = ltG(T); return { name: GG.length + " rổ loại từ", desc: "Chữ được gạch chân thuộc loại từ nào? Thả vào đúng rổ theo đề " + T.short + ": " + GG.join(", ") + "." }; },
+    run: function (v) { var T = HC.gscope(); if (T) basketRun(this, v, ltG(T), ltSet(T)); else basketRun(this, v, G5); } });
   reg({ id: "basket7", icon: "類", name: "Bảy rổ loại từ (giữa kỳ 3)", desc: "38 từ ngữ pháp của đề cương giữa kỳ 3, trong câu đề cương và câu đề thi K10: chọn đúng 1 trong 7 loại.",
+    forT: function () { return null; }, // theo kỳ: dùng trò rổ loại từ ở trên (đúng bảng loại từ của kỳ)
     run: function (v) { basketRun(this, v, G7, "gk3"); } });
   function basketRun(g, v, GG, set) {
       var i = 0, score = 0, N = 20, rec = HC.gameRec(), nk = ltKeys(GG, set, true).length;
@@ -512,7 +517,8 @@
       HC.pickWeak(Pw.items, 8).forEach(function (w) { qs.push({ kind: "type", it: w, pts: 5, part: "Phiên âm", rec: rec }); });
       HC.pickWeak(Pc.items, 6).forEach(function (c) { qs.push({ kind: "mean", it: c, pts: 5, part: "Nghĩa của chữ", rec: rec }); });
       var inPlan = HC.focusLt && HC.focusLt() === "gk3"; // kỳ thi gần nhất đang học là giữa kỳ 3: loại từ theo 7 loại của đề cương giữa kỳ 3
-      var GG = inPlan ? G7 : G5, st = inPlan ? "gk3" : undefined;
+      var GG = inPlan ? G7 : G5, st = inPlan ? "gk3" : undefined, T = HC.gscope();
+      if (T) { GG = ltG(T); st = ltSet(T); } // trò chơi theo kỳ: loại từ đúng đề kỳ đó
       if (ltKeys(GG, st, true).length) for (var k = 0; k < 6; k++) qs.push({ kind: "lt", q: ltQuestion(GG, st, true), groups: GG, pts: 5, part: "Loại từ", rec: rec });
       if (qs.length < 5) return lock(v, g, "Cần học thêm chữ, từ: bài đấu cần ít nhất 5 câu hỏi lấy từ phần bạn đã học.");
       var pt = 100 / qs.length; qs.forEach(function (q) { q.pts = pt; }); // ít mục đã học thì ít câu hơn, vẫn thang 100
@@ -527,15 +533,18 @@
   function ksGet() {
     var o = {}; try { o = JSON.parse(localStorage.getItem(KS_KEY) || "{}") || {}; } catch (e) { o = {}; }
     var types = Array.isArray(o.types) ? o.types.filter(function (t) { return /^[cwsr]$/.test(t); }) : [];
-    return { src: o.src === "pl" ? "pl" : "all", pls: Array.isArray(o.pls) ? o.pls.filter(function (k) { return typeof k === "string"; }) : [], types: types.length ? types : ["c", "w", "s", "r"], n: [10, 20, 30].indexOf(o.n) >= 0 ? o.n : 10, mode: o.mode === "write" ? "write" : "mc" };
+    return { src: o.src === "pl" || o.src === "da" ? o.src : "all", pls: Array.isArray(o.pls) ? o.pls.filter(function (k) { return typeof k === "string"; }) : [], types: types.length ? types : ["c", "w", "s", "r"], n: [10, 20, 30].indexOf(o.n) >= 0 ? o.n : 10, mode: o.mode === "write" ? "write" : "mc" };
   }
   function ksPut(o) { try { localStorage.setItem(KS_KEY, JSON.stringify(o)); } catch (e) { } }
   // mục theo lựa chọn: cả kho, hoặc hợp các playlist đã chọn (playlist đã xóa tự bỏ qua); lọc theo loại
+  function ksLearned() { return ["c", "w", "s", "r"].reduce(function (a, t) { return a.concat(HC.pool(t).items); }, []); }
+  function ksHard() { return HC.hardList().filter(function (it) { return HC.inScope(it); }); } // trò chơi theo kỳ: chỉ mục của kỳ
   function ksItems(o) {
     var list = [];
-    if (o.src === "pl") { var seen = {}; HC.plList().forEach(function (p) { if (o.pls.indexOf(p.id) < 0) return; p.ids.forEach(function (id) { if (!seen[id]) { seen[id] = 1; list.push(HC.ITEM[id]); } }); }); }
+    if (o.src === "da") list = ksLearned(); // mọi mục đã học (người dùng yêu cầu 27/11/2026: ôn lại khi không học kỳ nào)
+    else if (o.src === "pl") { var seen = {}; HC.plList().forEach(function (p) { if (o.pls.indexOf(p.id) < 0) return; p.ids.forEach(function (id) { if (!seen[id]) { seen[id] = 1; list.push(HC.ITEM[id]); } }); }); }
     else list = HC.hardList();
-    return list.filter(function (it) { return it && o.types.indexOf(it.type) >= 0; });
+    return list.filter(function (it) { return it && HC.inScope(it) && o.types.indexOf(it.type) >= 0; });
   }
   // ưu tiên mục sai nhiều (S.gm); mục chưa chơi lần nào cũng được ưu tiên; không lặp mục trong một lượt
   function ksW(it) { var g = (HC.state().gm || {})[it.id]; return g ? Math.max(0.5, 1 + g[1] * 2 - g[0] * 0.5) : 3; }
@@ -550,26 +559,30 @@
     return U().shuffle(out);
   }
   // khung chọn nguồn luyện — dùng ở màn Kho khó (thẻ Luyện, gid trống → 2 nút vào 2 trò) và đầu mỗi trò (gid = id trò)
-  HC.khoSetup = function (box, gid) {
+  HC.khoSetup = function (box, gid, src) { // src = "da" → chọn sẵn nguồn "Mọi mục đã học" (nút ở Việc hôm nay)
     var o = ksGet();
+    if (src === "da") { o.src = "da"; ksPut(o); }
     function draw() {
       var L = HC.plList(), live = {}; L.forEach(function (p) { live[p.id] = 1; });
       o.pls = o.pls.filter(function (k) { return live[k]; });
       if (o.src === "pl" && !L.length) o.src = "all";
-      var items = ksItems(o), nq = Math.min(o.n, items.length), nh = HC.hardList().length;
-      var h = '<div class="card ksu"><h2>Luyện kho khó</h2><p class="sub">Kết quả chỉ ghi đúng / sai để lần sau hỏi trước mục sai nhiều — <b>không đổi lịch ôn</b> của thẻ.</p>';
-      h += '<div class="ksg"><b>Nguồn</b><div class="ksopts"><label class="plck"><input type="radio" name="kss" value="all"' + (o.src === "all" ? " checked" : "") + '><span>Cả kho khó <span class="num muted">(' + nh + ' mục)</span></span></label><label class="plck"><input type="radio" name="kss" value="pl"' + (o.src === "pl" ? " checked" : "") + (L.length ? "" : " disabled") + "><span>Chọn playlist" + (L.length ? "" : ' <small class="muted">(chưa có playlist)</small>') + "</span></label></div>";
+      var items = ksItems(o), nq = Math.min(o.n, items.length), nh = ksHard().length, nd = ksLearned().length, kT = HC.gscope(), da = o.src === "da";
+      var h = '<div class="card ksu"><h2>' + (da ? "Luyện mọi mục đã học" : "Luyện kho khó") + (kT ? " · " + esc(kT.short) : "") + '</h2><p class="sub">Kết quả chỉ ghi đúng / sai để lần sau hỏi trước mục sai nhiều — <b>không đổi lịch ôn</b> của thẻ.</p>';
+      h += '<div class="ksg"><b>Nguồn</b><div class="ksopts"><label class="plck"><input type="radio" name="kss" value="all"' + (o.src === "all" ? " checked" : "") + '><span>Cả kho khó <span class="num muted">(' + nh + ' mục)</span></span></label><label class="plck"><input type="radio" name="kss" value="pl"' + (o.src === "pl" ? " checked" : "") + (L.length ? "" : " disabled") + "><span>Chọn playlist" + (L.length ? "" : ' <small class="muted">(chưa có playlist)</small>') + '</span></label><label class="plck"><input type="radio" name="kss" value="da"' + (da ? " checked" : "") + '><span>Mọi mục đã học <span class="num muted">(' + nd + " mục)</span></span></label></div>";
       if (o.src === "pl") h += '<div class="ksopts kspl">' + L.map(function (p) { return '<label class="plck"><input type="checkbox" data-kp="' + esc(p.id) + '"' + (o.pls.indexOf(p.id) >= 0 ? " checked" : "") + "><span>" + esc(p.n) + ' <span class="num muted">(' + p.ids.length + ")</span></span></label>"; }).join("") + "</div>";
       h += "</div>";
       h += '<div class="ksg"><b>Loại mục</b><div class="ksopts">' + KS_TYPES.map(function (t) { return '<label class="plck"><input type="checkbox" data-kt="' + t[0] + '"' + (o.types.indexOf(t[0]) >= 0 ? " checked" : "") + "><span>" + t[1] + "</span></label>"; }).join("") + "</div></div>";
       h += '<div class="ksg"><b>Số câu hỏi</b><div class="ksopts">' + [10, 20, 30].map(function (n) { return '<label class="plck"><input type="radio" name="ksn" value="' + n + '"' + (o.n === n ? " checked" : "") + '><span class="num">' + n + "</span></label>"; }).join("") + "</div></div>";
       if (gid !== "khoam") h += '<div class="ksg"><b>Chữ / từ / bộ thủ trả lời bằng</b>' + (gid ? "" : ' <small class="muted">(trò ' + esc(KG.khohan) + ")</small>") + '<div class="ksopts"><label class="plck"><input type="radio" name="ksm" value="mc"' + (o.mode === "mc" ? " checked" : "") + '><span>Trắc nghiệm 4 lựa chọn</span></label><label class="plck"><input type="radio" name="ksm" value="write"' + (o.mode === "write" ? " checked" : "") + '><span>' + (HC.vietMode() === "tt" ? "Viết tay trên màn hình (app tự chấm)" : "Viết chữ (ra giấy rồi tự chấm)") + '</span></label></div><small class="muted">Câu: luôn là xếp các chữ theo đúng thứ tự.</small></div>';
-      var msg = !nh ? "Kho khó đang trống. Bấm nút ⋯ cạnh một chữ, từ, câu hay bộ thủ (Tra cứu, Câu, Bộ thủ, thẻ học, thẻ ôn) rồi chọn “☆ Thêm vào kho khó”."
+      var msg = kT && da && !nd ? "Bạn chưa học mục nào của " + kT.short + "."
+        : kT && !da && !nh ? "Kho khó chưa có mục nào thuộc " + kT.short + ". Bấm nút ⋯ cạnh một chữ, từ, câu của kỳ này rồi chọn “☆ Thêm vào kho khó”."
+        : da && !nd ? "Bạn chưa học mục nào. Vào Hôm nay → Học mới để học mục đầu tiên."
+        : !da && !nh ? "Kho khó đang trống. Bấm nút ⋯ cạnh một chữ, từ, câu hay bộ thủ (Tra cứu, Câu, Bộ thủ, thẻ học, thẻ ôn) rồi chọn “☆ Thêm vào kho khó”."
         : o.src === "pl" && !o.pls.length ? "Hãy đánh dấu ít nhất 1 playlist."
         : !o.types.length ? "Hãy chọn ít nhất 1 loại mục."
         : !items.length ? "Nguồn đã chọn không có mục thuộc loại này."
         : "Đang chọn " + items.length + " mục → " + nq + " câu hỏi" + (items.length < o.n ? " (mỗi mục hỏi 1 lần)" : "") + ".";
-      h += '<p><span class="chip' + (items.length ? "" : " warn") + '" id="ksmsg">' + esc(msg) + "</span></p>" + (nh ? "" : '<p><a class="btn" href="#tra">Mở Tra cứu</a> <a class="btn" href="#cau">Mở danh sách Câu</a></p>') + "</div>";
+      h += '<p><span class="chip' + (items.length ? "" : " warn") + '" id="ksmsg">' + esc(msg) + "</span></p>" + (nh || da ? "" : '<p><a class="btn" href="#tra">Mở Tra cứu</a> <a class="btn" href="#cau">Mở danh sách Câu</a></p>') + "</div>";
       h += '<div class="row acts">' + (gid ? [gid] : ["khoam", "khohan"]).map(function (k) { return '<button type="button" class="btn primary" data-ks="' + k + '"' + (items.length ? "" : " disabled") + ">" + (gid ? "Bắt đầu" : "▶ " + esc(KG[k])) + "</button>"; }).join("") + "</div>";
       box.innerHTML = h;
     }
@@ -613,6 +626,7 @@
 
   // 12. Kho khó: Hán → âm Hán Việt (PHẢI đúng dấu; chữ nhiều âm: âm nào có trong dữ liệu cũng được; câu so với phiên âm đề cương)
   reg({ id: "khoam", icon: "難", name: "Kho khó: Hán → âm", desc: "Mục trong kho khó (cả kho hoặc playlist bạn chọn): nhìn chữ / từ / câu / bộ thủ, gõ âm Hán Việt — phải đúng dấu. Không đổi lịch ôn.",
+    forT: function (T) { return { desc: this.desc + " Chỉ lấy mục thuộc " + T.short + "." }; },
     run: function (v) { var g = this; ksStart(v, g, function (o, items) { khoAm(v, g, items); }); } });
   function khoAm(v, g, items) {
     var i = 0, score = 0, N = items.length, rec = HC.gmRec();
@@ -643,9 +657,11 @@
 
   // 13. Kho khó: âm + nghĩa → chữ Hán. Chữ / từ: trắc nghiệm 4 lựa chọn hoặc viết tay (chấm tự động như tập viết); câu: xếp chữ.
   reg({ id: "khohan", icon: "認", name: "Kho khó: âm + nghĩa → chữ Hán", desc: "Mục trong kho khó: nhìn âm và nghĩa, chọn đúng chữ Hán (trắc nghiệm) hoặc viết tay; câu thì xếp các chữ theo thứ tự. Không đổi lịch ôn.",
+    forT: function (T) { return { desc: this.desc + " Chỉ lấy mục thuộc " + T.short + "." }; },
     run: function (v) { var g = this; ksStart(v, g, function (o, items) { khoHan(v, g, items, o.mode); }); } });
   // nhiễu hợp lý: chữ → 1 cùng bộ, 1 gần âm, 1 gần hình (cùng bộ, số nét chênh ≤ 2); từ → cùng số chữ, chung chữ / gần âm;
   // bộ thủ → bộ khác số nét gần / gần âm. Thiếu → HC.distract
+  function ksScoped(a) { var T = HC.gscope(); if (!T) return a; var b = a.filter(function (x) { return T.has[x.id]; }); return b.length >= 30 ? b : a; } // theo kỳ: nhiễu trong kỳ
   function khoDistract(it) {
     var u = U(), out = [], used = {};
     used[it.key] = 1;
@@ -659,7 +675,7 @@
       var x = arr[Math.floor(Math.random() * arr.length)]; used[x.key] = 1; out.push(x); return true;
     }
     if (it.type === "c") {
-      var C = HC.D.chars, net = it.net || 0;
+      var C = ksScoped(HC.D.chars), net = it.net || 0;
       if (it.rad) take(C.filter(function (x) { return x.rad === it.rad; }));
       take(C.filter(function (x) { return fa(x) === A; })) || take(C.filter(function (x) { return fa(x).slice(0, 2) === A2; }));
       if (it.rad) take(C.filter(function (x) { return x.rad === it.rad && Math.abs((x.net || 0) - net) <= 2; }));
@@ -669,7 +685,7 @@
       take(R.filter(function (x) { return fa(x) === A; })) || take(R.filter(function (x) { return fa(x).slice(0, 2) === A2; }));
       take(R.filter(function (x) { return (x.net || 0) === rn; }));
     } else {
-      var ks = u.chars(it.key), n = ks.length, W = HC.D.words.filter(function (x) { return u.chars(x.w).length === n; });
+      var ks = u.chars(it.key), n = ks.length, W = ksScoped(HC.D.words).filter(function (x) { return u.chars(x.w).length === n; });
       take(W.filter(function (x) { return u.chars(x.w).some(function (c) { return ks.indexOf(c) >= 0; }); }));
       take(W.filter(function (x) { return fa(x).split(" ")[0] === A.split(" ")[0]; }));
       take(W.filter(function (x) { return u.chars(x.w).some(function (c) { return ks.indexOf(c) >= 0; }); }));

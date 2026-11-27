@@ -201,7 +201,12 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   từ ngày đầu, loại từ từ 1/5 chặng, câu từ 1/2 chặng, ~15% cuối (2–7 ngày) chỉ ôn + thi thử, cứ 7 ngày 1 ngày ôn. Nội dung kỳ =
   chữ/từ có trong đề cương / đề thi của kỳ (không tính giáo trình). DÙ THẾ NÀO mục lặp lại nhiều học trước (chữ, từ, loại từ theo
   số lần xuất hiện; câu: câu đã ra đề thi trước, rồi câu nhiều chữ phổ biến). Mục trùng nhiều kỳ học 1 lần ở kỳ thi sớm hơn.
-  "Việc hôm nay" chia theo từng kỳ + mục Chung. Phần không thuộc kỳ nào học khi không còn kỳ nào đang học (số chữ/từ trong Cài đặt).
+  "Việc hôm nay" chia theo từng kỳ + mục Chung. MỤC CHUNG (người dùng yêu cầu 27/11/2026): đang học ≥ 1 kỳ → CHỈ học bộ thủ;
+  không học kỳ nào → bộ thủ + chữ, từ theo số lần xuất hiện (bỏ mục đã học; `S.set.newC`/`newW` mỗi ngày, không giao câu) + khối
+  "Ôn lại những gì đã học" (`#viet-dahoc`, loại từ `#hoc-chung-lt`, trò kho khó nguồn "Mọi mục đã học" `#kho-luyen-da`). Bộ thủ: người
+  học đặt NGÀY HỌC XONG 214 bộ ở Cài đặt → Kế hoạch (`S.set.bo` = số ngày, 0/không có = lịch cũ theo `S.start`), mỗi ngày chia đều số
+  bộ chưa học cho số ngày còn lại, ≤ `BO_CAP` = 40 (`boQuota`/`restQuota`/`HC.boInfo`). KHÔNG có tab "Học mới" trên thanh mục (bỏ
+  27/11/2026): vào bài từ Việc hôm nay, `#hoc…` vẫn chạy (router cho riêng "hoc"), số bài mới hiện ở mục "Hôm nay".
   Loại từ có lịch ôn riêng `S.lt`. Tên kỳ: tên đầy đủ ở chỗ rộng, tên gọi tắt ở chỗ hẹp.
 - BÀI ĐANG DỞ (người dùng yêu cầu 27/11/2026): học dở (vd chưa xong nhóm 5 mục) → hôm sau / lần sau mở lại mục đó PHẢI học tiếp ĐÚNG những
   mục còn dở, đúng chỗ dừng (đang ở Bước 2 kiểm tra → vào lại đầu Bước 2), rồi mới tới bài mới hôm nay — dù học gì (chữ/từ/bộ thủ/câu,
