@@ -3849,12 +3849,11 @@
     var adm = isAdmin() && !isMine(x.uid); // 27/11/2026 (người dùng yêu cầu): bỏ nút "Báo không phù hợp" → dòng khích lệ chấm sao
     var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd">' + (x.uid ? (mine ? avHTML(x.uid, x.ten, avVer(x.uid), "sm", true) : avSlot(x.uid, x.ten)) : "") + '<b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
     h += '<div class="nt">' + noteClean(x.h || "") + "</div>";
-    if (!mine && !my) h += '<p class="meo-khich">👉 Hãy cho tôi biết đánh giá của bạn về mẹo này nếu thấy nó hữu ích nhé</p>';
     h += '<div class="row meo-ft">';
     if (!mine) {
       h += '<span class="stars" role="group" aria-label="Chấm sao cho cách nhớ này">';
       for (var i = 1; i <= 5; i++) h += '<button type="button" class="star' + (my >= i ? " on" : "") + '" data-star="' + i + '" aria-label="' + i + ' sao" aria-pressed="' + (my === i) + '" title="' + (my === i ? "Bấm lần nữa để bỏ chấm" : i + " sao") + '">★</button>';
-      h += "</span>" + (my ? '<span class="muted nsm">bạn chấm ' + my + " sao</span>" : "");
+      h += "</span>" + (my ? '<span class="muted nsm">bạn chấm ' + my + " sao</span>" : '<span class="meo-khich">Hãy cho tôi biết đánh giá của bạn về mẹo này nếu thấy nó hữu ích nhé</span>'); // dòng khích lệ: chữ nhỏ cạnh hàng sao, KHÔNG nổi hơn nội dung cách nhớ (người dùng yêu cầu)
     } else h += '<span class="muted nsm">Không chấm được cách nhớ của chính mình</span>';
     h += '<span class="spacer"></span>';
     if (adm && !mine) h += '<button type="button" class="btn sm bad" data-mact="qxoa">Xóa (quản trị)</button>';
