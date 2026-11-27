@@ -158,6 +158,45 @@ service cloud.firestore {
       }
     }
 
+    // CÁCH NHỚ CHUNG (Bước 8): hanco_meo/{id mục}_{uid tác giả} = {id, uid, ten (= tên hiển thị trong hồ sơ), h (HTML, 1–8.000 ký tự), upd (giờ máy chủ),
+    // r {uid người chấm: 1–5}}. Thành viên "ok" đọc / truy vấn. Tác giả tạo (r rỗng hoặc không có) + sửa h/ten/upd + xóa; người khác chỉ sửa / bỏ
+    // ĐÚNG r.<uid mình> (không chấm của chính mình); quản trị xóa. hanco_bao/{mã cách nhớ}_{uid người báo} = {m, id, a, u, ly, t}: thành viên "ok" chỉ
+    // TẠO (1 lần / cách nhớ, không báo của mình, phải khớp cách nhớ đang có); không ai sửa; chỉ quản trị đọc + xóa.
+    function okMe() { return signed() && exists(userPath(request.auth.uid)) && get(userPath(request.auth.uid)).data.st == 'ok'; }
+    function meoTen(t) { return isAdmin() || t == get(userPath(request.auth.uid)).data.ten; }
+    match /hanco_meo/{k} {
+      allow read: if isAdmin() || okMe();
+      allow create: if (isAdmin() || okMe()) && meoNew(k, request.resource.data);
+      allow update: if (isAdmin() || okMe()) && (meoEdit(resource.data, request.resource.data) || meoRate(resource.data, request.resource.data));
+      allow delete: if isAdmin() || (okMe() && (resource == null || resource.data.uid == request.auth.uid));
+      function meoH(d) { return d.h is string && d.h.size() > 0 && d.h.size() <= 8000 && meoTen(d.ten) && tenOk(d.ten) && d.upd == request.time; }
+      function meoNew(k, d) {
+        return d.keys().hasOnly(['id', 'uid', 'ten', 'h', 'upd', 'r']) && d.keys().hasAll(['id', 'uid', 'ten', 'h', 'upd'])
+          && d.uid == request.auth.uid && d.id is string && d.id.matches('[cwsr][0-9]{1,6}') && k == d.id + '_' + request.auth.uid
+          && (!('r' in d) || (d.r is map && d.r.size() == 0)) && meoH(d);
+      }
+      function meoEdit(o, d) {
+        return o.uid == request.auth.uid && d.diff(o).affectedKeys().hasOnly(['h', 'ten', 'upd']) && meoH(d);
+      }
+      function meoRate(o, d) {
+        return o.uid != request.auth.uid && d.diff(o).affectedKeys().hasOnly(['r'])
+          && d.r.diff(o.get('r', {})).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in d.r) || (d.r[request.auth.uid] is int && d.r[request.auth.uid] >= 1 && d.r[request.auth.uid] <= 5))
+          && d.r.size() <= 500;
+      }
+    }
+    match /hanco_bao/{k} {
+      allow read, delete: if isAdmin();
+      allow create: if okMe() && baoOk(k, request.resource.data);
+      function baoOk(k, d) {
+        let mp = /databases/$(database)/documents/hanco_meo/$(d.m);
+        return d.keys().hasOnly(['m', 'id', 'a', 'u', 'ly', 't']) && d.keys().hasAll(['m', 'id', 'a', 'u', 'ly', 't'])
+          && d.u == request.auth.uid && k == d.m + '_' + request.auth.uid && d.t == request.time
+          && d.m is string && d.ly is string && d.ly.size() <= 300
+          && exists(mp) && get(mp).data.uid == d.a && get(mp).data.id == d.id && d.a != request.auth.uid;
+      }
+    }
+
     match /hanco_qt/{doc=**} {
       allow read, write: if isAdmin();
     }

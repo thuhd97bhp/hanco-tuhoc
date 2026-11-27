@@ -597,6 +597,37 @@ a.li.pli { color: inherit; text-decoration: none; }
 .note .ntpop .sw.tc1, .note .ntpop .sw.tc2, .note .ntpop .sw.tc3, .note .ntpop .sw.tc4, .note .ntpop .sw.tc5, .note .ntpop .sw.tc6 { font-weight: 800; font-size: 1rem; }
 .note .nc { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .note > .btn { justify-self: start; }
+/* Bước 8: 2 ô (Cách nhớ — mọi người thấy · Ghi chú khác — chỉ mình thấy) + danh sách cách nhớ chung, chấm sao, báo */
+.note .nhd { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.note .nsub, .nsm { font-size: 0.8rem; }
+.nsm.bad { color: var(--seal); }
+.note .nempty { gap: 6px; }
+.note[data-nk="ghi"] { border-top-style: dotted; }
+.note + .note[data-nk="ghi"] { padding-top: 6px; }
+.meo-list, #meoapp { display: grid; gap: 10px; }
+#meoapp:empty { display: none; }
+#meoapp { margin-bottom: 10px; }
+.meo-it { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.meo-it.mine { border-color: var(--accent); }
+.meo-it.app { background: var(--surface-2); }
+.meo-it .nt { white-space: normal; overflow-wrap: anywhere; font-family: "Be Vietnam Pro", "Segoe UI", var(--f-han); }
+.meo-it .nt a { color: var(--accent); text-decoration: underline; }
+.meo-hd, .meo-ft { gap: 4px 8px; flex-wrap: wrap; align-items: center; }
+.meo-ten { overflow-wrap: anywhere; }
+.meo-avg { font-size: 0.85rem; white-space: nowrap; }
+.meo-avg b { color: var(--gold); }
+.stars { display: inline-flex; gap: 0; }
+.stars .star { min-width: 36px; height: 36px; padding: 0; border: 0; background: none; font-size: 1.45rem; line-height: 1; color: var(--line); cursor: pointer; }
+.stars .star.on { color: var(--gold); }
+.stars .star:hover, .stars .star:focus-visible { color: var(--gold); }
+.stars .star:disabled { opacity: 0.6; }
+.meo-form:empty { display: none; }
+.meo-bao { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--seal); border-radius: 8px; }
+.meo-bao .lyck { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.meo-bao input[type=text] { width: 100%; }
+.meo-it.qtmeo .nt { max-height: 12em; overflow-y: auto; }
+.qtbao { margin: 0; padding-left: 18px; font-size: 0.88rem; }
+.btn.sure { outline: 2px solid var(--seal); }
 /* giải thích từng chữ (tự soạn, ※) */
 .giai { display: grid; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .giai[hidden] { display: none; }
