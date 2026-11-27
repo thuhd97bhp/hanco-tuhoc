@@ -1,5 +1,5 @@
 /* Hán cổ tự học — service worker: cho app mở và chạy được khi không có mạng */
-var VERSION = "hanco-v20261127121148";
+var VERSION = "hanco-v20261127192410";
 var SHELL = ["./", "./index.html", "./app.js", "./games.js", "./app-data.json", "./app-strokes.json"];
 var CDN = [
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
@@ -24,6 +24,8 @@ self.addEventListener("activate", function (e) {
 // Ảnh chữ han/ (~3.700 ảnh, ~20 MB) lưu ở đệm RIÊNG HAN (tên không bắt đầu "hanco-" nên không bị xóa khi phát hành bản mới).
 // release.py sinh han-dau.json = {mã hex: dấu nội dung}; mỗi bản mới so với danh sách dấu đã lưu → chỉ xóa (để tải lại) ảnh đã vẽ lại.
 var HAN = "hanchu-v1", HAN_DAU = "./han-dau.json";
+// Ảnh đại diện mặc định anh-mac-dinh/ (~150 ảnh nhỏ) ở đệm riêng ANHMD (không "hanco-" → giữ qua các lần phát hành; số hình cố định, không vẽ lại)
+var ANHMD = "anhmd-v1";
 function hanCheck() {
   var nw;
   var job = fetch(HAN_DAU, { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
@@ -85,6 +87,17 @@ self.addEventListener("fetch", function (e) {
     e.respondWith(caches.open(HAN).then(function (c) {
       return c.match(key).then(function (hit) {
         return hit || fetch(key, { cache: "no-cache" }).then(function (res) { if (res && res.ok) c.put(key, res.clone()); return res; });
+      });
+    }).catch(function () { return fetch(req); }));
+    return;
+  }
+  if (sameOrigin && /\/anh-mac-dinh\/[0-9]{3}\.(webp|jpg)$/.test(url.pathname)) {
+    // ảnh đại diện mặc định (27/11/2026): đệm RIÊNG ANHMD (không bị xóa khi phát hành), có rồi thì không tải lại — kể cả mất mạng
+    var k2 = url.origin + url.pathname;
+    demLater(e);
+    e.respondWith(caches.open(ANHMD).then(function (c) {
+      return c.match(k2).then(function (hit) {
+        return hit || fetch(k2).then(function (res) { if (res && res.ok) c.put(k2, res.clone()); return res; });
       });
     }).catch(function () { return fetch(req); }));
     return;
