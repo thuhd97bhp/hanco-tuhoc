@@ -46,6 +46,16 @@
   hanzi-writer-data, chỉ ghi khi số nét + vị trí khớp), net/ của chữ đó có `r` (chỉ số nét thuộc bộ) để TÔ MÀU phần bộ trong
   hoạt hình. Tập viết: chữ phồn thể BẮT BUỘC; dạng rút gọn KHÔNG bắt buộc (nút "Viết thêm dạng rút gọn"), đã viết thì phải
   đúng CẢ HAI mới tính Đúng; viết dạng rút gọn vào ô phồn thể → Sai, app báo rõ. Không thêm trường nào vào `S`.
+- CHẾ ĐỘ TẬP VIẾT (người dùng yêu cầu 27/11/2026 — đa số người học không có máy tính bảng + bút): `vietMode()` = "gt" VIẾT GIÁN TIẾP
+  (MẶC ĐỊNH, kể cả người cũ) | "tt" VIẾT TRỰC TIẾP; lưu RIÊNG TỪNG MÁY ở localStorage `hanco-viet` (người dùng chốt: theo máy, không theo tài
+  khoản; thẻ "Cách tập viết" ở Cài đặt `#caidat-viet` phải ghi rõ điều đó), không thuộc `S`. Gián tiếp: chỉ có đề → người học viết ra giấy →
+  "Xem đáp án" (hoạt hình chữ `vietAnswer`) → tự chấm "Tôi viết đúng / sai" = ghi lịch y như app chấm (`grade` khi bấm Tiếp); có hướng dẫn +
+  dòng khích lệ báo kết quả (`vietGuide`, nằm DƯỚI hàng nút) và nút "Mở bảng viết" (mở ô viết cho cả lượt; "Đóng bảng viết" quay lại).
+  Trực tiếp: như cũ + nút "Tự chấm (xem đáp án)". ĐỀ Ở MỌI PHẦN VIẾT (cả 2 chế độ) CHỈ CÓ ÂM + NGHĨA + SỐ CHỮ (`vietPrompt`): KHÔNG gợi ý bộ,
+  không số nét, KHÔNG lộ chữ Hán nào trước khi xem đáp án — chữ Hán lẫn trong âm / nghĩa thay bằng "…" (`noHan`/`meanNoHan`). Áp dụng:
+  Tập viết + trò "Viết trên màn hình" (`writeSession`), Câu bước 4 (`sentPractice`: tự chấm "Còn chữ sai" → câu ôn lại sớm hơn,
+  `grade r 1` / học mới chưa thuộc), Kho khó viết tay (`qWrite`), Thi thử phần viết. Phần viết MỚI phải theo đúng luật này.
+  Kiểm bố cục các trạng thái màn viết: `.claude/viet-layout.js` (`await vietLayout()`, chạy cả 2 chế độ).
 - `giai/<mã hex>.json` = GIẢI THÍCH TỪNG CHỮ (tự soạn, KHÔNG có trong tài liệu → app luôn ghi ※): Pinyin, nghĩa + từ loại, lục thư,
   cấu tạo, nguồn gốc (Thuyết văn / chữ cổ), MẸO NHỚ (ghi rõ là mẹo). Mỗi chữ + bộ thủ 1 file, tải khi mở chữ (`giaiData`/`giaiHTML`/
   `giaiFill`/`showGiai` trong app.js; khung `.giai` trong chi tiết chữ + bộ thủ, mục "※ Giải thích" ở ⋯). Nguồn soạn: `tools/work/giai/dot*.txt`
@@ -131,6 +141,8 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   (mở app, hiện lại màn hình, 10 phút/lần, không đọc Firestore); lượt chấm 4–5 sao cho cách nhớ của mình (`tbxSao`: đọc `hanco_meo` where uid ==
   `myKey("me")` ≤ 1 lần/giờ, lần đầu / đổi vai chỉ ghi mốc; 1–3 sao không báo; không nói tên người chấm). Lưu RIÊNG từng máy theo tài khoản ở
   localStorage `hanco-tb-<uid | khach>` {L ≤ 50, s mốc sao, sk, sc} — không thuộc `S`, không có luật Firestore mới. Tính năng mới có sự kiện đáng báo → thêm `tbxAdd`.
+- MÀN NGƯỜI HỌC (người dùng yêu cầu 27/11/2026): TUYỆT ĐỐI không có câu nào nói quản trị viên biết / thấy / xem được thông tin của
+  người học (họ tên, thống kê…). Câu về việc quản trị làm (liên hệ, khóa, gỡ, ngày thi chung) vẫn được; màn chỉ quản trị thấy không áp dụng.
 - ẢNH ĐẠI DIỆN (người dùng yêu cầu 27/11/2026): `hanco_anh/{uid}` = {d data URL webp/jpeg ≤ 200.000 ký tự (cắt vuông giữa, 384px), v phiên bản ms, upd}.
   Thành viên "ok" đọc; chủ ảnh tạo / ĐỔI (ghi đè → ảnh cũ mất); KHÔNG có gỡ ảnh — chỉ quản trị xóa (khi xóa người, `qtDelete`). Dòng bảng xếp hạng
   có `a` = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi `a` đổi (`avVer`/`avGet`); ảnh đã tải ở Cache Storage `anh-v1`. Nút ảnh cuối thanh mục →
