@@ -15,6 +15,7 @@ rules_version = '2';
 // - hanco_cfg/chung (Bước 4): thông báo chung, ngày thi chung, cài đặt tự xóa — người đã đăng nhập đọc, chỉ quản trị ghi.
 // - tk (Bước 4) = bản thống kê tóm tắt người học tự gửi (≤ 1 lần/giờ): phải là map đúng các khóa đã định.
 // - hanco_bxh (Bước 7) = bảng xếp hạng: tong (cả bảng 1 tài liệu, mỗi người sửa đúng dòng của mình) + c<tuần> (bản chốt cúp tuần).
+//   Dòng có thể có mc (số ảnh đại diện mặc định 0–999), ms = 1 (dùng ảnh mặc định thay ảnh tự tải), mt (ms lúc chọn) — 27/11/2026.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signed() { return request.auth != null; }
@@ -137,8 +138,11 @@ service cloud.firestore {
       function perOk(n, f) { return !(f in n) || (n[f] is list && n[f].size() == 2 && n[f][0] is int && n[f][1] is int && n[f][1] >= 0 && n[f][1] <= n.xp); }
       function rowOk(n, o, T) {
         return n is map
-          && n.keys().hasOnly(['ten', 'xp', 'w', 'wp', 'm', 'q', 'y', 'sc', 'sd', 'sm', 'lv', 'bd', 'cp', 'rc', 'xm', 'r', 'a', 'upd'])
+          && n.keys().hasOnly(['ten', 'xp', 'w', 'wp', 'm', 'q', 'y', 'sc', 'sd', 'sm', 'lv', 'bd', 'cp', 'rc', 'xm', 'r', 'a', 'mc', 'ms', 'mt', 'upd'])
           && (!('a' in n) || (n.a is int && n.a >= 0))
+          && (!('mc' in n) || (n.mc is int && n.mc >= 0 && n.mc <= 999))
+          && (!('ms' in n) || n.ms == 1)
+          && (!('mt' in n) || (n.mt is int && n.mt >= 0))
           && n.keys().hasAll(['ten', 'xp', 'upd'])
           && n.ten == get(userPath(request.auth.uid)).data.ten
           && n.xp is int && n.xp >= 0 && n.xp <= 100000000 && n.upd == request.time

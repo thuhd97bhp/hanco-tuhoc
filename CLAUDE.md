@@ -128,6 +128,15 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   có `a` = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi `a` đổi (`avVer`/`avGet`); ảnh đã tải ở Cache Storage `anh-v1`. Nút ảnh cuối thanh mục →
   menu tài khoản (`avMenu`: xem / đổi / tài khoản / đăng xuất); khung xem ảnh = lớp riêng `avModal` (không đóng khung bên dưới). Ảnh hiện ở Xếp hạng,
   hồ sơ, cúp tuần, Hồ sơ của tôi, Cách nhớ (`avHTML` + `avFill`). localStorage `hanco-anh` {uid: phiên bản ảnh của mình}. Không thuộc `S`.
+- ẢNH ĐẠI DIỆN MẶC ĐỊNH (người dùng yêu cầu 27/11/2026): `anh-mac-dinh/NNN.webp` + `NNN.jpg` (máy không đọc được WebP; dò 1 lần, localStorage
+  `hanco-webp`), `AVM_N` = 150 hình Microsoft Fluent Emoji 3D (MIT, `anh-mac-dinh/LICENSE.txt`), sinh bằng `cd tools && python -I anhmd.py [--sheet]` từ
+  `tools/work/anhmd/ds.txt` — CHỈ THÊM VÀO CUỐI (số hình đã lưu trên bảng), thêm hình thì sửa `AVM_N` (release.py kiểm đủ ảnh). Bộ chọn: không thịt cá,
+  rượu bia, vũ khí, mặt người, biểu tượng tôn giáo. KHÔNG TRÙNG: người chưa tự tải ảnh / tự chọn hình hệ thống GIỮ 1 hình = cột `mc` trên dòng bảng xếp
+  hạng (`ms` = 1 dùng hình hệ thống thay ảnh tự tải, `mt` = giờ chọn → lần chọn mới nhất thắng giữa các máy của cùng người). Nhận hình trống số nhỏ nhất
+  (`avmBoot` lúc vào app / `avmEnsure` sau mỗi lần tải bảng); trùng khi còn hình trống → người mã lớn hơn tự đổi + được báo; hết hình mới vòng lại.
+  Người học "Chọn ảnh có sẵn" (`avmPick`, chỉ hiện hình chưa ai dùng) / "Dùng lại ảnh đã tải lên" (`avmUseOwn`). Quản trị → Ảnh mặc định (`qtAnh`):
+  ai dùng hình nào, xóa / khôi phục = `hanco_cfg/chung.amx` [số hình] (ẩn khỏi app, tệp vẫn ở hosting; người đang dùng tự đổi khi máy đọc lại cấu hình
+  chung, ≤ 1 giờ). localStorage `hanco-anh-md` {mã: {m, s, t}}; sw.js đệm riêng `anhmd-v1`. Không thuộc `S`. Bài thử `node .claude/test-anhmd.js app.js`.
 - HAI VAI CỦA QUẢN TRỊ (người dùng yêu cầu 27/11/2026): vai quản trị (tên `tq`, mã = ADMIN_UID) + vai người học (tên `th`, mã riêng ngẫu nhiên `hv`
   28 ký tự giống uid → không ai nối được với quản trị), mỗi vai 1 ảnh (`hanco_anh/{mã}`). Chọn theo chỗ: `bx` bảng xếp hạng + cúp tuần (qt | hv | an =
   ẩn, xóa dòng), `me` cách nhớ chung (qt | hv). MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều từ `S` của quản trị — đổi vai
@@ -203,7 +212,7 @@ Người dùng học chủ yếu trên máy tính bảng Samsung Galaxy Tab S9 F
 - Chỉ sửa file được yêu cầu, không refactor lan man; giữ ES5 + `HC.u` helpers, chuỗi giao diện tiếng Việt.
 - Hẹn giờ trong trò chơi dùng `HC.later` (tự hủy khi rời màn hình). Điều hướng dùng `HC.go(tên)`.
 - Kiểm tra: `node --check app.js games.js sw.js`; chạy thử bằng `python -m http.server` rồi mở trình duyệt.
-  Bài thử ở máy (`.claude/`): `node .claude/test-merge.js app.js`, `test-sync.js app.js`, `test-owner.js app.js`, `test-sw-dem.js`; với giả lập:
+  Bài thử ở máy (`.claude/`): `node .claude/test-merge.js app.js`, `test-sync.js app.js`, `test-owner.js app.js`, `test-anhmd.js app.js`, `test-sw-dem.js`; với giả lập:
   `test-rules.js`, dữ liệu thử `qt-seed.js`, bố cục `layout-check.js` (+ màn quản trị khi đăng nhập quản trị), `tk-layout.js`, `meo-layout.js`.
 - Phát hành: `python tools/release.py` → commit (kèm dòng Co-Authored-By) → `git push` (GitHub Pages tự cập nhật).
   Báo người dùng link https://hanco-tuhoc.web.app sau khi deploy.

@@ -388,7 +388,7 @@
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () {
-        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub();
+        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub(); avmBoot();
         if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
       });
   }
@@ -1064,7 +1064,8 @@
     fb.db.collection("hanco_cfg").doc("chung").get().then(function (s) { chungSet(s.exists ? s.data() : {}); }, function () { });
   }
   function chungSet(d, quiet) {
-    var old = JSON.stringify(CHG); CHG = d || {};
+    var old = JSON.stringify(CHG), oam = JSON.stringify(CHG.amx || []); CHG = d || {};
+    if (JSON.stringify(CHG.amx || []) !== oam) setTimeout(function () { try { avmBoot(true); } catch (e) { } }, 0); // ảnh mặc định bị xóa / khôi phục
     lsSet(CH_LS, JSON.stringify({ t: Date.now(), u: fb.user ? fb.user.uid : "", d: CHG }));
     if (!quiet && old !== JSON.stringify(CHG)) softRefresh();
   }
@@ -1515,14 +1516,14 @@
   function vAdmin(v, args) {
     if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
     var sec = args[0] || "tong", ep = HC.epoch;
-    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["bxh", "Xếp hạng"], ["meo", "Cách nhớ"], ["nk", "Nhật ký"]];
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["bxh", "Xếp hạng"], ["anh", "Ảnh mặc định"], ["meo", "Cách nhớ"], ["nk", "Nhật ký"]];
     v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
       '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtwarn"></div><div id="qtb"><p class="sub">Đang tải…</p></div>';
     var box = $("#qtb", v);
     function draw() {
       if (HC.epoch !== ep) return;
       try { qtWarn($("#qtwarn", v)); } catch (e) { }
-      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, bxh: qtBxh, meo: qtMeo, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, bxh: qtBxh, anh: qtAnh, meo: qtMeo, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
     function load() {
       box.innerHTML = '<p class="sub">Đang tải…</p>';
@@ -1603,6 +1604,45 @@
         }, fail);
       };
     }, function (e) { if (cur === "qt-bxh") box.innerHTML = '<div class="card"><h2>Bảng xếp hạng</h2><p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Luật Firestore mới (Bước 7) đã deploy chưa?</p></div>"; });
+  }
+  // ---------- QUẢN TRỊ → ẢNH MẶC ĐỊNH (27/11/2026): xem hình nào ai đang dùng, xóa hình không hợp (hanco_cfg/chung.amx), khôi phục ----------
+  // Xóa = ẩn khỏi app (không chia / không cho chọn; người đang dùng tự đổi hình khi mở app). Tệp ảnh vẫn ở hosting (số hình phải cố định).
+  function qtAnh(box, redraw) {
+    box.innerHTML = '<p class="sub">Đang tải bảng xếp hạng…</p>';
+    bxhLoad(true).then(function (T) {
+      if (cur !== "qt-anh") return;
+      var U = (T && T.u) || {}, gone = avmGone(), byId = {}, who = {}, nUse = 0, ng = 0, cells = [];
+      QT.users.forEach(function (u) { byId[u.uid] = u; });
+      Object.keys(U).forEach(function (k) { var r = U[k] || {}; if (+r.a > 0 && !r.ms) return; if (avmOk(r.mc, {})) (who[r.mc] = who[r.mc] || []).push(k); });
+      function nm(k) { var r = U[k] || {}, u = byId[k], vc = vaiGet(); var hz = u ? u.hoten : k === ADMIN_UID ? "bạn — vai quản trị" : vc.hv && k === vc.hv ? "bạn — vai người học" : ""; return esc(r.ten || (u && u.ten) || "?") + (hz ? ' <span class="muted">(' + esc(hz) + ")</span>" : ""); }
+      for (var i = 0; i < AVM_N; i++) {
+        var ws = who[i] || [], g = !!gone[i], names = ws.map(nm).join(", ");
+        if (g) ng++; else if (ws.length) nUse++;
+        cells.push('<div class="qtam' + (g ? " gone" : "") + '"><img src="' + avmUrl(i) + '" alt="Hình số ' + (i + 1) + '" width="72" height="72" loading="lazy"><b>Hình ' + (i + 1) + "</b><small>" +
+          (g ? "Đã xóa" + (ws.length ? " · chờ đổi hình: " + names : "") : ws.length ? "Đang dùng: " + names : '<span class="muted">Trống</span>') + "</small>" +
+          (g ? '<button class="btn sm" type="button" data-amk="' + i + '">Khôi phục</button>' : '<button class="btn sm bad" type="button" data-amx="' + i + '">Xóa hình này</button>') + "</div>");
+      }
+      box.innerHTML = '<div class="card"><h2>Ảnh đại diện mặc định</h2><p class="sub">' + AVM_N + " hình · " + nUse + " đang có người dùng · " + (AVM_N - ng - nUse) + " trống · " + ng + " đã xóa.</p>" +
+        '<p class="sub">Người chưa tự tải ảnh lên được app chia 1 hình riêng (không trùng ai; hết hình mới vòng lại). Người học tự chọn được trong các hình trống. ' +
+        "Xóa hình = không ai được chia / chọn hình đó nữa; người đang dùng tự được đổi sang hình trống khác khi mở app. Khôi phục = cho dùng lại (người đã bị đổi không tự quay về).</p>" +
+        '<p class="sub">Hình: Microsoft Fluent Emoji, giấy phép MIT.</p></div><div class="qtamg">' + cells.join("") + "</div>";
+      function save(b, i, del) {
+        var arr = Object.keys(avmGone()).map(Number).filter(function (x) { return x !== i; });
+        if (del) arr.push(i); arr.sort(function (x, y) { return x - y; });
+        $$("button", box).forEach(function (x) { x.disabled = true; }); b.textContent = "Đang lưu…";
+        qtRef("hanco_cfg", "chung").set({ amx: arr }, { merge: true }).then(function () {
+          var d = JSON.parse(JSON.stringify(CHG || {})); d.amx = arr; chungSet(d, true);
+          qtLog(del ? "Xóa ảnh đại diện mặc định" : "Khôi phục ảnh đại diện mặc định", null, "Hình " + (i + 1) + ((who[i] || []).length ? " · đang dùng: " + who[i].map(function (k) { return (U[k] || {}).ten || "?"; }).join(", ") : ""));
+          toast(del ? "Đã xóa hình " + (i + 1) + " khỏi app" : "Đã khôi phục hình " + (i + 1)); redraw();
+        }, function (e) { toast("Chưa lưu được (" + tkErr(e) + ")"); redraw(); });
+      }
+      $$("[data-amx]", box).forEach(function (b) { b.onclick = function () {
+        var i = +b.getAttribute("data-amx"), ws = (who[i] || []).map(function (k) { return (U[k] || {}).ten || "?"; });
+        if (!confirm("Xóa hình " + (i + 1) + " khỏi app?" + (ws.length ? "\nĐang có người dùng: " + ws.join(", ") + " — họ sẽ tự được đổi sang hình trống khác khi mở app." : ""))) return;
+        save(b, i, true);
+      }; });
+      $$("[data-amk]", box).forEach(function (b) { b.onclick = function () { save(b, +b.getAttribute("data-amk"), false); }; });
+    }, function (e) { if (cur === "qt-anh") box.innerHTML = '<div class="card"><h2>Ảnh đại diện mặc định</h2><p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Kiểm tra mạng rồi bấm Tải lại.</p></div>"; });
   }
   function qtActive() { return QT.users.filter(function (u) { return u.st !== "xoa"; }); }
   function qtTong(box) {
@@ -2203,6 +2243,9 @@
     var me = myKey("bx") || fb.user.uid, av = avMyV(me), old = BXH.u === fb.user.uid && BXH.d && BXH.d.u && BXH.d.u[me]; // a = phiên bản ảnh đại diện (27/11/2026); quản trị: ảnh của vai đang hiện
     if (old && +old.a > av) av = +old.a;
     if (av > 0) row.a = av;
+    var mo = avmLocal(me); if (old && +old.mt > (+mo.t || 0)) mo = { m: old.mc, s: old.ms, t: old.mt }; // ảnh mặc định (27/11/2026): lần chọn mới nhất thắng
+    var mcv = mo.m != null ? +mo.m : old && typeof old.mc === "number" ? old.mc : -1, msv = mo.s != null ? (mo.s ? 1 : 0) : old && old.ms ? 1 : 0;
+    if (avmOk(mcv)) row.mc = mcv; if (msv) row.ms = 1; if (+mo.t > 0) row.mt = +mo.t;
     return row;
   }
   function bxhLoad(force) {
@@ -2212,6 +2255,7 @@
       BXH.d = s.exists ? s.data() : null; BXH.t = Date.now(); BXH.u = uid; BXH.err = s.exists ? "" : "none";
       BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[myKey("bx") || uid] || 0;
       try { avSeen(); } catch (e) { }
+      try { if (avmEnsure()) setTimeout(function () { bxhSend(true); }, 0); } catch (e) { }
       try { vaiTidy(); } catch (e) { }
       return BXH.d;
     }, function (e) { BXH.err = e && e.code === "permission-denied" ? "denied" : "net"; throw e; });
@@ -2385,7 +2429,7 @@
     avCol().doc(id).get().then(function (s) {
       var x = s.exists ? s.data() : null, v = x && x.d ? +x.v || 1 : 0;
       if (v) avCachePut(id, { v: v, d: x.d });
-      if (fb.user === u) { avSetMyV(id, v); renderStats(); }
+      if (fb.user === u) { avSetMyV(id, v); renderStats(); avmBoot(); }
     }, function () { });
   }
   // bảng xếp hạng vừa tải: máy khác của mình đã đổi ảnh (a mới hơn) → nhận phiên bản mới
@@ -2398,26 +2442,119 @@
     if (ten === "Quản trị viên") return "Q";
     var w = ten.split(/\s+/); return w[w.length - 1].charAt(0).toUpperCase();
   }
-  // vòng tròn ảnh: view = bấm để xem ảnh to (chỉ khi có ảnh); v null = tra theo avVer
+  // ---------- ẢNH MẶC ĐỊNH (người dùng yêu cầu 27/11/2026) ----------
+  // anh-mac-dinh/NNN.webp (+ NNN.jpg cho máy không đọc được WebP), AVM_N hình (Microsoft Fluent Emoji 3D, giấy phép MIT), sinh bằng
+  // tools/anhmd.py từ tools/work/anhmd/ds.txt — CHỈ THÊM VÀO CUỐI (số hình đã lưu trên bảng xếp hạng). Người chưa tự tải ảnh (hoặc tự chọn
+  // hình hệ thống) GIỮ 1 hình riêng: cột mc trên dòng bảng xếp hạng của mình; ms = 1 → đang dùng hình hệ thống thay ảnh đã tải lên.
+  // KHÔNG TRÙNG: nhận / chọn hình chưa ai dùng (đọc bảng mới nhất); 2 người lỡ trùng khi còn hình trống → người có mã lớn hơn tự đổi
+  // hình khác; hết hình mới vòng lại (hình ít người dùng nhất). Hình quản trị xóa: hanco_cfg/chung.amx = [số hình] → không ai được
+  // chia / chọn nữa, người đang dùng tự đổi sang hình trống. Máy giữ bản của mình ở localStorage AVM_LS {mã: {m số hình | -1, s 0|1}}.
+  // localStorage AVM_WEBP = "1" / "0" (máy đọc được WebP không). Không thuộc S. Ảnh tải 1 lần rồi ở đệm riêng anhmd-v1 (sw.js).
+  var AVM_N = 150, AVM_LS = "hanco-anh-md", AVM_WEBP = "hanco-webp", AVM = { job: null, boot: {} };
+  function avmExt() {
+    var w = lsGet(AVM_WEBP);
+    if (w !== "1" && w !== "0") { // đoán nhanh lần đầu (canvas), rồi thử giải mã thật 1 ảnh WebP nhỏ → nhớ cho các lần sau
+      w = "0"; try { var c = document.createElement("canvas"); c.width = c.height = 1; if (c.toDataURL("image/webp").indexOf("data:image/webp") === 0) w = "1"; } catch (e) { }
+      if (!AVM.job) { AVM.job = 1; try { var im = new Image(); im.onload = function () { lsSet(AVM_WEBP, im.width > 0 ? "1" : "0"); }; im.onerror = function () { lsSet(AVM_WEBP, "0"); }; im.src = "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA"; } catch (e) { } }
+      AVM.guess = w;
+    }
+    return (w === "1" || w === "0" ? w : AVM.guess) === "1" ? "webp" : "jpg";
+  }
+  function avmUrl(i) { return "./anh-mac-dinh/" + pad3(i) + "." + avmExt(); }
+  HC.avmUrl = avmUrl;
+  function avmGone() { var o = {}; (Array.isArray(CHG.amx) ? CHG.amx : []).forEach(function (i) { o[+i] = 1; }); return o; }
+  function avmOk(m, gone) { return typeof m === "number" && m >= 0 && m < AVM_N && Math.floor(m) === m && !(gone || avmGone())[m]; }
+  function avmLocal(id) { var o = jget(AVM_LS)[id]; return o && typeof o === "object" ? o : {}; }
+  function avmSetLocal(id, v, t) { var o = jget(AVM_LS); v.t = t || Date.now(); o[id] = v; lsSet(AVM_LS, JSON.stringify(o)); } // t = lúc chọn (lần chọn mới nhất thắng giữa các máy)
+  // bản của mình: máy này hay dòng bảng (máy khác của mình vừa chọn: mt mới hơn) — bản nào chọn sau thì dùng
+  function avmMine(id) {
+    var o = avmLocal(id), r = avmRow(id);
+    if (r && +r.mt > (+o.t || 0)) return { m: typeof r.mc === "number" ? r.mc : -1, s: r.ms ? 1 : 0, t: +r.mt, row: 1 };
+    return o;
+  }
+  function avmRow(uid) { return BXH.d && BXH.d.u ? BXH.d.u[uid] : null; }
+  // trạng thái ảnh mặc định của uid: {s 1 = dùng hình hệ thống thay ảnh đã tải, m số hình | -1}
+  function avmState(uid) {
+    var r = avmRow(uid) || {}, s = r.ms ? 1 : 0, m = typeof r.mc === "number" ? r.mc : -1;
+    if (isMine(uid)) { var o = avmMine(uid); if (o.s != null) s = o.s ? 1 : 0; if (o.m != null) m = +o.m; }
+    return { s: s, m: avmOk(m) ? m : -1 };
+  }
+  // hình đang có người khác dùng (bỏ người đang hiện ảnh tự tải): {số hình: [mã]}
+  function avmUsed(me) {
+    var U = (BXH.d && BXH.d.u) || {}, gone = avmGone(), c = {};
+    Object.keys(U).forEach(function (k) {
+      if (k === me) return; var r = U[k] || {};
+      if (+r.a > 0 && !r.ms) return;
+      if (avmOk(r.mc, gone)) (c[r.mc] = c[r.mc] || []).push(k);
+    });
+    return c;
+  }
+  function avmFree(used, gone) { var f = []; for (var i = 0; i < AVM_N; i++) if (!gone[i] && !used[i]) f.push(i); return f; }
+  function avmNext(used, gone) { // hình trống số nhỏ nhất; hết hình trống → vòng lại: hình ít người dùng nhất
+    var f = avmFree(used, gone); if (f.length) return f[0];
+    var best = -1, n = 1e9; for (var i = 0; i < AVM_N; i++) if (!gone[i] && used[i].length < n) { n = used[i].length; best = i; }
+    return best;
+  }
+  // bảng vừa tải: kiểm hình của mình (chưa có / bị xóa / trùng người khác khi vẫn còn hình trống) → nhận hình mới, trả true nếu đổi
+  function avmEnsure() {
+    var u = fb.user; if (!u || !BXH.d || BXH.u !== u.uid || !bxhOk()) return false;
+    var me = myKey("bx"); if (!me || !avKnown(me)) return false; // chưa biết mình có ảnh tự tải không → chờ
+    var o = avmMine(me), r = avmRow(me) || {}, s = o.s != null ? (o.s ? 1 : 0) : r.ms ? 1 : 0;
+    var m = o.m != null ? +o.m : typeof r.mc === "number" ? r.mc : -1, old = m, gone = avmGone(), used = avmUsed(me), why = "";
+    if (avMyV(me) > 0 && !s) m = -1; // đang hiện ảnh tự tải → nhả hình cho người khác
+    else if (!avmOk(m, gone)) { if (m >= 0) why = "xóa"; m = avmNext(used, gone); }
+    else if (used[m] && avmFree(used, gone).length && used[m].some(function (k) { return k < me; })) { why = "trùng"; m = avmNext(used, gone); }
+    var rm = avmOk(r.mc, gone) ? r.mc : -1, rs = r.ms ? 1 : 0; // bản đang ở trên bảng
+    var lo = avmLocal(me), chg = lo.s == null || +lo.m !== m || (lo.s ? 1 : 0) !== s; // bản trên máy có đổi không (→ vẽ lại ảnh)
+    if (o.m !== m || o.s == null || (o.s ? 1 : 0) !== s) avmSetLocal(me, { m: m, s: s }); // quyết định mới → giờ mới
+    else if (o.row) avmSetLocal(me, { m: m, s: s }, o.t); // nhận bản máy khác đã chọn (giữ giờ chọn của máy đó)
+    if (rm === m && rs === s) { if (chg) { avRefresh(me); renderStats(); } return false; } // bảng đã đúng → không cần ghi
+    if (why && old >= 0 && m >= 0) toast(why === "xóa" ? "Hình đại diện cũ của bạn đã bị gỡ khỏi app, app đổi sang hình khác" : "Hình đại diện vừa có người khác chọn trước, app đổi sang hình khác cho bạn");
+    avRefresh(me); renderStats();
+    return true;
+  }
+  // vào app / quản trị vừa xóa hình: máy chưa có hình (hoặc hình đã bị xóa) → đọc bảng 1 lần rồi nhận hình
+  function avmBoot(force) {
+    var u = fb.user; if (!u) return;
+    if (!bxhOk()) { // hồ sơ tài khoản / tiến độ chưa tải xong → thử lại sau 3 giây (tối đa 10 lần mỗi lần vào app)
+      if ((AVM.retry || 0) < 10 && !AVM.rt) { AVM.retry = (AVM.retry || 0) + 1; AVM.rt = setTimeout(function () { AVM.rt = null; avmBoot(force); }, 3000); }
+      return;
+    }
+    AVM.retry = 0;
+    var me = myKey("bx"); if (!me) return;
+    if (!avKnown(me)) { avMineCheck(me); return; } // avMineCheck xong tự gọi lại
+    var o = avmMine(me);
+    if (!force && o.m != null && (o.m < 0 || avmOk(+o.m))) return;
+    if (!force && Date.now() - (AVM.boot[me] || 0) < 60e3) return; AVM.boot[me] = Date.now(); // ≤ 1 lần/phút mỗi tài khoản (quản trị xóa hình → kiểm ngay)
+    bxhLoad(!!force).then(function () { if (avmEnsure()) bxhSend(true); }, function () { });
+  }
+  HC.avmBoot = avmBoot; HC.avmState = avmState;
+  // vòng tròn ảnh: view = bấm để xem ảnh to (chỉ khi có ảnh tự tải đang hiện); v null = tra theo avVer
+  // chưa có ảnh tự tải / đang dùng hình hệ thống → ảnh mặc định (số hình giữ trên bảng); chưa biết số hình → chữ cái đầu
   function avHTML(uid, ten, v, cls, view) {
     var h = 0, s = String(uid || ""); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    v = v == null ? avVer(s) : +v || 0; view = view && v > 0;
+    v = v == null ? avVer(s) : +v || 0;
+    var st = avmState(s); if (st.s) v = 0;
+    var md = !v && st.m >= 0, want = !!view; view = view && v > 0;
     var tag = view ? "button" : "span";
     return "<" + tag + (view ? ' type="button" data-avview="' + esc(ten || "") + '" aria-label="Xem ảnh đại diện của ' + esc(ten || "") + '" title="Xem ảnh đại diện"' : ' aria-hidden="true"') +
-      ' class="av' + (cls ? " " + cls : "") + '" data-av="' + esc(s) + '" data-avv="' + v + '" style="--avbg:' + AV_BG[h % AV_BG.length] + '">' + esc(avInit(ten)) + "</" + tag + ">";
+      ' class="av' + (cls ? " " + cls : "") + (md ? " img md" : "") + '" data-av="' + esc(s) + '" data-avt="' + esc(ten || "") + '"' + (want ? ' data-avw="1"' : "") + ' data-avv="' + v + '" style="--avbg:' + AV_BG[h % AV_BG.length] + (md ? ';background-image:url(&quot;' + avmUrl(st.m) + '&quot;)' : "") + '">' + esc(avInit(ten)) + "</" + tag + ">";
   }
   HC.avHTML = avHTML;
   function avFill(root) {
     $$("[data-av]", root || document).forEach(function (el) {
       var uid = el.getAttribute("data-av"), v = +el.getAttribute("data-avv") || 0;
       if (!v || el.__avv === v) return; el.__avv = v;
-      avGet(uid, v).then(function (d) { if (d && el.__avv === v) { el.style.backgroundImage = 'url("' + d + '")'; el.classList.add("img"); } });
+      avGet(uid, v).then(function (d) { if (d && el.__avv === v) { el.style.backgroundImage = 'url("' + d + '")'; el.classList.add("img"); el.classList.remove("md"); } });
     });
   }
   HC.avFill = avFill;
-  function avRefresh(uid) { // ảnh của uid vừa đổi: cập nhật mọi vòng tròn đang hiện
-    var v = avVer(uid);
-    $$('[data-av="' + uid + '"]').forEach(function (el) { el.setAttribute("data-avv", v); });
+  function avRefresh(uid) { // ảnh của uid vừa đổi (ảnh tự tải hoặc ảnh mặc định): vẽ lại mọi vòng tròn đang hiện
+    $$('[data-av="' + uid + '"]').forEach(function (el) {
+      var cls = String(el.className || "").split(/\s+/).filter(function (c) { return c && c !== "av" && c !== "img" && c !== "md"; }).join(" ");
+      var w = document.createElement("div"); w.innerHTML = avHTML(uid, el.getAttribute("data-avt") || "", null, cls, el.getAttribute("data-avw") === "1");
+      var n = w.firstChild; if (n && el.parentNode) el.parentNode.replaceChild(n, el);
+    });
     avFill();
   }
   // cách nhớ: cần số phiên bản ảnh của người khác (cột a bảng xếp hạng) → bảng chưa tải lần nào trong phiên này thì tải 1 lần rồi tô
@@ -2469,6 +2606,7 @@
   function avTopHTML() {
     var u = fb.user; if (!u) return "";
     avMineCheck();
+    try { avmBoot(); } catch (e) { } // chưa có ảnh mặc định / hình đã bị xóa → nhận hình (máy đã có hình hợp lệ thì không làm gì)
     return '<button type="button" class="avtop" id="avbtn" aria-haspopup="menu" aria-expanded="false" aria-label="Tài khoản: ' + esc(avMyTen()) + '" title="Tài khoản">' + avHTML(u.uid, avMyTen(), avMyV(), "", false) + "</button>";
   }
   var avMenuOff = null;
@@ -2480,11 +2618,13 @@
   function avMenu(btn) {
     if (document.getElementById("avmenu")) return avMenuClose();
     var u = fb.user; if (!u) return;
-    var v = avMyV(), ten = avMyTen();
+    var v = avMyV(), ten = avMyTen(), mk = myKey("bx") || u.uid, ms = avmState(mk).s && avMyV(mk) > 0;
     var el = document.createElement("div"); el.id = "avmenu"; el.className = "avmenu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "Tài khoản");
     el.innerHTML = '<div class="avm-hd">' + avHTML(u.uid, ten, v, "lg", true) + '<div class="avm-t"><small class="muted">Đang đăng nhập</small><b>' + esc(ten) + "</b>" + (u.email ? '<span class="muted">' + esc(u.email) + "</span>" : "") + "</div></div>" +
-      (v > 0 ? '<button type="button" role="menuitem" data-avm="xem"><span class="avm-ic" aria-hidden="true">◉</span>Xem ảnh đại diện</button>' : "") +
-      '<button type="button" role="menuitem" data-avm="doi"><span class="avm-ic" aria-hidden="true">⇪</span>' + (v > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" +
+      (v > 0 && !ms ? '<button type="button" role="menuitem" data-avm="xem"><span class="avm-ic" aria-hidden="true">◉</span>Xem ảnh đại diện</button>' : "") +
+      '<button type="button" role="menuitem" data-avm="chon"><span class="avm-ic" aria-hidden="true">▦</span>Chọn ảnh có sẵn</button>' +
+      (ms ? '<button type="button" role="menuitem" data-avm="cu"><span class="avm-ic" aria-hidden="true">↺</span>Dùng lại ảnh đã tải lên</button>' : "") +
+      '<button type="button" role="menuitem" data-avm="doi"><span class="avm-ic" aria-hidden="true">⇪</span>' + (v > 0 ? (ms ? "Tải ảnh khác lên" : "Đổi ảnh đại diện") : "Tải ảnh đại diện lên") + "</button>" +
       '<button type="button" role="menuitem" data-avm="tk"><span class="avm-ic" aria-hidden="true">⚙</span>Tài khoản &amp; cài đặt</button>' +
       '<hr><button type="button" role="menuitem" data-avm="out"><span class="avm-ic" aria-hidden="true">⇥</span>Đăng xuất</button>';
     document.body.appendChild(el);
@@ -2501,6 +2641,8 @@
       var k = b.getAttribute("data-avm"); avMenuClose();
       if (k === "xem") avView(u.uid, ten);
       else if (k === "doi") avPick();
+      else if (k === "chon") avmPick();
+      else if (k === "cu") avmUseOwn(mk);
       else if (k === "tk") HC.go("caidat");
       else if (k === "out") HC.fbSignOut(false).then(function (ok) { if (ok) toast("Đã đăng xuất. Tiến độ của bạn được cất riêng trên máy này"); });
     });
@@ -2512,6 +2654,35 @@
     var f = el.querySelector("[data-avm]"); if (f) try { f.focus(); } catch (e) { }
   }
   HC.avMenu = function () { var b = document.getElementById("avbtn"); if (b) avMenu(b); };
+  // chọn ảnh có sẵn (27/11/2026): chỉ hiện hình chưa ai dùng (đọc bảng mới nhất: 1 lượt đọc) + hình mình đang dùng; bấm = đổi (ghi dòng bảng)
+  function avmPick() {
+    var u = fb.user; if (!u || !avCan() || !bxhOk()) return toast("Cần đăng nhập và đăng ký xong tài khoản mới chọn được ảnh có sẵn");
+    var me = myKey("bx"); if (!me) return toast("Bạn đang ẩn khỏi bảng xếp hạng nên chưa chọn được ảnh có sẵn (Cài đặt → Tài khoản → Hai vai của tôi)");
+    avMenuClose();
+    var m = avModal('<h2>Chọn ảnh có sẵn</h2><p class="sub">Chỉ hiện các hình chưa ai dùng. Bấm một hình để dùng làm ảnh đại diện.</p><div class="avmgrid"><p class="muted">Đang tải danh sách hình…</p></div><div class="row acts"><button class="btn" type="button" data-x>Đóng</button></div>');
+    bxhLoad(true).then(function () {
+      var g = $(".avmgrid", m.el); if (!g) return;
+      var used = avmUsed(me), gone = avmGone(), st = avmState(me), now = avMyV(me) > 0 && !st.s ? -1 : st.m, list = [];
+      for (var i = 0; i < AVM_N; i++) if (!gone[i] && (!used[i] || i === now)) list.push(i);
+      g.innerHTML = list.length ? list.map(function (i) {
+        return '<button type="button" class="avmc" data-avmi="' + i + '" aria-label="Hình số ' + (i + 1) + (i === now ? " (đang dùng)" : "") + '"' + (i === now ? ' aria-current="true"' : "") + '><img src="' + avmUrl(i) + '" alt="" width="72" height="72" loading="lazy"></button>';
+      }).join("") : '<p class="muted">Hiện không còn hình trống nào.</p>';
+      g.onclick = function (e) {
+        var b = e.target.closest ? e.target.closest("[data-avmi]") : null; if (!b) return;
+        var i = +b.getAttribute("data-avmi");
+        avmSetLocal(me, { m: i, s: avMyV(me) > 0 ? 1 : 0 });
+        m.close(); avRefresh(me); renderStats(); bxhSend(true);
+        toast("Đã đổi ảnh đại diện");
+      };
+    }, function (e) { var g = $(".avmgrid", m.el); if (g) g.innerHTML = '<p class="tkmsg">Chưa tải được danh sách hình (' + esc(tkErr(e)) + "). Kiểm tra mạng rồi thử lại.</p>"; });
+  }
+  HC.avmPick = avmPick;
+  // đang dùng hình hệ thống mà đã có ảnh tự tải → quay về ảnh tự tải (nhả hình hệ thống)
+  function avmUseOwn(me) {
+    if (!(avMyV(me) > 0)) return;
+    avmSetLocal(me, { m: -1, s: 0 }); avRefresh(me); renderStats(); bxhSend(true);
+    toast("Đã dùng lại ảnh bạn tải lên");
+  }
   // chọn ảnh → cắt vuông giữa, thu nhỏ, nén → xem trước → lưu (ghi đè ảnh cũ)
   // id = mã nhận ảnh (mặc định: mình; quản trị: mã vai người học khi đổi ảnh vai đó)
   function avId(id) { return typeof id === "string" && id && isMine(id) ? id : fb.user ? fb.user.uid : ""; }
@@ -2576,7 +2747,7 @@
     var v = Date.now(); id = avId(id);
     // set() ghi đè CẢ tài liệu: ảnh cũ mất luôn (không còn bản nào)
     return avCol().doc(id).set({ d: d, v: v, upd: firebase.firestore.FieldValue.serverTimestamp() }).then(function () {
-      avCachePut(id, { v: v, d: d }); avSetMyV(id, v);
+      avCachePut(id, { v: v, d: d }); avSetMyV(id, v); avmSetLocal(id, { m: -1, s: 0 }); // tải ảnh mới → hiện ảnh này, nhả hình mặc định
       renderStats(); avRefresh(id);
       bxhSend(true); // báo phiên bản ảnh mới cho máy khác (cột a trên bảng xếp hạng)
     });
