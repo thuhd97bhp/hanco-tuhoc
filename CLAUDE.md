@@ -130,6 +130,16 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
 - BẢNG XẾP HẠNG (Bước 7): tab `xh`; TOÀN BỘ bảng = 1 tài liệu `hanco_bxh/tong` (mỗi người chỉ sửa `u.<uid mình>`, luật giới hạn mức tăng XP),
   cúp tuần `hanco_bxh/c<thứ Hai>` chốt sau 12:00 thứ Hai; ghi dòng mình ≤ 1 lần/15 phút + khi rời app (`bxhSend`). Huy hiệu nhiều cấp `BFAM`
   (giữ id huy hiệu cũ). `S.cup`, `S.rec`. localStorage `hanco-bxh-gui`, `hanco-bxh-cup`, `hanco-qt-xpla`. Chỉ hiện TÊN HIỂN THỊ.
+  Giao diện kiểu thoáng (người dùng yêu cầu 27/11/2026): hạng 1–3 = huy chương ruy băng SVG tự vẽ (`rkHTML`), dòng của mình tô nền cả dòng (không chip "Bạn").
+- GIẢI ĐẤU TUẦN (người dùng duyệt 27/11/2026): tab đầu của Xếp hạng (`#xh`; bảng tuần cả lớp chuyển sang `#xh-tuan`). 7 giải `GD` 銅 Đồng · 銀 Bạc ·
+  金 Vàng · 玉 Ngọc bích · 珠 Trân châu · 晶 Pha lê · 鑽 Kim cương (khiên `gdShield`, lớp `gbig` — KHÔNG dùng lớp `big`: songify thay cả ruột). Nhóm tự co
+  giãn: giải có n ≤ 10 người → 1 nhóm, > 10 → ⌈n/10⌉ nhóm chia đều, xáo mỗi tuần bằng băm (`gdHash`, máy nào cũng ra một kết quả). Thăng: nhóm < 8 người
+  top 1, 8–10 top 2 (`gdUp`) VÀ XP tuần ≥ 50 × số giải (`gdNeed`); xuống: nhóm 5–7 1 người cuối, 8–10 2 người, < 5 không ai (`gdDown`) + mọi người 0 XP
+  cả tuần. Chốt CÙNG bản chốt cúp: `hanco_bxh/c<k>.g` = {mã dòng: giải×100+nhóm} của tuần k+7 (`gdCompute` từ XP trong `e` + bảng; nhóm 0 = đang ẩn →
+  giữ giải). Mới vào → Đồng, nhóm theo băm mã. Máy bản cũ chốt thiếu g → máy mới bổ sung (`gdFix`, luật cho thêm g đúng 1 lần); sáng thứ Hai chưa chốt
+  → dùng bản trước (`gdNow`, `old`). Quản trị → Xếp hạng → "Tính lại giải đấu" (`gdRedo`, ghi đè g). Đổi giải → `gdSeen`: thăng = khung "Thăng hạng!"
+  + nhạc (`gdUpShow`), xuống = lời nhắc; `tbxAdd`. `S.rec.lg` = giải cao nhất (chỉ có khi > 0; gộp lấy lớn hơn) + dòng bảng `rc.lg`. localStorage
+  `hanco-giai-xem` {u, k, t}. Người học LUÔN tham gia (không có công tắc ẩn); quản trị ẩn tay / khóa → giữ giải. Mô phỏng: `.claude/sim-gd.js app.js`.
 - CÁCH NHỚ CHUNG (Bước 8): ô "Cách nhớ" (`S.meo`, mọi người thấy, đăng ở `hanco_meo/{id}_{uid}` — KHÔNG đăng chữ đang gõ dở: `meoPub`/
   `meoEditing`) + ô "Ghi chú khác" (= `S.note` cũ, chỉ mình thấy, quản trị cũng không thấy). Chấm 1–5 sao (không chấm của mình), Quản trị → Cách nhớ.
   Cách nhớ người khác LUÔN qua `noteClean`. Khung "Cách nhớ" (người dùng yêu cầu 27/11/2026): KHÔNG hiện mẹo nhớ của app (vẫn ở ※ Giải thích),
@@ -158,8 +168,9 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   ai dùng hình nào, xóa / khôi phục = `hanco_cfg/chung.amx` [số hình] (ẩn khỏi app, tệp vẫn ở hosting; người đang dùng tự đổi khi máy đọc lại cấu hình
   chung, ≤ 1 giờ). localStorage `hanco-anh-md` {mã: {m, s, t}}; sw.js đệm riêng `anhmd-v1`. Không thuộc `S`. Bài thử `node .claude/test-anhmd.js app.js`.
 - HAI VAI CỦA QUẢN TRỊ (người dùng yêu cầu 27/11/2026): vai quản trị (tên `tq`, mã = ADMIN_UID) + vai người học (tên `th`, mã riêng ngẫu nhiên `hv`
-  28 ký tự giống uid → không ai nối được với quản trị), mỗi vai 1 ảnh (`hanco_anh/{mã}`). Chọn theo chỗ: `bx` bảng xếp hạng + cúp tuần (qt | hv | an =
-  ẩn, xóa dòng), `me` cách nhớ chung (qt | hv). MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều từ `S` của quản trị — đổi vai
+  28 ký tự giống uid → không ai nối được với quản trị), mỗi vai 1 ảnh (`hanco_anh/{mã}`). Chọn theo chỗ: `bx` bảng xếp hạng + cúp tuần + giải đấu (hv | an =
+  ẩn, xóa dòng — KHÔNG BAO GIỜ hiện vai quản trị, người dùng yêu cầu 27/11/2026; cấu hình cũ "qt" → hv, chưa đặt tên vai người học → ẩn; hiện hay ẩn
+  do quản trị tự chọn), `me` cách nhớ chung (qt | hv). MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều từ `S` của quản trị — đổi vai
   chỉ đổi tên + ảnh + mã dòng. Cấu hình `hanco_qt/vai` {tq, th, hv, bx, me} (luật đọc `hv` qua `vaiHv()` để cho quản trị ghi ảnh / cách nhớ dưới mã đó)
   + localStorage `hanco-qt-vai`; máy chưa đọc được cấu hình (`VAI.ld`) KHÔNG ghi dòng bảng xếp hạng / cách nhớ. Mã: `myKey(chỗ)`/`myName(chỗ)`/`isMine(uid)`
   thay cho `fb.user.uid` ở mọi chỗ "của mình" (bảng xếp hạng, cúp, cách nhớ, ảnh); đổi vai `vaiSetBx`/`vaiSetMe` (chuyển cách nhớ kèm số sao, lỗi → trả
