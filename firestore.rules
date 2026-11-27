@@ -26,6 +26,9 @@ service cloud.firestore {
     // chủ tài khoản được dùng tiến độ: quản trị, hoặc hồ sơ đang "ok"
     function owner(uid) { return me(uid) && (isAdmin() || (exists(userPath(uid)) && get(userPath(uid)).data.st == 'ok')); }
     function tenOk(t) { return t is string && t.size() >= 2 && t.size() <= 30; }
+    // HAI VAI CỦA QUẢN TRỊ (27/11/2026): hanco_qt/vai.hv = mã riêng của vai người học (chỉ quản trị đọc). Quản trị được ghi ảnh đại diện +
+    // cách nhớ dưới mã này như của chính mình. Người khác: điều kiện isAdmin() sai trước → không tốn lượt đọc.
+    function vaiHv(u) { let vp = /databases/$(database)/documents/hanco_qt/vai; return isAdmin() && u is string && u.size() >= 20 && exists(vp) && get(vp).data.get('hv', '') == u; }
 
     match /hanco_progress/{uid} {
       allow read: if owner(uid) || isAdmin();
@@ -168,6 +171,7 @@ service cloud.firestore {
     match /hanco_meo/{k} {
       allow read: if isAdmin() || okMe();
       allow create: if (isAdmin() || okMe()) && meoNew(k, request.resource.data);
+      allow create: if (vaiHv(request.resource.data.get('uid', '')) || (isAdmin() && request.resource.data.get('uid', '') == request.auth.uid)) && meoVai(k, request.resource.data);
       allow update: if (isAdmin() || okMe()) && (meoEdit(resource.data, request.resource.data) || meoRate(resource.data, request.resource.data));
       allow delete: if isAdmin() || (okMe() && (resource == null || resource.data.uid == request.auth.uid));
       function meoH(d) { return d.h is string && d.h.size() > 0 && d.h.size() <= 8000 && meoTen(d.ten) && tenOk(d.ten) && d.upd == request.time; }
@@ -176,11 +180,17 @@ service cloud.firestore {
           && d.uid == request.auth.uid && d.id is string && d.id.matches('[cwsr][0-9]{1,6}') && k == d.id + '_' + request.auth.uid
           && (!('r' in d) || (d.r is map && d.r.size() == 0)) && meoH(d);
       }
+      // quản trị tạo cách nhớ dưới mã vai người học hoặc mã của mình (khi chuyển vai: mang theo số sao r đã có)
+      function meoVai(k, d) {
+        return d.keys().hasOnly(['id', 'uid', 'ten', 'h', 'upd', 'r']) && d.keys().hasAll(['id', 'uid', 'ten', 'h', 'upd'])
+          && d.id is string && d.id.matches('[cwsr][0-9]{1,6}') && k == d.id + '_' + d.uid
+          && (!('r' in d) || (d.r is map && d.r.size() <= 500)) && meoH(d);
+      }
       function meoEdit(o, d) {
-        return o.uid == request.auth.uid && d.diff(o).affectedKeys().hasOnly(['h', 'ten', 'upd']) && meoH(d);
+        return (o.uid == request.auth.uid || vaiHv(o.uid)) && d.diff(o).affectedKeys().hasOnly(['h', 'ten', 'upd']) && meoH(d);
       }
       function meoRate(o, d) {
-        return o.uid != request.auth.uid && d.diff(o).affectedKeys().hasOnly(['r'])
+        return o.uid != request.auth.uid && !vaiHv(o.uid) && d.diff(o).affectedKeys().hasOnly(['r'])
           && d.r.diff(o.get('r', {})).affectedKeys().hasOnly([request.auth.uid])
           && (!(request.auth.uid in d.r) || (d.r[request.auth.uid] is int && d.r[request.auth.uid] >= 1 && d.r[request.auth.uid] <= 5))
           && d.r.size() <= 500;
@@ -203,7 +213,7 @@ service cloud.firestore {
     // chỉ quản trị xóa (khi xóa người). Dòng bảng xếp hạng có a = phiên bản ảnh (máy khác chỉ đọc lại ảnh khi a đổi).
     match /hanco_anh/{uid} {
       allow read: if isAdmin() || okMe();
-      allow create, update: if me(uid) && (isAdmin() || okMe()) && anhOk(request.resource.data);
+      allow create, update: if ((me(uid) && (isAdmin() || okMe())) || vaiHv(uid)) && anhOk(request.resource.data);
       allow delete: if isAdmin();
       function anhOk(d) {
         return d.keys().hasOnly(['d', 'v', 'upd']) && d.keys().hasAll(['d', 'v', 'upd'])

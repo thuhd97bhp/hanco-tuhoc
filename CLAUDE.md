@@ -128,6 +128,14 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   có `a` = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi `a` đổi (`avVer`/`avGet`); ảnh đã tải ở Cache Storage `anh-v1`. Nút ảnh cuối thanh mục →
   menu tài khoản (`avMenu`: xem / đổi / tài khoản / đăng xuất); khung xem ảnh = lớp riêng `avModal` (không đóng khung bên dưới). Ảnh hiện ở Xếp hạng,
   hồ sơ, cúp tuần, Hồ sơ của tôi, Cách nhớ (`avHTML` + `avFill`). localStorage `hanco-anh` {uid: phiên bản ảnh của mình}. Không thuộc `S`.
+- HAI VAI CỦA QUẢN TRỊ (người dùng yêu cầu 27/11/2026): vai quản trị (tên `tq`, mã = ADMIN_UID) + vai người học (tên `th`, mã riêng ngẫu nhiên `hv`
+  28 ký tự giống uid → không ai nối được với quản trị), mỗi vai 1 ảnh (`hanco_anh/{mã}`). Chọn theo chỗ: `bx` bảng xếp hạng + cúp tuần (qt | hv | an =
+  ẩn, xóa dòng), `me` cách nhớ chung (qt | hv). MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều từ `S` của quản trị — đổi vai
+  chỉ đổi tên + ảnh + mã dòng. Cấu hình `hanco_qt/vai` {tq, th, hv, bx, me} (luật đọc `hv` qua `vaiHv()` để cho quản trị ghi ảnh / cách nhớ dưới mã đó)
+  + localStorage `hanco-qt-vai`; máy chưa đọc được cấu hình (`VAI.ld`) KHÔNG ghi dòng bảng xếp hạng / cách nhớ. Mã: `myKey(chỗ)`/`myName(chỗ)`/`isMine(uid)`
+  thay cho `fb.user.uid` ở mọi chỗ "của mình" (bảng xếp hạng, cúp, cách nhớ, ảnh); đổi vai `vaiSetBx`/`vaiSetMe` (chuyển cách nhớ kèm số sao, lỗi → trả
+  cài đặt về cũ), dọn dòng thừa `vaiTidy` sau mỗi lần tải bảng. Khung "Hai vai của tôi" + đổi mật khẩu (`vaiCard`/`qtPwCard`) ở Cài đặt → Tài khoản,
+  chỉ quản trị. Không thuộc `S`.
 - Thêm bộ sưu tập Firestore mới → viết luật + thêm trường hợp vào `.claude/test-rules.js`; thêm trường vào `S` → blank/normalize/merge/`fbAhead`
   + `.claude/test-merge.js`.
 

@@ -812,6 +812,7 @@
     var ref = fb.db.collection("hanco_cfg").doc("dk");
     ref.get().then(function (c) { if (!c.exists) return ref.set({ tran: 120, dem: 0, mo: true }); }).catch(function () { });
     bxhEnsure(); // bảng xếp hạng (Bước 7)
+    vaiLoad(); // hai vai của quản trị (27/11/2026)
   }
 
   // màn tài khoản (thay cho mọi màn khi chưa vào được app)
@@ -957,6 +958,77 @@
     var r = $("#tkpwr", el); if (r) r.onclick = function () {
       r.disabled = true;
       fb.auth.sendPasswordResetEmail(u.email, tkActs()).then(function () { toast("Đã gửi link đổi mật khẩu tới " + u.email); }, function (e) { r.disabled = false; toast(tkErr(e)); });
+    };
+    if (adm) { var vb = document.createElement("div"); vb.id = "vaibox"; el.appendChild(vb); vaiCard(vb); qtPwCard(el, pw); }
+  }
+  // quản trị: khung "Hai vai của tôi" (tên + ảnh từng vai, chọn hiện vai nào ở từng chỗ, ẩn khỏi bảng xếp hạng) — người dùng yêu cầu 27/11/2026
+  function vaiCard(box) {
+    if (!box || !isAdmin()) return;
+    if (!VAI.ld) {
+      box.innerHTML = '<h3 class="vaih">Hai vai của tôi</h3><p class="sub">Đang tải cài đặt vai…</p>';
+      vaiLoad().then(function (c) { if (!box.isConnected) return; if (c) vaiCard(box); else box.innerHTML = '<h3 class="vaih">Hai vai của tôi</h3><p class="tkmsg">Chưa tải được cài đặt vai. Kiểm tra mạng rồi mở lại Cài đặt.</p>'; });
+      return;
+    }
+    var c = vaiGet(), u = fb.user, hasHv = !!(c.th && c.hv);
+    function one(w, lab, id, ten, note) {
+      return '<div class="vaic"><div class="row vaihd">' + (id ? avHTML(id, ten, avVer(id), "lg", true) : '<span class="av lg" aria-hidden="true">?</span>') + '<div class="vait"><b>' + lab + "</b><small class=\"muted\">" + note + "</small></div></div>" +
+        '<div class="field"><label for="vai-' + w + '">Tên ' + lab.toLowerCase() + "</label><input id=\"vai-" + w + '" type="text" maxlength="30" value="' + esc(ten || "") + '" placeholder="' + (w === "th" ? "vd Minh An" : "Quản trị viên") + '"></div>' +
+        '<div class="row"><button class="btn sm" type="button" data-vten="' + w + '">Lưu tên</button>' + (id ? '<button class="btn sm ghost" type="button" data-vanh="' + esc(id) + '">' + (avVer(id) > 0 ? "Đổi ảnh" : "Tải ảnh lên") + "</button>" : '<span class="muted nsm">Đặt tên trước, rồi mới tải ảnh được.</span>') + "</div></div>";
+    }
+    function opt(name, val, lab, on, dis) { return '<label class="vaio' + (dis ? " dis" : "") + '"><input type="radio" name="' + name + '" value="' + val + '"' + (on ? " checked" : "") + (dis ? " disabled" : "") + "> " + lab + "</label>"; }
+    box.innerHTML = '<h3 class="vaih">Hai vai của tôi</h3><p class="sub">Người khác thấy bạn bằng vai bạn chọn ở từng chỗ. <b>Mọi số liệu là một</b> (XP, cấp, chuỗi ngày, huy hiệu, cúp đều từ cùng một tiến độ học) — đổi vai chỉ đổi tên và ảnh. Vai người học có mã riêng, không ai biết đó là bạn.</p>' +
+      '<div class="vai2">' + one("tq", "Vai quản trị", u.uid, c.tq, "người khác thấy bạn là quản trị viên") + one("th", "Vai người học", c.hv, c.th, hasHv ? "trông như một học viên bình thường" : "chưa đặt tên") + "</div>" +
+      '<div class="vaich"><div class="vaiq"><b>Bảng xếp hạng + cúp tuần</b><div class="vaios">' + opt("vbx", "qt", "Vai quản trị", c.bx === "qt") + opt("vbx", "hv", "Vai người học", c.bx === "hv", !hasHv) + opt("vbx", "an", "Ẩn (không ai thấy tôi)", c.bx === "an") + "</div></div>" +
+      '<div class="vaiq"><b>Cách nhớ chung</b><div class="vaios">' + opt("vme", "qt", "Vai quản trị", c.me === "qt") + opt("vme", "hv", "Vai người học", c.me === "hv", !hasHv) + "</div></div></div>" +
+      '<p class="sub vaimsg" role="status" aria-live="polite"></p>';
+    avFill(box);
+    var msg = $(".vaimsg", box);
+    function lock(on) { $$("button, input", box).forEach(function (x) { if (on) { x.__d = x.disabled; x.disabled = true; } else x.disabled = !!x.__d; }); }
+    function done(t) { toast(t); vaiCard(box); renderStats(); }
+    function bad(e) { var t = e && e.message && !e.code ? e.message : "Chưa lưu được (" + tkErr(e) + ")"; vaiCard(box); var mm = $(".vaimsg", box); if (mm) mm.textContent = t; toast(t); }
+    $$("[data-vten]", box).forEach(function (b) { b.onclick = function () {
+      var w = b.getAttribute("data-vten"), t = $("#vai-" + w, box).value;
+      lock(true); msg.textContent = "Đang lưu tên…";
+      vaiSetName(w, t).then(function (n) { done("Đã đổi tên " + (w === "tq" ? "vai quản trị" : "vai người học") + ": " + n); }, bad);
+    }; });
+    $$("[data-vanh]", box).forEach(function (b) { b.onclick = function () { avPick(b.getAttribute("data-vanh")); }; });
+    $$('input[name="vbx"]', box).forEach(function (r) { r.onchange = function () {
+      var m = r.value; lock(true); msg.textContent = "Đang đổi vai trên bảng xếp hạng…";
+      vaiSetBx(m).then(function () { done(m === "an" ? "Đã ẩn bạn khỏi bảng xếp hạng" : "Bảng xếp hạng giờ hiện " + (m === "hv" ? "vai người học" : "vai quản trị")); }, bad);
+    }; });
+    $$('input[name="vme"]', box).forEach(function (r) { r.onchange = function () {
+      var m = r.value; lock(true); msg.textContent = "Đang chuyển cách nhớ của bạn sang vai mới…";
+      vaiSetMe(m).then(function (n) { done("Cách nhớ chung giờ hiện " + (m === "hv" ? "vai người học" : "vai quản trị") + (n ? " (đã chuyển " + n + " cách nhớ, giữ nguyên số sao)" : "")); }, bad);
+    }; });
+  }
+  // quản trị: đổi mật khẩu ngay trong app (tài khoản email + mật khẩu: gõ mật khẩu hiện tại → mật khẩu mới); tài khoản Google: mật khẩu do Google quản lý
+  function qtPwCard(el, pw) {
+    var b = document.createElement("div"); b.className = "vaipw"; el.appendChild(b);
+    var g = fb.user.providerData.some(function (x) { return x.providerId === "google.com"; });
+    var eye = '<button type="button" class="btn sm ghost tkeye" aria-label="Hiện mật khẩu">Hiện</button>';
+    b.innerHTML = '<h3 class="vaih">Mật khẩu</h3>' +
+      (pw ? '<form class="tkf vaipwf" novalidate><div class="field"><label for="pw0">Mật khẩu hiện tại</label><div class="tkpw"><input id="pw0" type="password" autocomplete="current-password" required>' + eye + "</div></div>" +
+        '<div class="field"><label for="pw1">Mật khẩu mới (ít nhất 6 ký tự)</label><div class="tkpw"><input id="pw1" type="password" autocomplete="new-password" minlength="6" required>' + eye + "</div></div>" +
+        '<div class="field"><label for="pw2">Gõ lại mật khẩu mới</label><div class="tkpw"><input id="pw2" type="password" autocomplete="new-password" minlength="6" required>' + eye + "</div></div>" +
+        '<div class="row"><button class="btn" type="submit">Đổi mật khẩu</button><span class="sub vaipwm" role="status" aria-live="polite"></span></div></form>' : "") +
+      (g ? '<p class="sub">' + (pw ? "Bạn cũng đăng nhập được bằng Google: mật khẩu Google" : "Bạn đăng nhập bằng Google: mật khẩu") + ' do Google quản lý, đổi ở <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">trang bảo mật tài khoản Google</a>.</p>' : "") +
+      (!pw && !g ? '<p class="sub">Tài khoản này không đăng nhập bằng mật khẩu.</p>' : "");
+    $$(".tkeye", b).forEach(function (x) { x.onclick = function () { var i = x.parentNode.querySelector("input"); i.type = i.type === "password" ? "text" : "password"; x.textContent = i.type === "password" ? "Hiện" : "Ẩn"; }; });
+    var f = $(".vaipwf", b); if (!f) return;
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      var m = $(".vaipwm", b), p0 = $("#pw0", b).value, p1 = $("#pw1", b).value, p2 = $("#pw2", b).value, sb = f.querySelector("[type=submit]");
+      if (!p0) return (m.textContent = "Gõ mật khẩu hiện tại.");
+      if (p1.length < 6) return (m.textContent = "Mật khẩu mới ít nhất 6 ký tự.");
+      if (p1 !== p2) return (m.textContent = "Hai lần gõ mật khẩu mới không khớp.");
+      if (p1 === p0) return (m.textContent = "Mật khẩu mới phải khác mật khẩu hiện tại.");
+      var u = fb.user; sb.disabled = true; m.textContent = "Đang đổi…";
+      u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, p0)).then(function () { return u.updatePassword(p1); }).then(function () {
+        f.reset(); sb.disabled = false; m.textContent = "Đã đổi mật khẩu."; toast("Đã đổi mật khẩu");
+      }, function (x) {
+        sb.disabled = false;
+        m.textContent = x && (x.code === "auth/wrong-password" || x.code === "auth/invalid-credential" || x.code === "auth/invalid-login-credentials") ? "Mật khẩu hiện tại không đúng." : x && x.code === "auth/weak-password" ? "Mật khẩu mới yếu quá." : tkErr(x);
+      });
     };
   }
 
@@ -1153,7 +1225,7 @@
   // Ghi chú riêng của người học KHÔNG bao giờ hiện (bản tóm tắt không có; màn chi tiết chỉ dùng sumOf).
   var QT = null, QT_NHAC = "hanco-qt-nhac", qtSort = { k: "ma", d: 1 }, qtQ = { q: "", st: "" };
   function pad3(n) { return ("00" + n).slice(-3); }
-  function qtMa(uid) { var n = QT && QT.ma && QT.ma.so ? QT.ma.so[uid] : 0; return uid === ADMIN_UID ? "000" : n ? pad3(n) : "—"; }
+  function qtMa(uid) { var n = QT && QT.ma && QT.ma.so ? QT.ma.so[uid] : 0; return isMine(uid) && isAdmin() ? "000" : n ? pad3(n) : "—"; }
   function qtRef(c, d) { return fb.db.collection(c).doc(d); }
   function qtFV() { return firebase.firestore.FieldValue; }
   function pad2(n) { return ("0" + n).slice(-2); }
@@ -1475,8 +1547,8 @@
       QT.users.forEach(function (u) { byId[u.uid] = u; });
       var ids = Object.keys(U); Object.keys(an).concat(Object.keys(rs)).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); });
       var rows = ids.map(function (uid) {
-        var x = U[uid] || {}, u = byId[uid] || (uid === ADMIN_UID ? { uid: uid, ten: "Quản trị viên", hoten: "(quản trị)" } : null);
-        return { uid: uid, x: x, u: u, ma: uid === ADMIN_UID ? "000" : u ? qtMa(uid) : "—", xw: bxhVal(x, "w", t0), xm: +x.xm || 0, xp: +x.xp || 0, an: an[uid] || 0, rs: rs[uid] || 0, la: (+x.xm || 0) > lim };
+        var vc = vaiGet(), x = U[uid] || {}, u = byId[uid] || (uid === ADMIN_UID ? { uid: uid, ten: vc.tq, hoten: "(bạn — vai quản trị)" } : vc.hv && uid === vc.hv ? { uid: uid, ten: vc.th, hoten: "(bạn — vai người học)" } : null);
+        return { uid: uid, x: x, u: u, ma: isMine(uid) ? "000" : u ? qtMa(uid) : "—", xw: bxhVal(x, "w", t0), xm: +x.xm || 0, xp: +x.xp || 0, an: an[uid] || 0, rs: rs[uid] || 0, la: (+x.xm || 0) > lim };
       }).sort(function (a, b) { return (b.la ? 1 : 0) - (a.la ? 1 : 0) || b.xw - a.xw || b.xp - a.xp; });
       var nla = rows.filter(function (x) { return x.la; }).length;
       h += '<div class="card"><h2>Bảng xếp hạng</h2><p class="sub">' + Object.keys(U).length + " dòng trên bảng · " + Object.keys(an).length + " người đang ẩn · " + Object.keys(rs).length + " người đã đặt lại XP. Bảng chỉ hiện TÊN HIỂN THỊ (cột Họ tên chỉ bạn thấy). Người bị khóa tự ẩn, mở khóa thì hiện lại; xóa người thì bỏ luôn dòng.</p>" +
@@ -2077,7 +2149,49 @@
   HC.bxh = BXH;
   function bxhRef(d) { return fb.db.collection("hanco_bxh").doc(d || "tong"); }
   function bxhOk() { return !!(TK_GATE && fb.on && fb.user && tk.st === "ok" && fb.ref && (isAdmin() || (tk.prof && tk.prof.ten))); }
-  function bxhTen() { return isAdmin() ? "Quản trị viên" : String((tk.prof && tk.prof.ten) || ""); }
+  // ---------- HAI VAI CỦA QUẢN TRỊ VIÊN (người dùng yêu cầu 27/11/2026) ----------
+  // Với người khác, quản trị viên hiện bằng 1 trong 2 vai: VAI QUẢN TRỊ (tên tq, mã = ADMIN_UID, ảnh hanco_anh/{ADMIN_UID}) hoặc VAI NGƯỜI HỌC
+  // (tên th, mã riêng ngẫu nhiên hv trông như uid thường → không ai nối được với quản trị, ảnh hanco_anh/{hv}). Chọn theo từng chỗ:
+  // bx = bảng xếp hạng + cúp tuần (qt | hv | an = ẩn hẳn, xóa dòng), me = cách nhớ chung (qt | hv).
+  // MỌI SỐ LIỆU LÀ MỘT (người dùng chốt): XP, cấp, chuỗi, huy hiệu, cúp đều tính từ S của quản trị — đổi vai chỉ đổi tên + ảnh + mã dòng.
+  // Cấu hình ở hanco_qt/vai (chỉ quản trị đọc; luật đọc hv để cho quản trị ghi ảnh / cách nhớ dưới mã đó) + bản trên máy VAI_LS. Không thuộc S.
+  // Máy chưa đọc được cấu hình (VAI.ld) thì KHÔNG ghi dòng bảng xếp hạng / cách nhớ (tránh ghi nhầm vai).
+  var VAI_LS = "hanco-qt-vai", VAI_DEF = { tq: "Quản trị viên", th: "", hv: "", bx: "qt", me: "qt" }, VAI = { ld: 0, job: null, busy: false };
+  function vaiGet() {
+    var o = jget(VAI_LS), r = {};
+    Object.keys(VAI_DEF).forEach(function (k) { r[k] = o[k] != null && o[k] !== "" ? String(o[k]) : VAI_DEF[k]; });
+    if (!r.th || !r.hv) { if (r.bx === "hv") r.bx = "qt"; if (r.me === "hv") r.me = "qt"; } // chưa đặt tên vai người học → dùng vai quản trị
+    if (["qt", "hv", "an"].indexOf(r.bx) < 0) r.bx = "qt"; if (["qt", "hv"].indexOf(r.me) < 0) r.me = "qt";
+    return r;
+  }
+  function vaiPut(c) { var o = {}; Object.keys(VAI_DEF).forEach(function (k) { o[k] = c[k] || ""; }); lsSet(VAI_LS, JSON.stringify(o)); }
+  function vaiRef() { return fb.db.collection("hanco_qt").doc("vai"); }
+  function vaiLoad() {
+    if (!isAdmin() || !fb.db) return Promise.resolve(null);
+    if (VAI.job) return VAI.job;
+    return (VAI.job = vaiRef().get().then(function (s) {
+      VAI.job = null; if (!isAdmin()) return null;
+      var d = s.exists ? s.data() : {}, c = {}; Object.keys(VAI_DEF).forEach(function (k) { c[k] = d[k] || ""; });
+      vaiPut(c); VAI.ld = 1; VAI.t = Date.now(); renderStats();
+      setTimeout(function () { bxhSend(true); meoPub(); }, 0);
+      return vaiGet();
+    }, function () { VAI.job = null; return null; }));
+  }
+  // máy khác của quản trị có thể vừa đổi vai → đọc lại cấu hình mỗi 30 phút (1 lượt đọc, chỉ quản trị)
+  function vaiReady() { if (!isAdmin()) return true; if (!VAI.ld || Date.now() - (VAI.t || 0) > 1800e3) vaiLoad(); return !!VAI.ld && !VAI.busy; }
+  function vaiNewId() { // mã vai người học: 28 ký tự chữ + số ngẫu nhiên, giống uid Firebase
+    var A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", b = new Uint8Array(28), s = "";
+    try { crypto.getRandomValues(b); } catch (e) { for (var j = 0; j < 28; j++) b[j] = Math.floor(Math.random() * 256); }
+    for (var i = 0; i < 28; i++) s += A.charAt(b[i] % 62);
+    return s;
+  }
+  // mã của mình ở chỗ p ("bx" bảng xếp hạng | "me" cách nhớ): người học = uid; quản trị theo vai đã chọn; "" = quản trị đang ẩn khỏi bảng
+  function myKey(p) { var u = fb.user; if (!u) return ""; if (!isAdmin()) return u.uid; var c = vaiGet(); return c[p] === "an" ? "" : c[p] === "hv" ? c.hv : u.uid; }
+  function myName(p) { if (!isAdmin()) return String((tk.prof && tk.prof.ten) || ""); var c = vaiGet(); return c[p] === "hv" ? c.th : c.tq; }
+  function isMine(uid) { var u = fb.user; if (!u || !uid) return false; return uid === u.uid || (isAdmin() && uid === vaiGet().hv); }
+  function myKeys() { var u = fb.user; if (!u) return []; var c = isAdmin() ? vaiGet() : {}; return c.hv ? [u.uid, c.hv] : [u.uid]; }
+  HC.myKey = myKey; HC.isMine = isMine;
+  function bxhTen() { return myName("bx"); }
   function bxhRow() {
     var r0 = BXH.u === fb.user.uid ? +BXH.rs || 0 : 0, st = xpStat(r0), xp = r0 ? st.all : Math.max(S.xp || 0, st.all), bd = {}, cp = [0, 0, 0];
     function pv(p) { return [st.K[p], Math.min(st.V[p], xp)]; }
@@ -2086,7 +2200,7 @@
     Object.keys(S.cup || {}).forEach(function (k) { var v = S.cup[k]; if (v >= 1 && v <= 3) cp[v - 1]++; });
     var rc = { xd: st.xd, xk: st.xk, ex: examBest(), hb: (S.rec && S.rec.hb) || 0, pf: pfSum() };
     var row = { ten: bxhTen(), xp: xp, w: pv("w"), wp: pv("wp"), m: pv("m"), q: pv("q"), y: pv("y"), sc: +S.streak.c || 0, sd: +S.streak.d || 0, sm: streakMax(), lv: lvl().l, bd: bd, cp: cp, rc: rc, xm: st.xm, r: r0 };
-    var me = fb.user.uid, av = avMyV(), old = BXH.u === me && BXH.d && BXH.d.u && BXH.d.u[me]; // a = phiên bản ảnh đại diện (27/11/2026)
+    var me = myKey("bx") || fb.user.uid, av = avMyV(me), old = BXH.u === fb.user.uid && BXH.d && BXH.d.u && BXH.d.u[me]; // a = phiên bản ảnh đại diện (27/11/2026); quản trị: ảnh của vai đang hiện
     if (old && +old.a > av) av = +old.a;
     if (av > 0) row.a = av;
     return row;
@@ -2096,8 +2210,9 @@
     if (!force && BXH.d && BXH.u === uid && Date.now() - BXH.t < BXH_TTL) return Promise.resolve(BXH.d);
     return bxhRef().get().then(function (s) {
       BXH.d = s.exists ? s.data() : null; BXH.t = Date.now(); BXH.u = uid; BXH.err = s.exists ? "" : "none";
-      BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[uid] || 0;
+      BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[myKey("bx") || uid] || 0;
       try { avSeen(); } catch (e) { }
+      try { vaiTidy(); } catch (e) { }
       return BXH.d;
     }, function (e) { BXH.err = e && e.code === "permission-denied" ? "denied" : "net"; throw e; });
   }
@@ -2105,30 +2220,116 @@
   function bxhSend(force, again) {
     if (!bxhOk() || BXH.sending) return Promise.resolve(false);
     var u = fb.user, row;
-    if (!avKnown(u.uid) && !(BXH.d && BXH.u === u.uid)) { avMineCheck(); return Promise.resolve(false); } // chưa biết phiên bản ảnh: chờ, không ghi mất cột a
+    if (!vaiReady()) return Promise.resolve(false); // quản trị: chưa biết đang hiện vai nào → chưa ghi
+    var key = myKey("bx"); if (!key) return Promise.resolve(false); // quản trị đang ẩn khỏi bảng
+    if (!avKnown(key) && !(BXH.d && BXH.u === u.uid)) { avMineCheck(key); return Promise.resolve(false); } // chưa biết phiên bản ảnh: chờ, không ghi mất cột a
     try { row = bxhRow(); } catch (e) { return Promise.resolve(false); }
     if (!row.ten) return Promise.resolve(false);
-    var sig = JSON.stringify(row), g = jget(BXH_LS); if (g.u !== u.uid) g = {};
+    var sig = JSON.stringify(row), g = jget(BXH_LS); if (g.u !== key) g = {};
     if (sig === g.h) return Promise.resolve(true);
     var wait = BXH_GAP - (Date.now() - (+g.t || 0));
     if (!force && wait > 0) { if (!BXH.timer) BXH.timer = setTimeout(function () { BXH.timer = null; bxhSend(false); }, wait + 1000); return Promise.resolve(false); }
     clearTimeout(BXH.timer); BXH.timer = null; BXH.sending = true;
     var FS = firebase.firestore, val = JSON.parse(sig), job;
-    try { val.upd = FS.FieldValue.serverTimestamp(); job = bxhRef().update(new FS.FieldPath("u", u.uid), val); } catch (e) { BXH.sending = false; return Promise.resolve(false); }
+    try { val.upd = FS.FieldValue.serverTimestamp(); job = bxhRef().update(new FS.FieldPath("u", key), val); } catch (e) { BXH.sending = false; return Promise.resolve(false); }
     return job.then(function () {
       BXH.sending = false;
-      lsSet(BXH_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: sig }));
-      if (BXH.d && BXH.u === u.uid) { BXH.d.u = BXH.d.u || {}; BXH.d.u[u.uid] = JSON.parse(sig); }
+      lsSet(BXH_LS, JSON.stringify({ u: key, t: Date.now(), h: sig }));
+      if (BXH.d && BXH.u === u.uid) { BXH.d.u = BXH.d.u || {}; BXH.d.u[key] = JSON.parse(sig); }
       return true;
     }, function (e) {
       BXH.sending = false;
       // bị từ chối: có thể quản trị vừa đặt lại XP (cần ghi đúng ngày đặt lại) → đọc lại bảng rồi thử đúng 1 lần
       if (!again && e && e.code === "permission-denied" && fb.user === u) return bxhLoad(true).then(function () { return bxhSend(true, true); }, function () { return false; });
-      lsSet(BXH_LS, JSON.stringify({ u: u.uid, t: Date.now(), h: g.h || "" })); // chờ đủ nhịp rồi mới thử lại
+      lsSet(BXH_LS, JSON.stringify({ u: key, t: Date.now(), h: g.h || "" })); // chờ đủ nhịp rồi mới thử lại
       return false;
     });
   }
   HC.bxhSend = bxhSend;
+  // ---- hai vai của quản trị: dọn dòng thừa, đổi vai, đổi tên ----
+  // dòng của các mã khác của mình (vai không còn hiện trên bảng) → xóa. Gọi sau mỗi lần tải bảng (không tốn thêm lượt đọc).
+  function vaiTidy() {
+    if (!isAdmin() || !VAI.ld || !BXH.d || BXH.u !== fb.user.uid) return Promise.resolve(false);
+    var U = BXH.d.u || {}, cur = myKey("bx"), stale = myKeys().filter(function (k) { return k !== cur && U[k]; });
+    if (!stale.length) return Promise.resolve(false);
+    var FS = firebase.firestore, args = [];
+    stale.forEach(function (k) { args.push(new FS.FieldPath("u", k), FS.FieldValue.delete()); });
+    var ref = bxhRef();
+    return ref.update.apply(ref, args).then(function () { stale.forEach(function (k) { delete U[k]; }); return true; }, function () { return false; });
+  }
+  // bảng xếp hạng + cúp tuần: hiện vai quản trị (qt) / vai người học (hv) / ẩn (an)
+  function vaiSetBx(mode) {
+    if (!isAdmin() || !VAI.ld) return Promise.reject(new Error("Chưa đọc được cài đặt vai. Kiểm tra mạng rồi thử lại."));
+    var c = vaiGet(); if (mode === "hv" && !(c.th && c.hv)) return Promise.reject(new Error("Hãy đặt tên vai người học trước."));
+    VAI.busy = true;
+    return vaiRef().set({ bx: mode }, { merge: true }).then(function () {
+      c.bx = mode; vaiPut(c); lsDel(BXH_LS);
+      return bxhLoad(true);
+    }).then(function () { return vaiTidy(); }).then(function () {
+      VAI.busy = false; BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[myKey("bx") || fb.user.uid] || 0;
+      return mode === "an" ? true : bxhSend(true);
+    }, function (e) { VAI.busy = false; throw e; });
+  }
+  // cách nhớ chung: chuyển các cách nhớ đã đăng sang vai mới (giữ nguyên nội dung + số sao người khác đã chấm; tạo bản mới + xóa bản cũ trong cùng 1 lô)
+  function vaiMoveMeo(oldK, newK, ten) {
+    if (!oldK || !newK || oldK === newK) return Promise.resolve(0);
+    var FV = firebase.firestore.FieldValue;
+    return meoCol().where("uid", "==", oldK).get().then(function (q) {
+      var docs = []; q.forEach(function (d) { docs.push(d); });
+      var p = Promise.resolve();
+      for (var i = 0; i < docs.length; i += 200) (function (part) {
+        p = p.then(function () {
+          var b = fb.db.batch();
+          part.forEach(function (d) { var x = d.data(); b.set(meoCol().doc(x.id + "_" + newK), { id: x.id, uid: newK, ten: ten, h: x.h, upd: FV.serverTimestamp(), r: x.r || {} }); b.delete(d.ref); });
+          return b.commit();
+        });
+      })(docs.slice(i, i + 200));
+      MEO.cache = {};
+      return p.then(function () { return docs.length; });
+    });
+  }
+  function vaiSetMe(mode) {
+    if (!isAdmin() || !VAI.ld) return Promise.reject(new Error("Chưa đọc được cài đặt vai. Kiểm tra mạng rồi thử lại."));
+    var c = vaiGet(); if (mode === "hv" && !(c.th && c.hv)) return Promise.reject(new Error("Hãy đặt tên vai người học trước."));
+    var oldK = myKey("me");
+    return meoPub(true).then(function () {
+      VAI.busy = true; MEO.busy = true;
+      var back = c.me === mode ? null : c.me; // vai cũ (để trả về nếu chuyển lỗi)
+      var n = c; n.me = mode;
+      var newK = mode === "hv" ? c.hv : fb.user.uid, ten = mode === "hv" ? c.th : c.tq;
+      // lưu vai trước rồi chuyển; chuyển lỗi → trả cài đặt về vai cũ (không để cài đặt một đằng, cách nhớ một nẻo)
+      return vaiRef().set({ me: mode }, { merge: true }).then(function () {
+        vaiPut(n);
+        return vaiMoveMeo(oldK, newK, ten).catch(function (e) {
+          if (!back) throw e;
+          n.me = back; vaiPut(n);
+          return vaiRef().set({ me: back }, { merge: true }).then(function () { throw e; }, function () { throw e; });
+        });
+      });
+    }).then(function (k) { VAI.busy = false; MEO.busy = false; MEO.gone = {}; return k; }, function (e) { VAI.busy = false; MEO.busy = false; throw e; });
+  }
+  // đổi tên 1 vai (w = "tq" | "th"); vai người học đặt tên lần đầu → tạo mã riêng hv (lưu trước khi dùng: luật đọc hv từ hanco_qt/vai)
+  function vaiSetName(w, t) {
+    t = nameNorm(t);
+    if (t.length < 2 || t.length > 30) return Promise.reject(new Error("Tên dài 2–30 ký tự."));
+    if (!isAdmin() || !VAI.ld) return Promise.reject(new Error("Chưa đọc được cài đặt vai. Kiểm tra mạng rồi thử lại."));
+    var c = vaiGet(), o = {}, other = w === "tq" ? c.th : c.tq;
+    if (other && nameKey(other) === nameKey(t)) return Promise.reject(new Error("Hai vai phải có tên khác nhau."));
+    o[w] = t; if (w === "th" && !c.hv) o.hv = vaiNewId();
+    // tên không trùng tên hiển thị của người khác trên bảng xếp hạng (tải bảng nếu chưa có — 1 lượt đọc, giữ 5 phút)
+    return (bxhOk() ? bxhLoad(false).catch(function () { return null; }) : Promise.resolve(null)).then(function () {
+      var U = (BXH.d && BXH.d.u) || {}, dup = Object.keys(U).filter(function (k) { return !isMine(k) && U[k] && nameKey(U[k].ten || "") === nameKey(t); })[0];
+      if (dup) throw new Error("Đã có người học dùng tên hiển thị này trên bảng xếp hạng. Hãy chọn tên khác.");
+      return vaiRef().set(o, { merge: true });
+    }).then(function () {
+      Object.keys(o).forEach(function (k) { c[k] = o[k]; }); vaiPut(c);
+      var on = w === "tq" ? "qt" : "hv";
+      if (c.bx === on) bxhSend(true);
+      if (c.me === on) meoRename();
+      renderStats();
+      return t;
+    });
+  }
   try { addEventListener("pagehide", function () { bxhSend(true); }); document.addEventListener("visibilitychange", function () { if (document.hidden) bxhSend(true); else bxhCupCheck(); }); } catch (e) { }
   // ---------- ẢNH ĐẠI DIỆN (người dùng yêu cầu 27/11/2026) ----------
   // hanco_anh/{uid} = {d ảnh (data URL webp, máy không hỗ trợ thì jpeg; vuông AV_PX px, cắt giữa), v phiên bản (ms lúc đổi), upd giờ máy chủ}.
@@ -2141,12 +2342,12 @@
   function avCol() { return fb.db.collection("hanco_anh"); }
   function avCan() { return !!(fb.on && fb.user && fb.db && (isAdmin() || tk.st === "ok")); }
   function avKnown(uid) { return jget(AV_LS)[uid] != null; }
-  function avMyV() { var u = fb.user; return u ? +jget(AV_LS)[u.uid] || 0 : 0; }
+  function avMyV(uid) { var u = fb.user; return u ? +jget(AV_LS)[uid || u.uid] || 0 : 0; } // uid = một mã của mình (quản trị: mã vai người học)
   function avSetMyV(uid, v) { var o = jget(AV_LS); o[uid] = v; lsSet(AV_LS, JSON.stringify(o)); }
-  function avMyTen() { var u = fb.user; if (!u) return ""; if (isAdmin()) return "Quản trị viên"; var p = tk.prof || tkCache() || {}; return String(p.ten || u.displayName || (u.email || "").split("@")[0] || ""); }
+  function avMyTen() { var u = fb.user; if (!u) return ""; if (isAdmin()) return vaiGet().tq; var p = tk.prof || tkCache() || {}; return String(p.ten || u.displayName || (u.email || "").split("@")[0] || ""); }
   function avVer(uid) { // phiên bản ảnh của một người: của mình = bản trên máy; người khác = cột a trên bảng xếp hạng (đã tải)
-    if (fb.user && uid === fb.user.uid) return avMyV();
-    var r = BXH.d && BXH.d.u && BXH.d.u[uid]; return r ? +r.a || 0 : 0;
+    var r = BXH.d && BXH.d.u && BXH.d.u[uid], b = r ? +r.a || 0 : 0;
+    return isMine(uid) ? Math.max(avMyV(uid), b) : b;
   }
   function avKey(uid) { return "./__anh/" + encodeURIComponent(uid); }
   function avCacheGet(uid) {
@@ -2177,20 +2378,20 @@
     }));
   }
   // máy chưa biết mình có ảnh chưa (máy mới / tài khoản mới trên máy) → đọc ảnh của mình 1 lần (thất bại thì ≥ 60 giây sau mới thử lại)
-  function avMineCheck() {
-    var u = fb.user; if (!u || !avCan() || avKnown(u.uid)) return;
-    if (Date.now() - (AV.mine[u.uid] || 0) < 60e3) return;
-    AV.mine[u.uid] = Date.now();
-    avCol().doc(u.uid).get().then(function (s) {
+  function avMineCheck(id) {
+    var u = fb.user; id = typeof id === "string" && id ? id : u && u.uid; if (!u || !avCan() || avKnown(id)) return;
+    if (Date.now() - (AV.mine[id] || 0) < 60e3) return;
+    AV.mine[id] = Date.now();
+    avCol().doc(id).get().then(function (s) {
       var x = s.exists ? s.data() : null, v = x && x.d ? +x.v || 1 : 0;
-      if (v) avCachePut(u.uid, { v: v, d: x.d });
-      if (fb.user === u) { avSetMyV(u.uid, v); renderStats(); }
+      if (v) avCachePut(id, { v: v, d: x.d });
+      if (fb.user === u) { avSetMyV(id, v); renderStats(); }
     }, function () { });
   }
   // bảng xếp hạng vừa tải: máy khác của mình đã đổi ảnh (a mới hơn) → nhận phiên bản mới
   function avSeen() {
-    var u = fb.user, r = u && BXH.u === u.uid && BXH.d && BXH.d.u && BXH.d.u[u.uid];
-    if (r && +r.a > avMyV()) { avSetMyV(u.uid, +r.a); renderStats(); avRefresh(u.uid); }
+    var u = fb.user; if (!u || BXH.u !== u.uid || !BXH.d || !BXH.d.u) return;
+    myKeys().forEach(function (k) { var r = BXH.d.u[k]; if (r && +r.a > avMyV(k)) { avSetMyV(k, +r.a); renderStats(); avRefresh(k); } });
   }
   function avInit(ten) {
     ten = String(ten || "").trim(); if (!ten) return "?";
@@ -2246,14 +2447,14 @@
   // xem ảnh to
   function avView(uid, ten) {
     avMenuClose();
-    var v = avVer(uid), mine = !!(fb.user && uid === fb.user.uid);
+    var v = avVer(uid), mine = isMine(uid);
     var m = avModal('<h2>' + esc(ten || "Ảnh đại diện") + '</h2><div class="avbig"><span class="muted">Đang tải ảnh…</span></div><div class="row acts">' +
       (mine ? '<button class="btn primary" type="button" data-avchg>Đổi ảnh đại diện</button>' : "") + '<button class="btn" type="button" data-x>Đóng</button></div>');
     avGet(uid, v).then(function (d) {
       var b = $(".avbig", m.el); if (!b) return;
       b.innerHTML = d ? '<img alt="Ảnh đại diện của ' + esc(ten || "") + '" src="' + d + '">' : '<span class="muted">Chưa tải được ảnh. Kiểm tra mạng rồi thử lại.</span>';
     });
-    var c = $("[data-avchg]", m.el); if (c) c.onclick = function () { m.close(); avPick(); };
+    var c = $("[data-avchg]", m.el); if (c) c.onclick = function () { m.close(); avPick(uid); };
   }
   HC.avView = avView;
   try {
@@ -2312,18 +2513,22 @@
   }
   HC.avMenu = function () { var b = document.getElementById("avbtn"); if (b) avMenu(b); };
   // chọn ảnh → cắt vuông giữa, thu nhỏ, nén → xem trước → lưu (ghi đè ảnh cũ)
-  function avPick() {
+  // id = mã nhận ảnh (mặc định: mình; quản trị: mã vai người học khi đổi ảnh vai đó)
+  function avId(id) { return typeof id === "string" && id && isMine(id) ? id : fb.user ? fb.user.uid : ""; }
+  function avPick(id) {
     if (!avCan()) return toast("Cần đăng nhập và đăng ký xong tài khoản mới đổi được ảnh đại diện");
+    id = avId(id);
     var inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.style.display = "none";
-    inp.onchange = function () { var f = inp.files && inp.files[0]; inp.remove(); if (f) avFile(f); };
+    inp.onchange = function () { var f = inp.files && inp.files[0]; inp.remove(); if (f) avFile(f, id); };
     document.body.appendChild(inp); inp.click();
     setTimeout(function () { if (inp.isConnected) inp.remove(); }, 600e3);
   }
   HC.avPick = avPick;
-  function avFile(f) {
+  function avFile(f, id) {
     if (!f || !/^image\//.test(f.type || "")) return toast("Hãy chọn một tệp ảnh (jpg, png, webp…)");
     if (f.size > 15 * 1024 * 1024) return toast("Ảnh lớn quá (tối đa 15 MB)");
-    return avShrink(f).then(avConfirm, function (e) { toast(e && e.message === "big" ? "Ảnh này nén vẫn còn quá lớn. Hãy thử ảnh khác." : "Không đọc được ảnh này. Hãy thử ảnh khác (jpg hoặc png)."); });
+    id = avId(id);
+    return avShrink(f).then(function (d) { avConfirm(d, id); }, function (e) { toast(e && e.message === "big" ? "Ảnh này nén vẫn còn quá lớn. Hãy thử ảnh khác." : "Không đọc được ảnh này. Hãy thử ảnh khác (jpg hoặc png)."); });
   }
   HC.avFile = avFile;
   function avShrink(f) {
@@ -2353,25 +2558,26 @@
       im.src = url;
     });
   }
-  function avConfirm(d) {
-    var had = avMyV() > 0;
+  function avConfirm(d, id) {
+    id = avId(id);
+    var had = avMyV(id) > 0;
     var m = avModal('<h2>' + (had ? "Đổi ảnh đại diện" : "Ảnh đại diện") + '</h2><p class="sub">Ảnh được cắt vuông ở giữa và thu nhỏ. Mọi người trong app thấy ảnh này (bảng xếp hạng, cách nhớ).' +
       (had ? " Ảnh cũ sẽ được thay hẳn bằng ảnh mới." : "") + '</p><div class="avbig"><img alt="Ảnh mới chọn" src="' + d + '"></div>' +
       '<div class="row acts"><button class="btn primary" type="button" id="avok">Dùng ảnh này</button><button class="btn" type="button" id="avre">Chọn ảnh khác</button><button class="btn ghost" type="button" data-x>Thôi</button></div>');
     var ok = $("#avok", m.el);
     ok.onclick = function () {
       ok.disabled = true; ok.textContent = "Đang lưu…";
-      avSave(d).then(function () { m.close(); toast(had ? "Đã đổi ảnh đại diện" : "Đã lưu ảnh đại diện"); }, function (e) { ok.disabled = false; ok.textContent = "Dùng ảnh này"; toast("Chưa lưu được ảnh (" + tkErr(e) + ")"); });
+      avSave(d, id).then(function () { m.close(); toast(had ? "Đã đổi ảnh đại diện" : "Đã lưu ảnh đại diện"); }, function (e) { ok.disabled = false; ok.textContent = "Dùng ảnh này"; toast("Chưa lưu được ảnh (" + tkErr(e) + ")"); });
     };
-    $("#avre", m.el).onclick = function () { m.close(); avPick(); };
+    $("#avre", m.el).onclick = function () { m.close(); avPick(id); };
   }
-  function avSave(d) {
+  function avSave(d, id) {
     var u = fb.user; if (!u || !avCan()) return Promise.reject(new Error("signedout"));
-    var v = Date.now();
+    var v = Date.now(); id = avId(id);
     // set() ghi đè CẢ tài liệu: ảnh cũ mất luôn (không còn bản nào)
-    return avCol().doc(u.uid).set({ d: d, v: v, upd: firebase.firestore.FieldValue.serverTimestamp() }).then(function () {
-      avCachePut(u.uid, { v: v, d: d }); avSetMyV(u.uid, v);
-      renderStats(); avRefresh(u.uid);
+    return avCol().doc(id).set({ d: d, v: v, upd: firebase.firestore.FieldValue.serverTimestamp() }).then(function () {
+      avCachePut(id, { v: v, d: d }); avSetMyV(id, v);
+      renderStats(); avRefresh(id);
       bxhSend(true); // báo phiên bản ảnh mới cho máy khác (cột a trên bảng xếp hạng)
     });
   }
@@ -2399,8 +2605,8 @@
   }
   function cupApply(c) { // bản chốt có mình: ghi cúp (top 3) + hạng tuần cao nhất
     if (!c || !c.e || !fb.user) return;
-    var uid = fb.user.uid, i = -1, k = +c.k;
-    c.e.forEach(function (x, j) { if (x && x.u === uid && i < 0) i = j; });
+    var i = -1, k = +c.k;
+    c.e.forEach(function (x, j) { if (x && isMine(x.u) && i < 0) i = j; }); // quản trị: dòng của vai nào cũng là của mình (1 tiến độ)
     if (i < 0) return;
     var rank = 1; while (rank <= i && c.e[rank - 1].v > c.e[i].v) rank++; // đồng XP → đồng hạng
     var ch = false; recNorm(S.rec);
@@ -2438,12 +2644,14 @@
     var k = perKey(kind, t0); return r[kind] && r[kind][0] === k ? +r[kind][1] || 0 : 0;
   }
   function bxhList(T, kind) { // [{uid, r, v, rank, me, hid}] — dòng của mình luôn là bản tính tại máy
-    var t0 = today(), me = fb.user ? fb.user.uid : "", an = (T && T.an) || {}, U = Object.assign({}, (T && T.u) || {}), out = [];
+    var t0 = today(), me = fb.user ? myKey("bx") : "", self = !me && !!fb.user, an = (T && T.an) || {}, U = Object.assign({}, (T && T.u) || {}), out = [];
+    if (self) me = fb.user.uid; // quản trị đang ẩn: chỉ mình thấy dòng của mình (đánh dấu "đang ẩn")
+    myKeys().forEach(function (k) { if (k !== me) delete U[k]; }); // dòng vai khác của mình (chưa kịp dọn) không hiện
     if (bxhOk()) U[me] = bxhRow();
     Object.keys(U).forEach(function (uid) {
       var r = U[uid]; if (!r || (an[uid] && uid !== me)) return;
       var v = bxhVal(r, kind, t0); if (v <= 0 && uid !== me) return;
-      out.push({ uid: uid, r: r, v: v, me: uid === me, hid: !!an[uid], s2: kind === "st" ? +r.sm || 0 : kind === "bd" ? (r.cp || []).reduce(function (a, b) { return a + (+b || 0); }, 0) : 0 });
+      out.push({ uid: uid, r: r, v: v, me: uid === me, hid: !!an[uid] || (self && uid === me), s2: kind === "st" ? +r.sm || 0 : kind === "bd" ? (r.cp || []).reduce(function (a, b) { return a + (+b || 0); }, 0) : 0 });
     });
     out.sort(function (a, b) { return b.v - a.v || b.s2 - a.s2 || String(a.r.ten).localeCompare(String(b.r.ten), "vi"); });
     out.forEach(function (x, i) { x.rank = i && out[i - 1].v === x.v && out[i - 1].s2 === x.s2 ? out[i - 1].rank : i + 1; });
@@ -2451,7 +2659,7 @@
   }
   function rkHTML(n) { return '<span class="rk' + (n <= 3 ? " rk" + n : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>"; }
   function bxhLi(x, unit, sub) {
-    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.r.ten, x.me ? avMyV() : +x.r.a || 0, "", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
+    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.r.ten, x.me ? avMyV(x.uid) : +x.r.a || 0, "", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
       (sub ? '<small class="muted">' + sub + "</small>" : "") + '</span><b class="num">' + fmt(x.v) + " " + unit + "</b></li>";
   }
   function bxhBoard(list, unit, subf) {
@@ -2509,9 +2717,9 @@
         if (kind === "w") h += '<p class="sub">Tính từ 0 giờ thứ Hai · còn ' + (K + 7 - t0) + " ngày (hết Chủ nhật " + dateY(K + 6) + "). Top 3 nhận cúp vàng · bạc · đồng.</p>";
         if (me) {
           var i = L.indexOf(me), up = null; for (var j = i - 1; j >= 0; j--) if (L[j].v > me.v) { up = L[j]; break; }
-          h += '<p class="xhyou">' + (me.v > 0 ? "Bạn đang hạng <b>" + me.rank + "</b> với <b>" + fmt(me.v) + " XP</b>." + (up ? " Cần <b>" + fmt(up.v - me.v + 1) + " XP</b> để vượt " + esc(up.r.ten) + "." : me.rank === 1 ? " Bạn đang dẫn đầu!" : "") : "Bạn chưa có XP trong " + ({ w: "tuần", m: "tháng", q: "quý", y: "năm" }[kind]) + " này — học hoặc ôn để lên bảng.") + (me.hid ? " (Quản trị viên đang ẩn bạn khỏi bảng: người khác không thấy bạn.)" : "") + "</p>";
+          h += '<p class="xhyou">' + (me.v > 0 ? "Bạn đang hạng <b>" + me.rank + "</b> với <b>" + fmt(me.v) + " XP</b>." + (up ? " Cần <b>" + fmt(up.v - me.v + 1) + " XP</b> để vượt " + esc(up.r.ten) + "." : me.rank === 1 ? " Bạn đang dẫn đầu!" : "") : "Bạn chưa có XP trong " + ({ w: "tuần", m: "tháng", q: "quý", y: "năm" }[kind]) + " này — học hoặc ôn để lên bảng.") + (me.hid ? (isAdmin() ? " (Bạn đang ẩn khỏi bảng: người khác không thấy bạn. Đổi ở Cài đặt → Hai vai của tôi.)" : " (Quản trị viên đang ẩn bạn khỏi bảng: người khác không thấy bạn.)") : "") + "</p>";
         }
-        var nz = Object.keys((T && T.u) || {}).filter(function (uid) { return !(T.an || {})[uid] && (!fb.user || uid !== fb.user.uid) && bxhVal(T.u[uid], kind, t0) <= 0; }).length;
+        var nz = Object.keys((T && T.u) || {}).filter(function (uid) { return !(T.an || {})[uid] && !isMine(uid) && bxhVal(T.u[uid], kind, t0) <= 0; }).length;
         h += (L.some(function (x) { return x.v > 0; }) ? bxhBoard(has, "XP") : '<p class="sub">Chưa ai có XP trong kỳ này.</p>') + (nz > 0 ? '<p class="sub">' + nz + " người khác chưa có XP trong kỳ này.</p>" : "") + "</div>";
         if (kind === "w") h += '<div class="card" id="xhlw"><h2>Cúp tuần trước</h2><p class="sub">Đang tải…</p></div>';
       }
@@ -2542,7 +2750,7 @@
       for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)", a: r ? +r.a || 0 : 0 }); }
       top.forEach(function (x, j) { x.rank = j && top[j - 1].v === x.v ? top[j - 1].rank : j + 1; });
       top = top.filter(function (x) { return x.rank <= 3; });
-      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (fb.user && x.uid === fb.user.uid ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, fb.user && x.uid === fb.user.uid ? avMyV() : x.a, "", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (isMine(x.uid) ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, isMine(x.uid) ? avVer(x.uid) : x.a, "", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
       avFill(el);
     }
     if (!fin) return show(bxhRank(T, k), "tạm tính — chốt lúc 12 giờ trưa thứ Hai");
@@ -2551,15 +2759,18 @@
   function xhMe(box) {
     var rc = myRecs(), cups = Object.keys(S.cup || {}).map(Number).sort(function (a, b) { return b - a; }), cp = [0, 0, 0], L = lvl();
     cups.forEach(function (k) { cp[S.cup[k] - 1]++; });
-    var me = fb.user ? '<div class="card"><div class="row avpf">' + avHTML(fb.user.uid, avMyTen(), avMyV(), "xl", true) + '<div><h2>' + esc(avMyTen()) + '</h2><p class="sub">Ảnh đại diện và tên hiển thị là những gì người khác thấy.</p>' +
-      (avCan() ? '<button class="btn sm" type="button" id="xhavc">' + (avMyV() > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" : "") + "</div></div></div>" : "";
+    // quản trị: hiện vai đang dùng trên bảng xếp hạng (ẩn → vai quản trị) + lời nhắc đổi ở Cài đặt
+    var mk = fb.user ? myKey("bx") || fb.user.uid : "", mt = fb.user ? (isAdmin() ? (vaiGet().bx === "hv" ? vaiGet().th : vaiGet().tq) : avMyTen()) : "";
+    var vn = isAdmin() ? ' <a href="#caidat">Đổi ở Cài đặt → Hai vai của tôi</a>.' : "", vx = isAdmin() ? { qt: "Bảng xếp hạng đang hiện vai quản trị.", hv: "Bảng xếp hạng đang hiện vai người học.", an: "Bạn đang ẩn khỏi bảng xếp hạng." }[vaiGet().bx] + vn : "Ảnh đại diện và tên hiển thị là những gì người khác thấy.";
+    var me = fb.user ? '<div class="card"><div class="row avpf">' + avHTML(mk, mt, avMyV(mk), "xl", true) + '<div><h2>' + esc(mt) + '</h2><p class="sub">' + vx + "</p>" +
+      (avCan() ? '<button class="btn sm" type="button" id="xhavc">' + (avMyV(mk) > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" : "") + "</div></div></div>" : "";
     box.innerHTML = me + '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
       (rc.hb && rc.hk ? '<p class="sub" style="margin-top:8px">Hạng tuần cao nhất đạt ở ' + perName("w", rc.hk).toLowerCase() + ".</p>" : "") + "</div>" +
       '<div class="card"><h2>Huy hiệu</h2><div class="bfams">' + BFAM.map(function (f) { return famHTML(f, null, true); }).join("") + "</div><h3>Thành tích đặc biệt</h3>" +
       '<div class="badges">' + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div></div>" +
       '<div class="card"><h2>Cúp tuần</h2><p class="cups">' + cupHTML(cp) + "</p>" + (cups.length ? '<ul class="qtls">' + cups.slice(0, 30).map(function (k) { return "<li>" + perName("w", k) + ": cúp " + MEDAL[S.cup[k]] + "</li>"; }).join("") + "</ul>" : '<p class="sub">Chưa có. Vào top 3 XP của một tuần để nhận cúp (chốt 12 giờ trưa thứ Hai tuần sau).</p>') + "</div>";
     avFill(box);
-    var avc = $("#xhavc", box); if (avc) avc.onclick = avPick;
+    var avc = $("#xhavc", box); if (avc) avc.onclick = function () { avPick(mk); };
   }
 
 
@@ -3213,12 +3424,13 @@
     else h = '<input type="url" inputmode="url" placeholder="https://…" aria-label="Địa chỉ link"><button type="button" class="sw" data-nlink="add">Gắn</button><button type="button" class="sw" data-nlink="del">Bỏ link</button>';
     return h;
   }
-  function noteInner(id, mode, k) {
+  // inSheet = ô nằm trong hộp thoại "Cách nhớ của mọi người" → không có nút mở lại chính hộp thoại đó
+  function noteInner(id, mode, k, inSheet) {
     var meo = k === "meo", t = noteOf(id, k);
     var head = meo ? '<div class="facts nhd"><span class="k">Cách nhớ của bạn</span><span class="muted nsub">Mọi người sẽ thấy cách nhớ này</span></div>'
       : '<div class="facts nhd"><span class="k">Ghi chú khác</span><span class="muted nsub">Chỉ bạn thấy</span></div>';
-    var all = meo ? '<button type="button" class="btn sm ghost" data-nact="all" title="Cách nhớ của mọi người, chấm sao">Cách nhớ của mọi người ⋯</button>' : "";
-    if (mode === "edit") return head + NOTE_TB + '<div class="ntpop hide"></div><div class="ned nt" contenteditable="true" role="textbox" aria-multiline="true" aria-label="' + (meo ? "Cách nhớ" : "Ghi chú khác") + '" data-ph="' + (meo ? "Ví dụ: tách chữ thành bộ phận, câu vè, liên tưởng giúp nhớ…" : "Ví dụ: chỗ hay nhầm, ghi chú riêng…") + '">' + noteClean(t) + '</div><div class="row nfoot"><span class="muted nc">Tự động lưu</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-nact="del">Xóa</button><button type="button" class="btn sm primary" data-nact="done">Xong</button></div>';
+    var all = meo && !inSheet ? '<button type="button" class="btn sm ghost" data-nact="all" title="Cách nhớ của mọi người, chấm sao">Cách nhớ của mọi người ⋯</button>' : "";
+    if (mode === "edit") return head + NOTE_TB + '<div class="ntpop hide"></div><div class="ned nt" contenteditable="true" role="textbox" aria-multiline="true" aria-label="' + (meo ? "Cách nhớ" : "Ghi chú khác") + '" data-ph="' + (meo ? "Ví dụ: tách chữ thành bộ phận, câu vè, liên tưởng giúp nhớ…" : "Ví dụ: chỗ hay nhầm, ghi chú riêng…") + '">' + noteClean(t) + '</div><div class="row nfoot">' + all + '<span class="muted nc">Tự động lưu</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-nact="del">Xóa</button><button type="button" class="btn sm primary" data-nact="done">Xong</button></div>';
     if (mode === "del") return head + '<div class="nt">' + noteClean(t) + '</div><div class="row"><span>' + (meo ? "Xóa cách nhớ này (cả ở danh sách chung)?" : "Xóa ghi chú này?") + '</span><span class="spacer"></span><button type="button" class="btn sm" data-nact="cancel">Thôi</button><button type="button" class="btn sm bad" data-nact="delyes">Xóa</button></div>';
     if (!t) return '<div class="row nempty"><button type="button" class="btn sm ghost" data-nact="edit">✎ ' + (meo ? "Viết cách nhớ" : "Thêm ghi chú khác") + "</button>" + all + "</div>";
     return head + '<div class="nt">' + noteClean(t) + "</div>" + (meo ? meoStat(id) : "") + '<div class="row">' + all + '<span class="spacer"></span><button type="button" class="btn sm" data-nact="edit">Sửa</button><button type="button" class="btn sm ghost" data-nact="del">Xóa</button></div>';
@@ -3302,7 +3514,7 @@
   function noteMode(box, mode) {
     if (noteCur === box) noteFlush();
     var id = box.getAttribute("data-note"), k = nkOf(box);
-    box.innerHTML = noteInner(id, mode, k);
+    box.innerHTML = noteInner(id, mode, k, !!box.closest(".meosheet"));
     if (mode === "edit") {
       var ed = box.querySelector(".ned");
       ed.addEventListener("input", function (e) { noteMark(ed); if (!e.isComposing) sgEdit(ed); noteSched(box); });
@@ -3335,10 +3547,10 @@
     if ((a = b.getAttribute("data-nlink")) && ed) { if (noteLink(ed, box, a === "add")) { notePop(box, ""); noteSched(box); } return; }
     a = b.getAttribute("data-nact"); var k = nkOf(box);
     if (a === "edit") noteMode(box, "edit");
-    else if (a === "done") { if (noteCur === box && !noteFlush()) return; noteMode(box, "view"); if (k === "meo") meoPub(true); } // xong cách nhớ → đăng ngay
+    else if (a === "done") { if (noteCur === box && !noteFlush()) return; noteMode(box, "view"); if (k === "meo") meoDone(box); } // xong cách nhớ → đăng ngay
     else if (a === "del") { if (noteCur === box) noteFlush(); noteMode(box, noteOf(id, k) ? "del" : "view"); }
     else if (a === "cancel") noteMode(box, "view");
-    else if (a === "delyes") { HC.setNote(id, "", k); noteMode(box, "view"); refreshNotes(id, box, k); toast(k === "meo" ? "Đã xóa cách nhớ" : "Đã xóa ghi chú"); if (k === "meo") meoPub(true); }
+    else if (a === "delyes") { HC.setNote(id, "", k); noteMode(box, "view"); refreshNotes(id, box, k); toast(k === "meo" ? "Đã xóa cách nhớ" : "Đã xóa ghi chú"); if (k === "meo") meoDone(box); }
     else if (a === "all") { if (noteCur === box) noteFlush(); meoSheet(id); }
   });
   // mở ô ghi chú: có khung chi tiết đang hiện thì sửa ngay ở đó; không thì mở khung nhỏ chỉ có chữ + ô đó (không lộ đáp án thẻ ôn)
@@ -3371,23 +3583,23 @@
   function meoEditing(id) { return !!document.querySelector('[data-note="' + id + '"][data-nk="meo"] .ned'); }
   function meoPub(force) {
     clearTimeout(MEO.tm);
-    if (!meoOk() || MEO.busy) return Promise.resolve(false);
-    var uid = fb.user.uid, FV = firebase.firestore.FieldValue, done = {}, wait = false;
+    if (!meoOk() || MEO.busy || !vaiReady()) return Promise.resolve(false);
+    var me = fb.user, uid = myKey("me"), FV = firebase.firestore.FieldValue, done = {}, wait = false; // uid = mã tác giả (quản trị: theo vai ở cách nhớ)
     var ids = Object.keys(S.meo).filter(function (id) { var m = S.meo[id]; if (!(m && m[1] > (+m[2] || 0) && ITEM[id])) return false; if (force !== true && meoEditing(id)) { wait = true; return false; } return true; });
     if (wait) meoSoon();
     if (!ids.length) return Promise.resolve(true);
     MEO.busy = true;
     return ids.reduce(function (p, id) {
       return p.then(function () {
-        if (fb.user === null || fb.user.uid !== uid) return;
+        if (fb.user !== me || myKey("me") !== uid) return;
         var m = S.meo[id], ms = m[1], ref = meoCol().doc(id + "_" + uid);
-        var w = m[0] ? ref.set({ id: id, uid: uid, ten: bxhTen(), h: m[0], upd: FV.serverTimestamp() }, { merge: true }) : ref.delete();
+        var w = m[0] ? ref.set({ id: id, uid: uid, ten: myName("me"), h: m[0], upd: FV.serverTimestamp() }, { merge: true }) : ref.delete();
         return w.then(function () { done[id] = ms; delete MEO.gone[id]; delete MEO.cache[id]; }, function () { });
       });
     }, Promise.resolve()).then(function () {
       MEO.busy = false;
       var n = 0;
-      if (fb.user && fb.user.uid === uid) Object.keys(done).forEach(function (id) { var m = S.meo[id]; if (m && m[1] === done[id] && m[2] !== done[id]) { m[2] = done[id]; n++; } });
+      if (fb.user === me) Object.keys(done).forEach(function (id) { var m = S.meo[id]; if (m && m[1] === done[id] && m[2] !== done[id]) { m[2] = done[id]; n++; } });
       if (n) { save(); Object.keys(done).forEach(function (id) { refreshNotes(id, null, "meo"); }); }
       return true;
     });
@@ -3397,7 +3609,7 @@
   // đổi tên hiển thị → đổi tên trên các cách nhớ của mình
   function meoRename() {
     if (!meoOk()) return;
-    var uid = fb.user.uid, t = bxhTen();
+    var uid = myKey("me"), t = myName("me");
     meoCol().where("uid", "==", uid).get().then(function (q) {
       var b = fb.db.batch(), n = 0;
       q.forEach(function (d) { if (d.data().ten !== t) { b.update(d.ref, { ten: t, upd: firebase.firestore.FieldValue.serverTimestamp() }); n++; } });
@@ -3462,8 +3674,8 @@
   }
   function meoBao() { return jget(MEO_BAO); }
   function meoItemHTML(x, mine, my) {
-    var bao = !mine && fb.user && meoBao()[x.k + "_" + fb.user.uid], adm = isAdmin(); // dấu "đã báo" theo từng tài khoản (khóa = mã báo cáo)
-    var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd">' + (x.uid ? (mine ? avHTML(x.uid, x.ten, avMyV(), "sm", true) : avSlot(x.uid, x.ten)) : "") + '<b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
+    var bao = !mine && fb.user && meoBao()[x.k + "_" + fb.user.uid], adm = isAdmin() && !isMine(x.uid); // dấu "đã báo" theo từng tài khoản (khóa = mã báo cáo)
+    var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd">' + (x.uid ? (mine ? avHTML(x.uid, x.ten, avVer(x.uid), "sm", true) : avSlot(x.uid, x.ten)) : "") + '<b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
     if (bao && !x._show) return h + '<div class="row meo-ft"><span class="muted">Bạn đã báo cách nhớ này cho quản trị viên.</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-mact="hien">Hiện</button></div></div>';
     h += '<div class="nt">' + noteClean(x.h || "") + "</div>";
     h += '<div class="row meo-ft">';
@@ -3477,12 +3689,25 @@
     if (adm && !mine) h += '<button type="button" class="btn sm bad" data-mact="qxoa">Xóa (quản trị)</button>';
     return h + '</div><div class="meo-form"></div></div>';
   }
+  // bấm Xong / xóa cách nhớ → đăng ngay; ô nằm trong hộp thoại "Cách nhớ của mọi người" → đăng xong tải lại danh sách
+  function meoDone(box) {
+    var p = meoPub(true), sh = box.closest(".meosheet");
+    if (sh && sh._meoLoad) p.then(function () { if (sh.isConnected) sh._meoLoad(); });
+  }
+  // Hộp thoại "Cách nhớ của mọi người" (người dùng yêu cầu 27/11/2026): mở được cả khi đang soạn cách nhớ ở dưới (ô đó giữ nguyên, đóng hộp thoại
+  // thì gõ tiếp); "Viết cách nhớ của bạn" soạn NGAY trong hộp thoại. Chỉ 1 ô soạn mỗi lúc: ô đang soạn ở dưới được lưu + tạm về chế độ xem,
+  // đóng hộp thoại thì lưu, đăng, ô đó mở lại chế độ soạn với nội dung mới nhất.
   function meoSheet(id) {
     var it = ITEM[id]; if (!it) return;
     closePop();
+    var SEL = '[data-note="' + id + '"][data-nk="meo"]', prev = $(SEL + " .ned"), back = [], opened = false;
     var el = plSheet('<h2 style="margin:0 40px 4px 0">Cách nhớ · <span class="han">' + esc(itemTitle(it)) + '</span></h2><p class="sub">Cách nhớ mọi người chia sẻ, hay nhất ở trên. Bấm sao để chấm (1–5, đổi được; bấm lại sao đang chọn để bỏ).</p>' +
-      '<div id="meoapp"></div><div class="meo-list" id="meol"><p class="sub">Đang tải…</p></div>' +
-      '<div class="row acts"><button type="button" class="btn primary" id="meow">✎ ' + (noteOf(id, "meo") ? "Sửa cách nhớ của bạn" : "Viết cách nhớ của bạn") + '</button><span class="spacer"></span><button type="button" class="btn ghost" id="meor">Tải lại</button></div>');
+      '<div id="meoapp"></div><div id="meoed"></div><div class="meo-list" id="meol"><p class="sub">Đang tải…</p></div>' +
+      '<div class="row acts"><button type="button" class="btn primary" id="meow">✎ ' + (noteOf(id, "meo") ? "Sửa cách nhớ của bạn" : "Viết cách nhớ của bạn") + '</button><span class="spacer"></span><button type="button" class="btn ghost" id="meor">Tải lại</button></div>', function () {
+        if (!opened) { if (prev && prev.isConnected) noteRestore(prev); return; } // đang soạn ở dưới → gõ tiếp
+        noteFlush(); meoPub(true); refreshNotes(id, null, "meo");
+        back.forEach(function (b) { if (b.isConnected) noteMode(b, "edit"); });
+      });
     el.classList.add("meosheet");
     var list = el.querySelector("#meol"), L = null, uid = fb.user ? fb.user.uid : "";
     if (it.type === "c" || it.type === "r") giaiData(it.key).then(function (j) {
@@ -3490,13 +3715,13 @@
     }, function () { });
     function draw() {
       if (!L) return;
-      var my = S.meo[id], mineDoc = L.filter(function (x) { return x.uid === uid; })[0];
+      var my = S.meo[id], mk = myKey("me"), mineDoc = L.filter(function (x) { return x.uid === mk; })[0];
       // của mình: đã đăng xong mà không còn trên danh sách chung → quản trị đã gỡ
       if (my && my[0] && my[2] >= my[1] && !mineDoc && !MEO.busy) MEO.gone[id] = 1; else delete MEO.gone[id];
       var S2 = meoSort(L), h = "";
       if (MEO.gone[id]) h += '<p class="tkmsg">Quản trị viên đã gỡ cách nhớ của bạn khỏi danh sách chung.</p>';
       else if (my && my[0] && my[1] > (+my[2] || 0)) h += '<p class="sub">Cách nhớ bạn vừa sửa chưa đăng xong — app tự đăng sau ít giây.</p>';
-      h += S2.length ? S2.map(function (x) { return meoItemHTML(x, x.uid === uid, +((x.r || {})[uid]) || 0); }).join("") : '<p class="sub">Chưa ai chia sẻ cách nhớ cho mục này. Hãy là người đầu tiên!</p>';
+      h += S2.length ? S2.map(function (x) { return meoItemHTML(x, isMine(x.uid), +((x.r || {})[uid]) || 0); }).join("") : '<p class="sub">Chưa ai chia sẻ cách nhớ cho mục này. Hãy là người đầu tiên!</p>';
       list.innerHTML = h;
       avFillBx(list);
       refreshNotes(id, null, "meo");
@@ -3509,13 +3734,22 @@
       });
     }
     el.querySelector("#meor").onclick = function () { load(true); };
-    el.querySelector("#meow").onclick = function () { closeSheet(); editNote(id, "meo"); };
+    el._meoLoad = function () { load(); };
+    el.querySelector("#meow").onclick = function () {
+      var w = el.querySelector("#meoed");
+      noteFlush();
+      $$(SEL).forEach(function (b) { if (b.querySelector(".ned")) { back.push(b); noteMode(b, "view"); } });
+      w.innerHTML = noteHTML(id, "meo"); opened = true;
+      noteMode(w.firstChild, "edit");
+      this.style.display = "none";
+      try { w.scrollIntoView({ block: "nearest" }); } catch (e) { }
+    };
     list.addEventListener("click", function (e) {
       var b = e.target.closest("[data-star],[data-mact],[data-ly]"); if (!b || !L) return;
       var card = b.closest("[data-mk]"), k = card && card.getAttribute("data-mk"), x = L.filter(function (y) { return y.k === k; })[0]; if (!x) return;
       var a = b.getAttribute("data-mact");
       if (b.hasAttribute("data-star")) {
-        if (x.uid === uid) return;
+        if (isMine(x.uid)) return;
         var v = +b.getAttribute("data-star"), cur = +((x.r || {})[uid]) || 0, o = {}, FV = firebase.firestore.FieldValue;
         o["r." + uid] = v === cur ? FV.delete() : v;
         $$("[data-star]", card).forEach(function (s) { s.disabled = true; });
