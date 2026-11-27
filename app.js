@@ -3226,6 +3226,38 @@
     var ls = Q.lt.filter(function (x) { return !ltGot(x.x); }).slice(0, q.lt || 0);
     return { cw: rs.concat(cs, ws), s: ss, lt: ls };
   }
+  // ---------- BÀI ĐANG DỞ (người dùng yêu cầu 27/11/2026) ----------
+  // Học dở rồi dừng (vd chưa xong nhóm 5 mục) → lần sau (hôm sau, bao lâu sau cũng vậy) mở lại mục đó phải học tiếp ĐÚNG những mục
+  // còn dở, đúng chỗ dừng, rồi mới tới bài mới hôm nay. Mục = mã kỳ hoặc "chung". localStorage "hanco-bai-do-<chủ tiến độ trên máy | khach>"
+  // = {<mục>: {cw: [id chữ/từ/bộ thủ], s: [id câu], lt: [chữ loại từ], p: "see"|"quiz" (bước của nhóm 5 mục đang dở), i: mục đang xem
+  // trong nhóm, li: loại từ đang xem, t: ms}}. Riêng từng máy, KHÔNG thuộc S. Mục đã học (ở đâu cũng vậy) tự bỏ khỏi bài dở.
+  function bdKey() { return "hanco-bai-do-" + (lsGet(OWN) || "khach"); }
+  function bdAll() { var o = null; try { o = JSON.parse(lsGet(bdKey())); } catch (e) { } return o && typeof o === "object" ? o : {}; }
+  function bdLeft(x) { // phần còn chưa học của bài dở
+    x = x || {};
+    return {
+      cw: (x.cw || []).filter(function (id) { return ITEM[id] && !introduced(id); }),
+      s: (x.s || []).filter(function (id) { return ITEM[id] && ITEM[id].type === "s" && !introduced(id); }),
+      lt: (x.lt || []).filter(function (k) { return LTI[k] && !ltGot(k); }),
+      p: x.p === "quiz" ? "quiz" : "see", i: Math.max(0, +x.i || 0), li: Math.max(0, +x.li || 0)
+    };
+  }
+  function bdGet(sec) { var x = bdAll()[sec]; if (!x) return null; var r = bdLeft(x); return r.cw.length || r.s.length || r.lt.length ? r : null; }
+  function bdPut(sec, f) { // f = các trường cần đổi; hết mục chưa học → xóa bài dở của mục đó
+    var a = bdAll(), x = a[sec] || {}, k;
+    for (k in f) if (f.hasOwnProperty(k)) x[k] = f[k];
+    var r = bdLeft(x);
+    if (r.cw.length || r.s.length || r.lt.length) { x.t = Date.now(); a[sec] = x; } else delete a[sec];
+    if (Object.keys(a).length) lsSet(bdKey(), JSON.stringify(a)); else lsDel(bdKey());
+  }
+  function bdCount(sec) { var x = bdGet(sec); return x ? x.cw.length + x.s.length : 0; } // chữ/từ/bộ thủ/câu còn dở (không tính loại từ)
+  function bdMerge(saved, fresh, key) { // bài dở trước, rồi bài hôm nay (không trùng); tổng = bài hôm nay (hoặc bài dở nếu dài hơn)
+    var seen = {}; saved.forEach(function (x) { seen[key(x)] = 1; });
+    var rest = fresh.filter(function (x) { return !seen[key(x)]; });
+    return saved.concat(rest.slice(0, Math.max(0, fresh.length - saved.length)));
+  }
+  function idOf(x) { return x.id; }
+  HC._bd = { all: bdAll, get: bdGet, put: bdPut, key: bdKey }; // để kiểm tra trong console
 
   // ---------- UI basics ----------
   var layer;
@@ -5306,8 +5338,9 @@
       var st = pstate(p, t0), q = st.q, T = p.T, n = q.c + q.w + q.s, dR = dueSec("r", p.k).length, dW = dueSec("w", p.k).length, lN = q.lt, lD = ltDue(p.k).length;
       if (st.rv) anyRv = true;
       h += '<h3 class="ksec">' + esc(T.name) + ' <small class="muted">ngày ' + (st.d + 1) + "/" + p.L + " · thi " + dateOf(p.e) + "</small></h3>";
-      var sub = st.rv ? "Hôm nay là ngày ôn của " + T.short + ": không có bài mới. Muốn học trước thì bấm Học thêm." : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : st.tail ? "Chặng ôn cuối: không thêm bài mới." : "Đã xong phần mới của hôm nay.";
-      h += task("新", "", "Học mới", sub, '<a class="btn' + (n ? " primary" : "") + '" href="#hoc-' + p.k + '">' + (n ? "Bắt đầu" : "Học thêm") + "</a>");
+      var sub = st.rv ? "Hôm nay là ngày ôn của " + T.short + ": không có bài mới. Muốn học trước thì bấm Học thêm." : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : st.tail ? "Chặng ôn cuối: không thêm bài mới." : "Đã xong phần mới của hôm nay.", nd = bdCount(p.k);
+      if (nd) sub = "Bài đang học dở: còn " + nd + " mục";
+      h += task("新", "", "Học mới", sub, '<a class="btn' + (n || nd ? " primary" : "") + '" href="#hoc-' + p.k + '">' + (nd ? "Học tiếp" : n ? "Bắt đầu" : "Học thêm") + "</a>");
       if (st.d >= p.ltS || lD) h += task("類", "", "Loại từ", lN || lD ? [lN && lN + " từ mới", lD && lD + " từ đến hạn ôn"].filter(Boolean).join(" · ") + " · làm bài kiểu đề" : "Đã xong hôm nay. Muốn làm thêm thì bấm Luyện.", '<a class="btn' + (lN || lD ? " primary" : "") + '" href="#hoc-' + p.k + '-lt">' + (lN || lD ? "Làm bài" : "Luyện") + "</a>");
       h += task("溫", "green", "Ôn thẻ đến hạn", dR ? dR + " thẻ cần ôn" : "Không có thẻ đến hạn", dR ? '<a class="btn primary" href="#on-' + p.k + '">Ôn ngay</a>' : '<a class="btn" href="#choi">Chơi trò ôn</a>');
       h += task("筆", "amber", "Tập viết", dW ? dW + " chữ / từ cần viết lại" : "Không có chữ cần viết hôm nay", '<a class="btn' + (dW ? " primary" : "") + '" href="#viet-' + p.k + '">Viết</a>');
@@ -5315,7 +5348,8 @@
     });
     var q = restQuota(t0), n = q.c + q.w + q.s + q.r, dR = dueSec("r", "chung").length, dW = dueSec("w", "chung").length, lD = ltDue("chung").length;
     if (multi) h += '<h3 class="ksec">Chung <small class="muted">phần không thuộc kỳ nào bạn đang học</small></h3>';
-    if (n || !multi) h += task("新", "", "Học mới", n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : "Đã xong phần mới của hôm nay.", '<a class="btn' + (n ? " primary" : "") + '" href="#hoc-chung">' + (n ? "Bắt đầu" : "Học thêm") + "</a>");
+    var ndc = bdCount("chung");
+    if (n || ndc || !multi) h += task("新", "", "Học mới", ndc ? "Bài đang học dở: còn " + ndc + " mục" : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : "Đã xong phần mới của hôm nay.", '<a class="btn' + (n || ndc ? " primary" : "") + '" href="#hoc-chung">' + (ndc ? "Học tiếp" : n ? "Bắt đầu" : "Học thêm") + "</a>");
     if (dR || !multi) h += task("溫", "green", multi ? "Ôn thẻ khác" : "Ôn thẻ đến hạn", dR ? dR + " thẻ cần ôn" : "Không có thẻ đến hạn", dR ? '<a class="btn primary" href="#on-chung">Ôn ngay</a>' : '<a class="btn" href="#choi">Chơi trò ôn</a>');
     if (dW || !multi) h += task("筆", "amber", multi ? "Tập viết khác" : "Tập viết", dW ? dW + " chữ / từ cần viết lại" : "Không có chữ cần viết hôm nay", '<a class="btn' + (dW ? " primary" : "") + '" href="#viet-chung">Viết</a>');
     if (lD) h += task("類", "", "Ôn loại từ", lD + " từ đến hạn ôn · làm bài kiểu đề", '<a class="btn primary" href="#hoc-chung-lt">Làm bài</a>');
@@ -5363,18 +5397,24 @@
     if (sec && sec !== "chung" && !planOf(sec)) sec = null;
     if (sec && args[1] === "lt") return ltRun(v, sec);
     if (!sec) {
-      var work = secs.filter(function (k) { var q = secQuota(k); return q.c + q.w + q.s + (q.r || 0) > 0; });
+      var work = secs.filter(function (k) { var q = secQuota(k); return q.c + q.w + q.s + (q.r || 0) > 0 || bdCount(k) > 0; });
       if (work.length > 1) {
-        v.innerHTML = '<div class="card"><h1>Học mới</h1><p class="sub">Hôm nay có bài mới ở ' + work.length + " mục. Chọn mục muốn học trước:</p>" + work.map(function (k) { var q = secQuota(k); return task("新", "", secName(k), [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · "), '<a class="btn primary" href="#hoc-' + k + '">Bắt đầu</a>'); }).join("") + "</div>";
+        v.innerHTML = '<div class="card"><h1>Học mới</h1><p class="sub">Hôm nay có bài mới ở ' + work.length + " mục. Chọn mục muốn học trước:</p>" + work.map(function (k) { var q = secQuota(k), nd = bdCount(k); return task("新", "", secName(k), nd ? "Bài đang học dở: còn " + nd + " mục" : [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · "), '<a class="btn primary" href="#hoc-' + k + '">' + (nd ? "Học tiếp" : "Bắt đầu") + "</a>"); }).join("") + "</div>";
         return;
       }
       sec = work[0] || secs[0];
     }
-    var b = nextBatch(sec);
+    var b = nextBatch(sec), bd = bdGet(sec), st = null;
+    if (bd) { // bài đang dở: học tiếp đúng những mục còn dở trước
+      b.cw = bdMerge(bd.cw.map(function (id) { return ITEM[id]; }), b.cw, idOf);
+      b.s = bdMerge(bd.s.map(function (id) { return ITEM[id]; }), b.s, idOf);
+      if (bd.cw.length) st = { p: bd.p, i: bd.i };
+    }
+    if (b.cw.length || b.s.length) bdPut(sec, { cw: b.cw.map(idOf), s: b.s.map(idOf), p: st ? st.p : "see", i: st ? st.i : 0 });
     if (!b.cw.length && !b.s.length) {
       var p = sec === "chung" ? null : planOf(sec), rv = p && pstate(p, today()).rv;
       v.innerHTML = '<div class="card"><h1>Học mới · ' + esc(secName(sec)) + '</h1><p class="sub">' + (rv ? "Hôm nay là ngày ôn của kỳ này nên không có bài mới." : "Bạn đã học xong phần mới của hôm nay.") + ' Bạn có thể học trước bài của ngày mai.</p><div class="row"><button class="btn primary" id="more">Học thêm 10 chữ</button><a class="btn" href="#on-' + sec + '">Ôn tập</a><a class="btn" href="#choi">Trò chơi</a></div></div>';
-      $("#more", v).onclick = function () { var x = nextBatch(sec, { c: 10, w: 8, r: 0, s: 0, lt: 0 }); if (!x.cw.length) { toast("Đã học hết chữ, từ của mục này"); return; } runLearn(v, x.cw, null, sec); };
+      $("#more", v).onclick = function () { var x = nextBatch(sec, { c: 10, w: 8, r: 0, s: 0, lt: 0 }); if (!x.cw.length) { toast("Đã học hết chữ, từ của mục này"); return; } bdPut(sec, { cw: x.cw.map(idOf), s: [], p: "see", i: 0 }); runLearn(v, x.cw, null, sec); };
       return;
     }
     var cl = null;
@@ -5382,11 +5422,12 @@
       if (i >= b.s.length) return learnDone(v, b.cw.length + b.s.length, sec);
       sentPractice(v, b.s[i], { n: i + 1, of: b.s.length, done: function () { sents(i + 1); } });
     }
-    if (b.cw.length) cl = runLearn(v, b.cw, function () { if (cl) { cl(); cl = null; } sents(0); }, sec);
+    if (b.cw.length) cl = runLearn(v, b.cw, function () { if (cl) { cl(); cl = null; } sents(0); }, sec, st);
     else sents(0);
     return function () { if (cl) cl(); };
   }
   function learnDone(v, total, sec) {
+    if (sec) bdPut(sec, { cw: [], s: [], p: "see", i: 0 }); // xong cả bài → không còn bài dở (giữ phần loại từ nếu có)
     var p = sec && sec !== "chung" ? planOf(sec) : null, lt = p ? pstate(p, today()).q.lt + ltDue(sec).length : 0;
     v.innerHTML = '<div class="card result"><div class="score-big">+' + total + '</div><h2>Xong bài học mới' + (sec ? " · " + esc(secName(sec, true)) : "") + '</h2><p class="sub">Các mục vừa học đã vào lịch ôn. Chữ và từ cũng đã có trong mục Tập viết.</p><div class="row" style="justify-content:center">' + (lt ? '<a class="btn primary" href="#hoc-' + sec + '-lt">Làm bài loại từ</a>' : "") + '<a class="btn' + (lt ? "" : " primary") + '" href="#viet' + (sec ? "-" + sec : "") + '">Tập viết ngay</a><a class="btn" href="#choi">Chơi trò ôn</a><a class="btn" href="#home">Về trang chính</a></div></div>';
   }
@@ -5394,7 +5435,12 @@
   // ưu tiên từ hay sai). Đúng/sai ghi vào S.lt (ôn ngắt quãng riêng của loại từ).
   function ltRun(v, sec) {
     var p = sec === "chung" ? null : planOf(sec), ltk = p ? p.T.lt : "all", GG = p ? p.T.groups : Object.keys(D.loaitu);
-    var news = nextBatch(sec).lt, dues = ltDue(sec), title = "Loại từ · " + secName(sec, true), used = {};
+    var news = nextBatch(sec).lt, dues = ltDue(sec), title = "Loại từ · " + secName(sec, true), used = {}, bd = bdGet(sec), li0 = 0;
+    if (bd && bd.lt.length) { // loại từ mới đang học dở: học tiếp đúng những từ đó, đúng chỗ dừng
+      news = bdMerge(bd.lt.map(function (x) { return LTI[x]; }), news, function (o) { return o.x; });
+      li0 = Math.min(bd.li, bd.lt.length - 1);
+    }
+    bdPut(sec, { lt: news.map(function (o) { return o.x; }), li: li0 });
     news.concat(dues).forEach(function (o) { used[o.x] = 1; });
     var pool = shuffle(Object.keys(S.lt).map(function (x) { return LTI[x]; }).filter(function (o) { return o && !used[o.x] && secOf(o.id) === sec && GG.indexOf(o.g) >= 0; }))
       .sort(function (a, b) { return S.lt[b.x][2] - S.lt[a.x][2]; });
@@ -5405,11 +5451,12 @@
       v.innerHTML = '<div class="card"><h1>' + esc(title) + '</h1><p class="sub">Chưa có loại từ nào để làm bài.' + (p ? " Loại từ của " + esc(p.T.short) + " bắt đầu từ ngày " + (p.ltS + 1) + " của lộ trình (" + dateOf(p.s + p.ltS) + ")." : "") + ' Bạn vẫn có thể xem bảng loại từ và làm các bài ôn ở màn Loại từ.</p><div class="row"><a class="btn primary" href="#loaitu' + (p ? "-" + p.T.lt : "") + '">Mở màn Loại từ</a><a class="btn" href="#home">Về trang chính</a></div></div>';
       return;
     }
-    var i = 0, ok0 = {}, quiz = [], qi = 0, score = 0, tot = 0;
+    var i = li0, ok0 = {}, quiz = [], qi = 0, score = 0, tot = 0;
     function hd(step) { return '<div class="row noprint" style="margin-bottom:10px"><span class="chip num">' + step + '</span><span class="muted" style="font-size:0.85rem">' + esc(title) + '</span><span class="spacer"></span><a class="btn sm ghost" href="#home">Dừng</a></div>'; }
     function ctx(o) { return HC.ltCtx ? HC.ltCtx(ltk, o.x) : '<span class="hl">' + esc(o.x) + "</span>"; }
     function see() {
       var o = news[i], m = o.it ? meaningShort(o.it) : "";
+      bdPut(sec, { li: i });
       v.innerHTML = hd("Từ mới " + (i + 1) + "/" + news.length) + '<div class="stage"><div class="fc ltq"><div class="big ' + lenCls(o.x) + '">' + esc(o.x) + '</div><div style="font-weight:700;font-size:1.2rem;color:var(--seal)">' + esc(o.g) + '</div><div style="font-weight:600">' + esc(o.am) + "</div>" + (m ? '<div class="muted">' + esc(m) + "</div>" : "") + '</div><div class="card" style="width:min(680px,100%)"><p class="sub" style="margin:0 0 4px">Ví dụ trong đề cương / đề thi:</p><div class="sent">' + ctx(o) + '</div></div><div class="row acts"><button class="btn" id="prev"' + (i ? "" : " disabled") + '>Trước</button><button class="btn primary" id="next">' + (i < news.length - 1 ? "Tiếp" : "Kiểm tra") + "</button></div></div>";
       $("#prev", v).onclick = function () { if (i) { i--; see(); } };
       $("#next", v).onclick = function () { if (i < news.length - 1) { i++; see(); } else { quiz = shuffle(news.slice()); qi = 0; askNew(); } };
@@ -5454,17 +5501,19 @@
     }
     if (news.length) see(); else askEx();
   }
-  function runLearn(v, batch, onDone, sec) {
+  function runLearn(v, batch, onDone, sec, st) { // st = {p, i}: học tiếp nhóm 5 mục đang dở (bài dở) — p "quiz" = vào lại đầu Bước 2
     var chunks = []; for (var i = 0; i < batch.length; i += 5) chunks.push(batch.slice(i, i + 5));
     var ci = 0, ii = 0, phase = "see", quiz = [], qi = 0, firstOk = {}, total = batch.length, doneCount = 0;
+    function mark() { if (sec) bdPut(sec, { p: phase, i: phase === "see" ? ii : 0 }); } // nhớ chỗ đang học (bài dở)
     function head() { return '<div class="row noprint" style="margin-bottom:10px"><span class="chip num">' + doneCount + "/" + total + ' mục</span><span class="muted" style="font-size:0.85rem">' + (phase === "see" ? "Bước 1: đọc kỹ chữ, âm, nghĩa" : "Bước 2: kiểm tra nhanh 5 mục vừa học") + '</span><span class="spacer"></span><a class="btn sm ghost" href="#home">Dừng</a></div>'; }
     function see() {
       var it = chunks[ci][ii];
+      mark();
       v.innerHTML = head() + '<div class="stage"><div class="card" style="width:min(680px,100%)">' + detailHTML(it) + '</div><div class="row acts"><button class="btn" id="prev"' + (ii ? "" : " disabled") + '>Trước</button><button class="btn primary" id="next">' + (ii < chunks[ci].length - 1 ? "Tiếp" : "Kiểm tra 5 mục này") + '</button></div><div class="kbd">Phím → hoặc Enter để tiếp</div></div>';
       $("#next", v).onclick = nextSee; $("#prev", v).onclick = function () { if (ii) { ii--; see(); } };
     }
     function nextSee() { if (ii < chunks[ci].length - 1) { ii++; see(); } else startQuiz(); }
-    function startQuiz() { phase = "quiz"; quiz = shuffle(chunks[ci]); qi = 0; ask(); }
+    function startQuiz() { phase = "quiz"; mark(); quiz = shuffle(chunks[ci]); qi = 0; ask(); }
     function ask() {
       var it = quiz[qi];
       var opts = shuffle([it].concat(distract(it, 3, "am")));
@@ -5492,7 +5541,8 @@
     function done() { if (onDone) onDone(); else learnDone(v, total, sec); }
     function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea,[contenteditable],.more,.pop,.modal")) { e.preventDefault(); nextSee(); } }
     document.addEventListener("keydown", key);
-    see();
+    if (st && st.p === "quiz") startQuiz();
+    else { if (st) ii = Math.min(st.i || 0, chunks[0].length - 1); see(); }
     return function () { document.removeEventListener("keydown", key); };
   }
 

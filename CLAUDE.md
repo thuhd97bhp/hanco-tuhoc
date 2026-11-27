@@ -180,6 +180,10 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   số lần xuất hiện; câu: câu đã ra đề thi trước, rồi câu nhiều chữ phổ biến). Mục trùng nhiều kỳ học 1 lần ở kỳ thi sớm hơn.
   "Việc hôm nay" chia theo từng kỳ + mục Chung. Phần không thuộc kỳ nào học khi không còn kỳ nào đang học (số chữ/từ trong Cài đặt).
   Loại từ có lịch ôn riêng `S.lt`. Tên kỳ: tên đầy đủ ở chỗ rộng, tên gọi tắt ở chỗ hẹp.
+- BÀI ĐANG DỞ (người dùng yêu cầu 27/11/2026): học dở (vd chưa xong nhóm 5 mục) → hôm sau / lần sau mở lại mục đó PHẢI học tiếp ĐÚNG những
+  mục còn dở, đúng chỗ dừng (đang ở Bước 2 kiểm tra → vào lại đầu Bước 2), rồi mới tới bài mới hôm nay — dù học gì (chữ/từ/bộ thủ/câu,
+  loại từ, "Học thêm", kỳ nào hay Chung). localStorage `hanco-bai-do-<chủ tiến độ hanco-chu | khach>` (`bdGet`/`bdPut`/`bdMerge` trong app.js,
+  dùng ở `vLearn`/`runLearn`/`ltRun`, trang chính hiện "Học tiếp"). Riêng từng máy, không thuộc `S`. Cách học mới thêm sau → cũng phải nhớ bài dở.
 
 ## Hiện điểm cộng — BẮT BUỘC, TỰ LÀM KHÔNG CẦN HỎI (người dùng yêu cầu 26/11/2026)
 - MỌI lần cộng XP (màn / trò chơi / tính năng mới, hay đổi chỗ cộng điểm) đều phải HIỆN cho người học "+N XP" + âm thanh
