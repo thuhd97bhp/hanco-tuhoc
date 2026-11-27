@@ -826,9 +826,9 @@
       h = '<h1>Tạo tài khoản</h1>' + msg + '<form class="tkf" data-f="tao" novalidate>' +
         '<div class="field"><label for="tke">Email</label><input id="tke" type="email" autocomplete="email" inputmode="email" required></div>' +
         '<div class="field"><label for="tkt">Tên hiển thị</label><input id="tkt" type="text" maxlength="30" autocomplete="nickname" required><small>Người khác thấy tên này (vd bảng xếp hạng).</small></div>' +
-        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required><small>Chỉ quản trị viên thấy. Gõ đúng họ tên thật, có dấu.</small></div>' +
+        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required><small>Gõ đúng họ tên thật, có dấu.</small></div>' +
         '<div class="field"><label for="tkp">Mật khẩu (ít nhất 6 ký tự)</label><div class="tkpw"><input id="tkp" type="password" autocomplete="new-password" minlength="6" required>' + eye + '</div></div>' +
-        '<p class="sub">Quản trị viên xem được thống kê học của bạn. Sau khi bấm "Tạo tài khoản", mở email để xác nhận địa chỉ.</p>' +
+        '<p class="sub">Sau khi bấm "Tạo tài khoản", mở email để xác nhận địa chỉ.</p>' +
         '<div class="row acts"><button class="btn primary" type="submit">Tạo tài khoản</button></div></form>' +
         '<p class="tklinks"><a href="#" data-to="vao">Đã có tài khoản? Đăng nhập</a></p>';
     } else if (st === "vao" && tk.view === "quen") {
@@ -852,8 +852,7 @@
       if (tk.busy) h = '<h1>Hoàn tất đăng ký</h1><p class="sub">Đang hoàn tất đăng ký…</p>';
       else h = '<h1>Hoàn tất đăng ký</h1>' + msg + '<p class="sub">Tài khoản <b>' + esc(u && u.email) + '</b>' + (isG ? " (Google)" : "") + ' chưa đăng ký vào app. Điền 2 ô dưới đây.</p><form class="tkf" data-f="dk" novalidate>' +
         '<div class="field"><label for="tkt">Tên hiển thị</label><input id="tkt" type="text" maxlength="30" autocomplete="nickname" required value="' + esc(p.ten || (u && u.displayName ? String(u.displayName).slice(0, 30) : "")) + '"><small>Người khác thấy tên này (vd bảng xếp hạng).</small></div>' +
-        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required value="' + esc(p.hoten || "") + '"><small>Chỉ quản trị viên thấy. Gõ đúng họ tên thật, có dấu.</small></div>' +
-        '<p class="sub">Quản trị viên xem được thống kê học của bạn.</p>' +
+        '<div class="field"><label for="tkh">Họ tên đầy đủ của bạn</label><input id="tkh" type="text" maxlength="80" autocomplete="name" required value="' + esc(p.hoten || "") + '"><small>Gõ đúng họ tên thật, có dấu.</small></div>' +
         '<div class="row acts"><button class="btn primary" type="submit">Hoàn tất đăng ký</button></div></form>' +
         '<p class="tklinks"><a href="#" data-out>Đăng xuất</a></p>';
     } else if (st === "khoa") {
@@ -946,10 +945,9 @@
     var u = fb.user, p = tk.prof || tkCache() || {}, adm = isAdmin();
     var pw = u.providerData.some(function (x) { return x.providerId === "password"; });
     el.innerHTML = '<h2>Tài khoản</h2>' + (adm ? '<p class="sub">Tài khoản quản trị viên (mã 000).</p>' : "") +
-      (u.email ? '<p>Email: <b>' + esc(u.email) + '</b></p>' : "") + (p.hoten ? '<p>Họ tên đầy đủ: <b>' + esc(p.hoten) + '</b> <span class="sub">(chỉ bạn và quản trị viên thấy)</span></p>' : "") +
+      (u.email ? '<p>Email: <b>' + esc(u.email) + '</b></p>' : "") +
       (adm ? "" : '<div class="row" style="align-items:end"><div class="field" style="flex:1 1 200px"><label for="tkten">Tên hiển thị (người khác thấy)</label><input id="tkten" type="text" maxlength="30" value="' + esc(p.ten || "") + '"></div><button class="btn" type="button" id="tktenok">Lưu tên</button></div>') +
-      (pw ? '<div class="row" style="margin-top:8px"><button class="btn" type="button" id="tkpwr">Đổi mật khẩu (gửi link qua email)</button></div>' : "") +
-      (adm ? "" : '<p class="sub">Quản trị viên xem được thống kê học của bạn.</p>');
+      (pw ? '<div class="row" style="margin-top:8px"><button class="btn" type="button" id="tkpwr">Đổi mật khẩu (gửi link qua email)</button></div>' : "");
     var b = $("#tktenok", el); if (b) b.onclick = function () {
       var t = nameNorm($("#tkten", el).value);
       if (t.length < 2 || t.length > 30) return toast("Tên hiển thị dài 2–30 ký tự");
@@ -3425,6 +3423,38 @@
     var ls = Q.lt.filter(function (x) { return !ltGot(x.x); }).slice(0, q.lt || 0);
     return { cw: rs.concat(cs, ws), s: ss, lt: ls };
   }
+  // ---------- BÀI ĐANG DỞ (người dùng yêu cầu 27/11/2026) ----------
+  // Học dở rồi dừng (vd chưa xong nhóm 5 mục) → lần sau (hôm sau, bao lâu sau cũng vậy) mở lại mục đó phải học tiếp ĐÚNG những mục
+  // còn dở, đúng chỗ dừng, rồi mới tới bài mới hôm nay. Mục = mã kỳ hoặc "chung". localStorage "hanco-bai-do-<chủ tiến độ trên máy | khach>"
+  // = {<mục>: {cw: [id chữ/từ/bộ thủ], s: [id câu], lt: [chữ loại từ], p: "see"|"quiz" (bước của nhóm 5 mục đang dở), i: mục đang xem
+  // trong nhóm, li: loại từ đang xem, t: ms}}. Riêng từng máy, KHÔNG thuộc S. Mục đã học (ở đâu cũng vậy) tự bỏ khỏi bài dở.
+  function bdKey() { return "hanco-bai-do-" + (lsGet(OWN) || "khach"); }
+  function bdAll() { var o = null; try { o = JSON.parse(lsGet(bdKey())); } catch (e) { } return o && typeof o === "object" ? o : {}; }
+  function bdLeft(x) { // phần còn chưa học của bài dở
+    x = x || {};
+    return {
+      cw: (x.cw || []).filter(function (id) { return ITEM[id] && !introduced(id); }),
+      s: (x.s || []).filter(function (id) { return ITEM[id] && ITEM[id].type === "s" && !introduced(id); }),
+      lt: (x.lt || []).filter(function (k) { return LTI[k] && !ltGot(k); }),
+      p: x.p === "quiz" ? "quiz" : "see", i: Math.max(0, +x.i || 0), li: Math.max(0, +x.li || 0)
+    };
+  }
+  function bdGet(sec) { var x = bdAll()[sec]; if (!x) return null; var r = bdLeft(x); return r.cw.length || r.s.length || r.lt.length ? r : null; }
+  function bdPut(sec, f) { // f = các trường cần đổi; hết mục chưa học → xóa bài dở của mục đó
+    var a = bdAll(), x = a[sec] || {}, k;
+    for (k in f) if (f.hasOwnProperty(k)) x[k] = f[k];
+    var r = bdLeft(x);
+    if (r.cw.length || r.s.length || r.lt.length) { x.t = Date.now(); a[sec] = x; } else delete a[sec];
+    if (Object.keys(a).length) lsSet(bdKey(), JSON.stringify(a)); else lsDel(bdKey());
+  }
+  function bdCount(sec) { var x = bdGet(sec); return x ? x.cw.length + x.s.length : 0; } // chữ/từ/bộ thủ/câu còn dở (không tính loại từ)
+  function bdMerge(saved, fresh, key) { // bài dở trước, rồi bài hôm nay (không trùng); tổng = bài hôm nay (hoặc bài dở nếu dài hơn)
+    var seen = {}; saved.forEach(function (x) { seen[key(x)] = 1; });
+    var rest = fresh.filter(function (x) { return !seen[key(x)]; });
+    return saved.concat(rest.slice(0, Math.max(0, fresh.length - saved.length)));
+  }
+  function idOf(x) { return x.id; }
+  HC._bd = { all: bdAll, get: bdGet, put: bdPut, key: bdKey }; // để kiểm tra trong console
 
   // ---------- UI basics ----------
   var layer;
@@ -3512,6 +3542,37 @@
     return h;
   }
   HC.meanHTML = meanHTML;
+  // ---------- CHẾ ĐỘ TẬP VIẾT (người dùng yêu cầu 27/11/2026) ----------
+  // "gt" = viết gián tiếp (MẶC ĐỊNH): app chỉ cho âm + nghĩa + số chữ, người học viết ra giấy, bấm Xem đáp án rồi tự chấm Đúng / Sai
+  // (ghi vào lịch như app chấm); vẫn có nút "Mở bảng viết". "tt" = viết trực tiếp trên màn hình (app tự chấm) + nút "Tự chấm".
+  // Lưu RIÊNG từng máy ở localStorage "hanco-viet" (không thuộc S); máy chưa chọn / localStorage lỗi → "gt".
+  var VIET_KEY = "hanco-viet";
+  function vietMode() { try { return localStorage.getItem(VIET_KEY) === "tt" ? "tt" : "gt"; } catch (e) { return "gt"; } }
+  function vietSet(m) { try { localStorage.setItem(VIET_KEY, m === "tt" ? "tt" : "gt"); } catch (e) { } }
+  // đề ở phần viết KHÔNG được lộ chữ Hán nào (người dùng yêu cầu 27/11/2026): cụm chữ Hán lẫn trong âm / nghĩa → "…"
+  var HAN_RUN = /(?:[\u2E80-\u2FFF\u3005\u3007\u3021-\u3029\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]|[\uD840-\uD87F][\uDC00-\uDFFF])+/g;
+  function noHan(t) { return String(t || "").replace(HAN_RUN, "…"); }
+  function meanNoHan(it) {
+    var h = "";
+    if (it.ns) h += '<div class="ns">' + esc(noHan(it.ns)) + "</div>";
+    if (it.nb) h += '<div class="nb">' + esc(noHan(it.nb)) + "</div>";
+    return h;
+  }
+  var VIET_KHICH = "Hãy tập viết thật, rồi cho app biết bạn viết đúng hay sai. App lưu lại mức độ nhớ từng chữ của bạn để xếp lịch ôn cho phù hợp: chữ hay sai sẽ được ôn lại sớm hơn, chữ đã vững thì giãn ra.";
+  // đề viết: CHỈ âm, nghĩa, số chữ
+  function vietPrompt(it) { return '<div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(noHan(it.am)) + "</div>" + meanNoHan(it) + '<div class="extra">' + chars(it.key).filter(isHan).length + " chữ</div></div></div>"; }
+  function vietGuide(sent, kh) { // kh: lời khích lệ riêng (vd kho khó không đổi lịch ôn)
+    return '<div class="vhd"><b>Cách tập:</b> viết ' + (sent ? "cả câu bằng chữ Hán theo phiên âm và lời dịch" : "chữ Hán theo âm và nghĩa ở trên") + ' ra giấy (hoặc bất cứ đâu bạn muốn). Viết xong bấm <b>Xem đáp án</b>, so với chữ bạn viết rồi tự chấm <b>Đúng / Sai</b>. Muốn viết ngay trên màn hình thì bấm <b>Mở bảng viết</b>.</div>' +
+      '<div class="vkh">✎ ' + (kh || VIET_KHICH) + '</div><div class="vmode">Đang dùng chế độ viết gián tiếp (ra giấy) · <a href="#caidat-viet">đổi ở Cài đặt</a></div>';
+  }
+  // phần bên phải của màn viết gián tiếp (dùng chung id với màn viết trực tiếp: #self #bad #good #aft #nx #fb)
+  function vietIndirect(guide) { // guide = hướng dẫn + khích lệ: nằm DƯỚI hàng nút (điện thoại không phải kéo xuống mới thấy nút)
+    return '<div class="wpadc"><div class="vans" id="vans"><span class="muted">Viết ra giấy rồi bấm Xem đáp án — đáp án sẽ hiện ở đây</span></div><div class="acts"><div class="row" id="w0"><button class="btn" id="opad">✎ Mở bảng viết</button><button class="btn primary" id="rev">Xem đáp án</button></div><div class="row hide" id="self"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn primary" id="nx">Tiếp →</button></div></div></div><div class="wfb"><div class="gfb hide" id="fb" role="status"></div>' + (guide || "") + "</div>";
+  }
+  function vietAnswer(it, hasGt) {
+    return aniHTML(it.key) + (hasGt ? '<div class="vgt">Dạng rút gọn (không bắt buộc · ※ tra từ điển): <span class="han">' + esc(it.gt) + "</span></div>" : "");
+  }
+  HC.vietMode = vietMode; HC.noHan = noHan; HC.meanNoHan = meanNoHan; HC.vietPrompt = vietPrompt; HC.vietGuide = vietGuide; HC.vietAnswer = vietAnswer; HC.vietIndirect = vietIndirect;
   function kindLabel(it) { return { c: "Chữ", w: it && chars(it.w).length > 2 ? "Cụm từ" : "Từ", r: "Bộ thủ", s: "Câu" }[it.type]; }
   HC.kindLabel = kindLabel;
 
@@ -3772,6 +3833,36 @@
     return walk(body);
   }
   HC.noteClean = noteClean;
+  // Dán có định dạng (ghi chú khác, Word, Google Docs, trang web): chỉnh HTML bộ nhớ tạm cho hợp rồi lọc bằng noteClean
+  // (noteClean giữ nguyên → ghi chú đã lưu hiện y như cũ). Khoảng trắng / xuống dòng trong MÃ HTML gộp thành 1 dấu cách (Word ngắt
+  // dòng giữa câu trong mã), trừ trong <pre>; thẻ khối (li, h1…, tr…) → dòng riêng; Google Docs bọc cả đoạn bằng <b style="font-weight:normal">
+  // → không tính đậm. Màu / nền / cỡ chữ chỉ giữ khi là lớp của app (chép giữa các ghi chú), màu tùy ý từ ngoài bỏ.
+  var NOTE_BLK = { p: 1, li: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1, blockquote: 1, tr: 1, pre: 1, dt: 1, dd: 1, section: 1, article: 1, header: 1, footer: 1 };
+  function notePasteHTML(h) {
+    var body = noteDoc(String(h || "")); if (!body) return "";
+    function swap(c, tag) { var d = c.ownerDocument.createElement(tag); while (c.firstChild) d.appendChild(c.firstChild); c.parentNode.replaceChild(d, c); return d; }
+    function fix(n, pre) {
+      for (var c = n.firstChild, nx; c; c = nx) {
+        nx = c.nextSibling;
+        if (c.nodeType === 3) {
+          if (!pre) { c.nodeValue = c.nodeValue.replace(/[ \t\r\n\f]+/g, " "); continue; }
+          var ps = c.nodeValue.split(/\r?\n/); if (ps.length < 2) continue;
+          var f = c.ownerDocument.createDocumentFragment();
+          ps.forEach(function (p, i) { if (i) f.appendChild(c.ownerDocument.createElement("br")); if (p) f.appendChild(c.ownerDocument.createTextNode(p)); });
+          n.replaceChild(f, c); continue;
+        }
+        if (c.nodeType !== 1) continue;
+        var tg = c.tagName.toLowerCase();
+        if (NOTE_SKIP[tg]) continue;
+        fix(c, pre || tg === "pre");
+        if ((tg === "b" || tg === "strong") && /normal|^[1-5]00$/.test(c.style.fontWeight || "")) swap(c, "span");
+        else if (NOTE_BLK[tg]) swap(c, "div");
+        else if ((tg === "td" || tg === "th") && c.nextSibling) c.parentNode.insertBefore(c.ownerDocument.createTextNode(" "), c.nextSibling);
+      }
+    }
+    fix(body, false);
+    return noteClean(body.innerHTML).replace(/\s*(<\/?div>|<br>)\s*/g, "$1");
+  }
   // 2 ô (Bước 8): k = "meo" (Cách nhớ — mọi người thấy) | "ghi" (Ghi chú khác = S.note cũ, chỉ mình thấy). Không truyền k = cả 2 ô.
   function noteHTML(id, k) {
     if (!k) return noteHTML(id, "meo") + noteHTML(id, "ghi");
@@ -3895,7 +3986,11 @@
       ed.addEventListener("blur", function () { if (noteCur === box) noteFlush(); });
       ed.addEventListener("paste", function (e) {
         var cd = e.clipboardData || window.clipboardData; if (!cd) return;
-        e.preventDefault(); document.execCommand("insertText", false, cd.getData("text") || "");
+        var h = ""; try { h = cd.getData("text/html") || ""; } catch (x) { }
+        e.preventDefault();
+        if (h) h = notePasteHTML(h);
+        if (h && noteTxt(h).replace(/\s/g, "")) document.execCommand("insertHTML", false, h); // có định dạng (Ctrl+Shift+V = chữ thường: không có text/html)
+        else document.execCommand("insertText", false, cd.getData("text") || "");
       });
       ed.addEventListener("click", function (e) { var a = e.target.closest("a"); if (a && (e.ctrlKey || e.metaKey)) window.open(a.href, "_blank", "noopener"); });
       // bấm nút công cụ không làm mất vùng chọn (máy tính)
@@ -5493,10 +5588,17 @@
   // một dòng lộ trình của kỳ: tên, ngày thứ mấy, thanh chặng (chữ + từ → + loại từ → + câu → ôn cuối + thi thử), vạch = hôm nay
   function kyRow(p, t0) {
     var d = t0 - p.s, L = p.L, pct = function (x) { return (100 * x / L).toFixed(2) + "%"; }, left = p.e - t0;
+    // 27/11/2026 (người dùng yêu cầu): thanh CHỈ hiện % thời gian đã đi (không chữ, không vạch đè); tên chặng ra dòng chú thích bên dưới
     var segs = [[0, p.ltS, "chữ, từ"], [p.ltS, p.sS, "+ loại từ"], [p.sS, p.newEnd, "+ câu"], [p.newEnd, L, "ôn + thi thử"]];
-    return '<div class="kyrow"><div class="row"><b>' + esc(p.T.name) + '</b><span class="muted num">ngày ' + (d + 1) + "/" + L + " · thi " + dateY(p.e) + (left > 0 ? " (còn " + left + " ngày)" : " (hôm nay)") + "</span></div>" +
-      '<div class="phbar" aria-hidden="true">' + segs.map(function (s, i) { return s[1] > s[0] ? '<span class="ph' + i + '" style="width:' + pct(s[1] - s[0]) + '"><small>' + s[2] + "</small></span>" : ""; }).join("") + '<i style="left:' + pct(Math.min(L, d + 0.5)) + '"></i></div>' +
-      '<small class="muted">Đang ở chặng: ' + phaseOf(p, d) + " · loại từ từ ngày " + (p.ltS + 1) + " · câu từ ngày " + (p.sS + 1) + " · ôn cuối từ ngày " + (p.newEnd + 1) + "</small></div>";
+    var gone = Math.max(0, Math.min(L, d + 1)), pc = Math.round(100 * gone / L);
+    return '<div class="kyrow"><div class="row"><b>' + esc(p.T.name) + '</b><span class="muted num">ngày ' + (d + 1) + "/" + L + " · thi " + dateY(p.e) + (left > 0 ? " (còn " + left + " ngày)" : " (hôm nay)") + '</span><b class="num phpc">' + pc + "%</b></div>" +
+      '<div class="phbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pc + '" aria-label="Đã đi ' + pc + '% chặng đường"><span style="width:' + pct(gone) + '"></span>' +
+      segs.map(function (s) { return s[0] > 0 && s[0] < L ? '<i style="left:' + pct(s[0]) + '"></i>' : ""; }).join("") + "</div>" +
+      '<div class="phleg">' + segs.map(function (s, i) {
+        if (s[1] <= s[0]) return "";
+        var st = d >= s[1] ? "done" : d >= s[0] ? "now" : "";
+        return '<span class="ph' + i + (st ? " " + st : "") + '">' + (st === "done" ? "✓ " : "") + s[2] + ' <small class="num">(ngày ' + (s[0] + 1) + (s[1] - s[0] > 1 ? "–" + s[1] : "") + ")</small>" + (st === "now" ? " · đang học" : "") + "</span>";
+      }).join("") + "</div></div>";
   }
   // "Việc hôm nay" chia theo từng kỳ đang học (người dùng yêu cầu 26/11/2026) + mục Chung (phần không thuộc kỳ nào, bộ thủ, trò chơi)
   function todayTasks(P, t0) {
@@ -5505,8 +5607,9 @@
       var st = pstate(p, t0), q = st.q, T = p.T, n = q.c + q.w + q.s, dR = dueSec("r", p.k).length, dW = dueSec("w", p.k).length, lN = q.lt, lD = ltDue(p.k).length;
       if (st.rv) anyRv = true;
       h += '<h3 class="ksec">' + esc(T.name) + ' <small class="muted">ngày ' + (st.d + 1) + "/" + p.L + " · thi " + dateOf(p.e) + "</small></h3>";
-      var sub = st.rv ? "Hôm nay là ngày ôn của " + T.short + ": không có bài mới. Muốn học trước thì bấm Học thêm." : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : st.tail ? "Chặng ôn cuối: không thêm bài mới." : "Đã xong phần mới của hôm nay.";
-      h += task("新", "", "Học mới", sub, '<a class="btn' + (n ? " primary" : "") + '" href="#hoc-' + p.k + '">' + (n ? "Bắt đầu" : "Học thêm") + "</a>");
+      var sub = st.rv ? "Hôm nay là ngày ôn của " + T.short + ": không có bài mới. Muốn học trước thì bấm Học thêm." : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : st.tail ? "Chặng ôn cuối: không thêm bài mới." : "Đã xong phần mới của hôm nay.", nd = bdCount(p.k);
+      if (nd) sub = "Bài đang học dở: còn " + nd + " mục";
+      h += task("新", "", "Học mới", sub, '<a class="btn' + (n || nd ? " primary" : "") + '" href="#hoc-' + p.k + '">' + (nd ? "Học tiếp" : n ? "Bắt đầu" : "Học thêm") + "</a>");
       if (st.d >= p.ltS || lD) h += task("類", "", "Loại từ", lN || lD ? [lN && lN + " từ mới", lD && lD + " từ đến hạn ôn"].filter(Boolean).join(" · ") + " · làm bài kiểu đề" : "Đã xong hôm nay. Muốn làm thêm thì bấm Luyện.", '<a class="btn' + (lN || lD ? " primary" : "") + '" href="#hoc-' + p.k + '-lt">' + (lN || lD ? "Làm bài" : "Luyện") + "</a>");
       h += task("溫", "green", "Ôn thẻ đến hạn", dR ? dR + " thẻ cần ôn" : "Không có thẻ đến hạn", dR ? '<a class="btn primary" href="#on-' + p.k + '">Ôn ngay</a>' : '<a class="btn" href="#choi">Chơi trò ôn</a>');
       h += task("筆", "amber", "Tập viết", dW ? dW + " chữ / từ cần viết lại" : "Không có chữ cần viết hôm nay", '<a class="btn' + (dW ? " primary" : "") + '" href="#viet-' + p.k + '">Viết</a>');
@@ -5514,7 +5617,8 @@
     });
     var q = restQuota(t0), n = q.c + q.w + q.s + q.r, dR = dueSec("r", "chung").length, dW = dueSec("w", "chung").length, lD = ltDue("chung").length;
     if (multi) h += '<h3 class="ksec">Chung <small class="muted">phần không thuộc kỳ nào bạn đang học</small></h3>';
-    if (n || !multi) h += task("新", "", "Học mới", n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : "Đã xong phần mới của hôm nay.", '<a class="btn' + (n ? " primary" : "") + '" href="#hoc-chung">' + (n ? "Bắt đầu" : "Học thêm") + "</a>");
+    var ndc = bdCount("chung");
+    if (n || ndc || !multi) h += task("新", "", "Học mới", ndc ? "Bài đang học dở: còn " + ndc + " mục" : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : "Đã xong phần mới của hôm nay.", '<a class="btn' + (n || ndc ? " primary" : "") + '" href="#hoc-chung">' + (ndc ? "Học tiếp" : n ? "Bắt đầu" : "Học thêm") + "</a>");
     if (dR || !multi) h += task("溫", "green", multi ? "Ôn thẻ khác" : "Ôn thẻ đến hạn", dR ? dR + " thẻ cần ôn" : "Không có thẻ đến hạn", dR ? '<a class="btn primary" href="#on-chung">Ôn ngay</a>' : '<a class="btn" href="#choi">Chơi trò ôn</a>');
     if (dW || !multi) h += task("筆", "amber", multi ? "Tập viết khác" : "Tập viết", dW ? dW + " chữ / từ cần viết lại" : "Không có chữ cần viết hôm nay", '<a class="btn' + (dW ? " primary" : "") + '" href="#viet-chung">Viết</a>');
     if (lD) h += task("類", "", "Ôn loại từ", lD + " từ đến hạn ôn · làm bài kiểu đề", '<a class="btn primary" href="#hoc-chung-lt">Làm bài</a>');
@@ -5562,18 +5666,24 @@
     if (sec && sec !== "chung" && !planOf(sec)) sec = null;
     if (sec && args[1] === "lt") return ltRun(v, sec);
     if (!sec) {
-      var work = secs.filter(function (k) { var q = secQuota(k); return q.c + q.w + q.s + (q.r || 0) > 0; });
+      var work = secs.filter(function (k) { var q = secQuota(k); return q.c + q.w + q.s + (q.r || 0) > 0 || bdCount(k) > 0; });
       if (work.length > 1) {
-        v.innerHTML = '<div class="card"><h1>Học mới</h1><p class="sub">Hôm nay có bài mới ở ' + work.length + " mục. Chọn mục muốn học trước:</p>" + work.map(function (k) { var q = secQuota(k); return task("新", "", secName(k), [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · "), '<a class="btn primary" href="#hoc-' + k + '">Bắt đầu</a>'); }).join("") + "</div>";
+        v.innerHTML = '<div class="card"><h1>Học mới</h1><p class="sub">Hôm nay có bài mới ở ' + work.length + " mục. Chọn mục muốn học trước:</p>" + work.map(function (k) { var q = secQuota(k), nd = bdCount(k); return task("新", "", secName(k), nd ? "Bài đang học dở: còn " + nd + " mục" : [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · "), '<a class="btn primary" href="#hoc-' + k + '">' + (nd ? "Học tiếp" : "Bắt đầu") + "</a>"); }).join("") + "</div>";
         return;
       }
       sec = work[0] || secs[0];
     }
-    var b = nextBatch(sec);
+    var b = nextBatch(sec), bd = bdGet(sec), st = null;
+    if (bd) { // bài đang dở: học tiếp đúng những mục còn dở trước
+      b.cw = bdMerge(bd.cw.map(function (id) { return ITEM[id]; }), b.cw, idOf);
+      b.s = bdMerge(bd.s.map(function (id) { return ITEM[id]; }), b.s, idOf);
+      if (bd.cw.length) st = { p: bd.p, i: bd.i };
+    }
+    if (b.cw.length || b.s.length) bdPut(sec, { cw: b.cw.map(idOf), s: b.s.map(idOf), p: st ? st.p : "see", i: st ? st.i : 0 });
     if (!b.cw.length && !b.s.length) {
       var p = sec === "chung" ? null : planOf(sec), rv = p && pstate(p, today()).rv;
       v.innerHTML = '<div class="card"><h1>Học mới · ' + esc(secName(sec)) + '</h1><p class="sub">' + (rv ? "Hôm nay là ngày ôn của kỳ này nên không có bài mới." : "Bạn đã học xong phần mới của hôm nay.") + ' Bạn có thể học trước bài của ngày mai.</p><div class="row"><button class="btn primary" id="more">Học thêm 10 chữ</button><a class="btn" href="#on-' + sec + '">Ôn tập</a><a class="btn" href="#choi">Trò chơi</a></div></div>';
-      $("#more", v).onclick = function () { var x = nextBatch(sec, { c: 10, w: 8, r: 0, s: 0, lt: 0 }); if (!x.cw.length) { toast("Đã học hết chữ, từ của mục này"); return; } runLearn(v, x.cw, null, sec); };
+      $("#more", v).onclick = function () { var x = nextBatch(sec, { c: 10, w: 8, r: 0, s: 0, lt: 0 }); if (!x.cw.length) { toast("Đã học hết chữ, từ của mục này"); return; } bdPut(sec, { cw: x.cw.map(idOf), s: [], p: "see", i: 0 }); runLearn(v, x.cw, null, sec); };
       return;
     }
     var cl = null;
@@ -5581,11 +5691,12 @@
       if (i >= b.s.length) return learnDone(v, b.cw.length + b.s.length, sec);
       sentPractice(v, b.s[i], { n: i + 1, of: b.s.length, done: function () { sents(i + 1); } });
     }
-    if (b.cw.length) cl = runLearn(v, b.cw, function () { if (cl) { cl(); cl = null; } sents(0); }, sec);
+    if (b.cw.length) cl = runLearn(v, b.cw, function () { if (cl) { cl(); cl = null; } sents(0); }, sec, st);
     else sents(0);
     return function () { if (cl) cl(); };
   }
   function learnDone(v, total, sec) {
+    if (sec) bdPut(sec, { cw: [], s: [], p: "see", i: 0 }); // xong cả bài → không còn bài dở (giữ phần loại từ nếu có)
     var p = sec && sec !== "chung" ? planOf(sec) : null, lt = p ? pstate(p, today()).q.lt + ltDue(sec).length : 0;
     v.innerHTML = '<div class="card result"><div class="score-big">+' + total + '</div><h2>Xong bài học mới' + (sec ? " · " + esc(secName(sec, true)) : "") + '</h2><p class="sub">Các mục vừa học đã vào lịch ôn. Chữ và từ cũng đã có trong mục Tập viết.</p><div class="row" style="justify-content:center">' + (lt ? '<a class="btn primary" href="#hoc-' + sec + '-lt">Làm bài loại từ</a>' : "") + '<a class="btn' + (lt ? "" : " primary") + '" href="#viet' + (sec ? "-" + sec : "") + '">Tập viết ngay</a><a class="btn" href="#choi">Chơi trò ôn</a><a class="btn" href="#home">Về trang chính</a></div></div>';
   }
@@ -5593,7 +5704,12 @@
   // ưu tiên từ hay sai). Đúng/sai ghi vào S.lt (ôn ngắt quãng riêng của loại từ).
   function ltRun(v, sec) {
     var p = sec === "chung" ? null : planOf(sec), ltk = p ? p.T.lt : "all", GG = p ? p.T.groups : Object.keys(D.loaitu);
-    var news = nextBatch(sec).lt, dues = ltDue(sec), title = "Loại từ · " + secName(sec, true), used = {};
+    var news = nextBatch(sec).lt, dues = ltDue(sec), title = "Loại từ · " + secName(sec, true), used = {}, bd = bdGet(sec), li0 = 0;
+    if (bd && bd.lt.length) { // loại từ mới đang học dở: học tiếp đúng những từ đó, đúng chỗ dừng
+      news = bdMerge(bd.lt.map(function (x) { return LTI[x]; }), news, function (o) { return o.x; });
+      li0 = Math.min(bd.li, bd.lt.length - 1);
+    }
+    bdPut(sec, { lt: news.map(function (o) { return o.x; }), li: li0 });
     news.concat(dues).forEach(function (o) { used[o.x] = 1; });
     var pool = shuffle(Object.keys(S.lt).map(function (x) { return LTI[x]; }).filter(function (o) { return o && !used[o.x] && secOf(o.id) === sec && GG.indexOf(o.g) >= 0; }))
       .sort(function (a, b) { return S.lt[b.x][2] - S.lt[a.x][2]; });
@@ -5604,11 +5720,12 @@
       v.innerHTML = '<div class="card"><h1>' + esc(title) + '</h1><p class="sub">Chưa có loại từ nào để làm bài.' + (p ? " Loại từ của " + esc(p.T.short) + " bắt đầu từ ngày " + (p.ltS + 1) + " của lộ trình (" + dateOf(p.s + p.ltS) + ")." : "") + ' Bạn vẫn có thể xem bảng loại từ và làm các bài ôn ở màn Loại từ.</p><div class="row"><a class="btn primary" href="#loaitu' + (p ? "-" + p.T.lt : "") + '">Mở màn Loại từ</a><a class="btn" href="#home">Về trang chính</a></div></div>';
       return;
     }
-    var i = 0, ok0 = {}, quiz = [], qi = 0, score = 0, tot = 0;
+    var i = li0, ok0 = {}, quiz = [], qi = 0, score = 0, tot = 0;
     function hd(step) { return '<div class="row noprint" style="margin-bottom:10px"><span class="chip num">' + step + '</span><span class="muted" style="font-size:0.85rem">' + esc(title) + '</span><span class="spacer"></span><a class="btn sm ghost" href="#home">Dừng</a></div>'; }
     function ctx(o) { return HC.ltCtx ? HC.ltCtx(ltk, o.x) : '<span class="hl">' + esc(o.x) + "</span>"; }
     function see() {
       var o = news[i], m = o.it ? meaningShort(o.it) : "";
+      bdPut(sec, { li: i });
       v.innerHTML = hd("Từ mới " + (i + 1) + "/" + news.length) + '<div class="stage"><div class="fc ltq"><div class="big ' + lenCls(o.x) + '">' + esc(o.x) + '</div><div style="font-weight:700;font-size:1.2rem;color:var(--seal)">' + esc(o.g) + '</div><div style="font-weight:600">' + esc(o.am) + "</div>" + (m ? '<div class="muted">' + esc(m) + "</div>" : "") + '</div><div class="card" style="width:min(680px,100%)"><p class="sub" style="margin:0 0 4px">Ví dụ trong đề cương / đề thi:</p><div class="sent">' + ctx(o) + '</div></div><div class="row acts"><button class="btn" id="prev"' + (i ? "" : " disabled") + '>Trước</button><button class="btn primary" id="next">' + (i < news.length - 1 ? "Tiếp" : "Kiểm tra") + "</button></div></div>";
       $("#prev", v).onclick = function () { if (i) { i--; see(); } };
       $("#next", v).onclick = function () { if (i < news.length - 1) { i++; see(); } else { quiz = shuffle(news.slice()); qi = 0; askNew(); } };
@@ -5653,17 +5770,19 @@
     }
     if (news.length) see(); else askEx();
   }
-  function runLearn(v, batch, onDone, sec) {
+  function runLearn(v, batch, onDone, sec, st) { // st = {p, i}: học tiếp nhóm 5 mục đang dở (bài dở) — p "quiz" = vào lại đầu Bước 2
     var chunks = []; for (var i = 0; i < batch.length; i += 5) chunks.push(batch.slice(i, i + 5));
     var ci = 0, ii = 0, phase = "see", quiz = [], qi = 0, firstOk = {}, total = batch.length, doneCount = 0;
+    function mark() { if (sec) bdPut(sec, { p: phase, i: phase === "see" ? ii : 0 }); } // nhớ chỗ đang học (bài dở)
     function head() { return '<div class="row noprint" style="margin-bottom:10px"><span class="chip num">' + doneCount + "/" + total + ' mục</span><span class="muted" style="font-size:0.85rem">' + (phase === "see" ? "Bước 1: đọc kỹ chữ, âm, nghĩa" : "Bước 2: kiểm tra nhanh 5 mục vừa học") + '</span><span class="spacer"></span><a class="btn sm ghost" href="#home">Dừng</a></div>'; }
     function see() {
       var it = chunks[ci][ii];
+      mark();
       v.innerHTML = head() + '<div class="stage"><div class="card" style="width:min(680px,100%)">' + detailHTML(it) + '</div><div class="row acts"><button class="btn" id="prev"' + (ii ? "" : " disabled") + '>Trước</button><button class="btn primary" id="next">' + (ii < chunks[ci].length - 1 ? "Tiếp" : "Kiểm tra 5 mục này") + '</button></div><div class="kbd">Phím → hoặc Enter để tiếp</div></div>';
       $("#next", v).onclick = nextSee; $("#prev", v).onclick = function () { if (ii) { ii--; see(); } };
     }
     function nextSee() { if (ii < chunks[ci].length - 1) { ii++; see(); } else startQuiz(); }
-    function startQuiz() { phase = "quiz"; quiz = shuffle(chunks[ci]); qi = 0; ask(); }
+    function startQuiz() { phase = "quiz"; mark(); quiz = shuffle(chunks[ci]); qi = 0; ask(); }
     function ask() {
       var it = quiz[qi];
       var opts = shuffle([it].concat(distract(it, 3, "am")));
@@ -5691,7 +5810,8 @@
     function done() { if (onDone) onDone(); else learnDone(v, total, sec); }
     function key(e) { if (phase === "see" && (e.key === "ArrowRight" || e.key === "Enter") && !e.target.closest("input,textarea,[contenteditable],.more,.pop,.modal")) { e.preventDefault(); nextSee(); } }
     document.addEventListener("keydown", key);
-    see();
+    if (st && st.p === "quiz") startQuiz();
+    else { if (st) ii = Math.min(st.i || 0, chunks[0].length - 1); see(); }
     return function () { document.removeEventListener("keydown", key); };
   }
 
@@ -5814,20 +5934,20 @@
   // opt (chỉ thẻ "Chữ đã học" dùng): { gap: viết sai thì hỏi lại sau ngần này câu, need: số lần đúng liên tiếp để qua, markWrong: lần sai đầu ghi vào lịch viết }
   function writeSession(v, tabs, items, srs, onEnd, opt) {
     var i = 0, ok = 0, pad = null, again = {}, queue = items.slice(), run = {}, marked = {};
+    var padOn = vietMode() === "tt"; // chế độ viết của máy này; "Mở bảng viết" / "Đóng bảng viết" đổi cho cả lượt này
     function render() {
       var it = queue[i], scored = false, verdict = null, firstRes = null;
       // dạng rút gọn (giản thể) không bắt buộc: phồn thể luôn phải viết; đã viết thêm dạng rút gọn thì phải đúng cả hai mới tính Đúng
       var hasGt = !!(it.gt && chars(it.gt).filter(isHan).length === chars(it.key).filter(isHan).length), tOK = null, gOK = null, gpad = null, gFirst = null;
       var gtRow = hasGt ? '<div class="row hide" id="gtrow" style="justify-content:center"><button class="btn" id="gtgo">Viết thêm dạng rút gọn (không bắt buộc)</button></div>' : "";
       var gtHtml = hasGt ? '<div class="gtwrap hide" id="gtbox"><div class="muted" style="text-align:center;font-size:0.88rem">Viết dạng rút gọn (giản thể) của ' + (chars(it.key).length > 1 ? "từ" : "chữ") + ' trên. Không bắt buộc — đã viết thì phải đúng cả hai dạng mới tính Đúng.</div><div class="padwrap" id="padbox2"></div><div class="row acts"><button class="btn" id="undo2">Xóa nét cuối</button><button class="btn" id="clr2">Xóa hết</button><button class="btn primary" id="chk2">Chấm dạng rút gọn</button></div><div class="gfb hide" id="fb2" role="status"></div><div class="row hide" id="apl2" style="justify-content:center"><button class="btn sm ghost" id="appeal2">Tôi viết đúng mà — tính là Đúng</button></div><div class="row hide" id="apn2" style="justify-content:center"><button class="btn sm ghost" id="appealno2">Chấm nhầm — thật ra tôi viết sai</button></div></div>' : "";
-      v.innerHTML = tabs + '<div class="stage"><div class="row" style="width:min(560px,100%)"><span class="chip num">' + (i + 1) + " / " + queue.length + '</span><span class="muted" style="font-size:0.85rem">Viết chữ Hán theo âm và nghĩa, rồi bấm Chấm điểm</span></div><div class="work"><div class="winfo"><div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(it.am) + "</div>" + meanHTML(it) + '<div class="extra">' + chars(it.key).length + " chữ" + (it.type === "c" && it.net ? " · " + it.net + " nét" : "") + (it.type === "c" && it.rad ? ' · <button class="btn sm ghost" id="hint">Gợi ý bộ</button>' : "") + '</div></div></div><div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="idk">Không nhớ — xem chữ mẫu</button></div></div><div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn primary" id="chk">Chấm điểm</button></div><div class="row hide" id="self"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn" id="redo">Viết lại để luyện</button><button class="btn primary" id="nx">Tiếp →</button></div></div></div><div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div><div class="row hide" id="apn" style="justify-content:center"><button class="btn sm ghost" id="appealno">Chấm nhầm — thật ra tôi viết sai</button></div>' + gtRow + "</div>" + gtHtml + '</div></div>';
-      pad = makePad($("#padbox", v), it.key, { onEdit: function () { $("#fb", v).classList.add("hide"); } });
-      var fb = $("#fb", v), chk = $("#chk", v);
-      function showRow(id) { ["self", "aft"].forEach(function (x) { $("#" + x, v).classList.toggle("hide", x !== id); }); $("#giveup", v).classList.add("hide"); }
+      v.innerHTML = tabs + '<div class="stage"><div class="row" style="width:min(560px,100%)"><span class="chip num">' + (i + 1) + " / " + queue.length + '</span><span class="muted" style="font-size:0.85rem">' + (padOn ? "Viết chữ Hán vào ô theo âm và nghĩa, rồi bấm Chấm điểm (hoặc Tự chấm)" : "Viết ra giấy theo âm và nghĩa, rồi xem đáp án và tự chấm") + '</span></div><div class="work"><div class="winfo">' + vietPrompt(it) + (padOn ? '<div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="idk">Không nhớ — xem chữ mẫu</button><button class="btn sm ghost" id="selfg">Tự chấm (xem đáp án)</button>' + (vietMode() === "gt" ? '<button class="btn sm ghost" id="cpad">Đóng bảng viết</button>' : "") + "</div>" : "") + "</div>" + (padOn ? '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn primary" id="chk">Chấm điểm</button></div><div class="row hide" id="self"><button class="btn bad" id="bad">Tôi viết sai</button><button class="btn good" id="good">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn" id="redo">Viết lại để luyện</button><button class="btn primary" id="nx">Tiếp →</button></div></div></div><div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div><div class="row hide" id="apn" style="justify-content:center"><button class="btn sm ghost" id="appealno">Chấm nhầm — thật ra tôi viết sai</button></div>' + gtRow + "</div>" + gtHtml : vietIndirect(vietGuide(false))) + '</div></div>';
+      var fb = $("#fb", v);
+      function showRow(id) { ["w0", "self", "aft"].forEach(function (x) { var e = $("#" + x, v); if (e) e.classList.toggle("hide", x !== id); }); var g = $("#giveup", v); if (g) g.classList.add("hide"); }
       function say(html) { fb.innerHTML = html; fb.classList.remove("hide"); }
       // lần chấm đầu quyết định kết quả; chỉ ghi vào lịch khi bấm Tiếp (để còn sửa được nếu app chấm nhầm)
       function combine() { verdict = tOK === null ? null : tOK && gOK !== false; }
-      function record(good) { if (scored) return; scored = true; tOK = good; combine(); beep(good); if (hasGt && !gpad) $("#gtrow", v).classList.remove("hide"); }
+      function record(good) { if (scored) return; scored = true; tOK = good; combine(); beep(good); var gr = $("#gtrow", v); if (hasGt && !gpad && gr) gr.classList.remove("hide"); }
       function finish(el) {
         if (verdict === null) return;
         if (srs && !again[it.id]) grade(it.id, "w", verdict ? 2 : 0);
@@ -5842,6 +5962,27 @@
         if (verdict) { ok++; S.best.writeOk = (S.best.writeOk || 0) + 1; flyXP(2, el); } else { again[it.id] = 1; queue.push(it); }
         HC.after();
       }
+      // tự chấm (cả 2 chế độ): Đúng / Sai ghi vào lịch như app chấm, khi bấm Tiếp
+      var gtNote = hasGt ? " Nếu bạn có viết thêm dạng rút gọn thì phải đúng cả hai dạng mới bấm “Tôi viết đúng”." : "";
+      $("#bad", v).onclick = function () { var self = !scored; record(false); if (self) say('<div class="verdict no">Đã ghi: viết sai ✗</div><div class="muted">Không sao, chữ này sẽ được hỏi lại cuối lượt và ôn lại sớm hơn.</div>'); showRow("aft"); };
+      $("#good", v).onclick = function () { var self = !scored; record(true); if (self) say('<div class="verdict ok">Đã ghi: viết đúng ✓</div>'); showRow("aft"); };
+      $("#nx", v).onclick = function () {
+        if (gpad && !gpad.empty() && gOK === null) { toast("Bấm “Chấm dạng rút gọn” trước (hoặc Xóa hết nếu không muốn viết dạng rút gọn)"); return; }
+        finish(this); next();
+      };
+      if (!padOn) { // VIẾT GIÁN TIẾP: chỉ có đề (âm, nghĩa, số chữ) → viết ra giấy → Xem đáp án → tự chấm
+        $("#opad", v).onclick = function () { padOn = true; render(); };
+        $("#rev", v).onclick = function () {
+          $("#vans", v).innerHTML = vietAnswer(it, hasGt);
+          say('<div class="muted">So chữ bạn đã viết với đáp án ở trên (đúng từng nét, đúng chữ phồn thể), rồi tự chấm bên dưới.' + gtNote + "</div>");
+          showRow("self");
+        };
+        return;
+      }
+      pad = makePad($("#padbox", v), it.key, { onEdit: function () { $("#fb", v).classList.add("hide"); } });
+      var chk = $("#chk", v);
+      $("#selfg", v).onclick = function () { pad.model(true); say('<div class="verdict">Đáp án: <span class="han">' + esc(it.key) + '</span></div><div class="muted">Chữ mẫu hiện mờ trong ô viết. So với chữ bạn viết rồi tự chấm bên dưới.' + gtNote + "</div>"); showRow("self"); };
+      var cp = $("#cpad", v); if (cp) cp.onclick = function () { padOn = false; render(); };
       $("#undo", v).onclick = pad.undo; $("#clr", v).onclick = pad.clear;
       chk.onclick = function () {
         if (pad.empty()) { toast("Hãy viết chữ vào ô trước rồi bấm Chấm điểm"); return; }
@@ -5863,10 +6004,6 @@
       };
       $("#idk", v).onclick = function () { record(false); pad.model(true); say('<div class="verdict no">Đã tính là chưa nhớ</div><div class="muted">Tô theo chữ mẫu rồi bấm Chấm lại để luyện. Chữ này sẽ được hỏi lại cuối lượt.</div>'); showRow("aft"); };
       $("#redo", v).onclick = function () { pad.clear(); pad.model(false); fb.classList.add("hide"); };
-      $("#nx", v).onclick = function () {
-        if (gpad && !gpad.empty() && gOK === null) { toast("Bấm “Chấm dạng rút gọn” trước (hoặc Xóa hết nếu không muốn viết dạng rút gọn)"); return; }
-        finish(this); next();
-      };
       $("#appeal", v).onclick = function () {
         tOK = true; combine(); $("#apl", v).classList.add("hide");
         saveSample(it.key, firstRes, pad.size, "dung");
@@ -5877,8 +6014,6 @@
         saveSample(it.key, firstRes, pad.size, "sai");
         say('<div class="verdict no">Đã tính là Sai ✗</div><div class="muted">Cảm ơn bạn! Chữ này đã được lưu để chỉnh lại cách chấm (mục Tập viết → Mẫu chấm nhầm). Chữ mẫu hiện mờ phía sau; chữ này sẽ được hỏi lại cuối lượt.</div>');
       };
-      var hb = $("#hint", v); if (hb) hb.onclick = function () { var r = RAD[it.rad]; hb.outerHTML = 'Bộ <span class="han">' + esc(r.r) + "</span> " + esc(r.am); };
-      $("#bad", v).onclick = function () { record(false); showRow("aft"); }; $("#good", v).onclick = function () { record(true); showRow("aft"); };
       if (hasGt) {
         var fb2 = $("#fb2", v), chk2 = $("#chk2", v);
         var say2 = function (html) { fb2.innerHTML = html; fb2.classList.remove("hide"); };
@@ -6059,20 +6194,34 @@
   }
   function sentPractice(v, s, opt) {
     opt = opt || {};
-    var step = 0, pad;
+    var step = 0, pad, padOn = vietMode() === "tt", wres = null; // wres: tự chấm phần viết câu (false = còn chữ sai → câu ôn lại sớm hơn)
     var steps = ["Đọc có phiên âm", "Tự đọc phiên âm", "Tự dịch nghĩa", "Viết chữ Hán"];
     function render(show) {
       var h = '<div class="row" style="margin-bottom:10px">' + (opt.done ? '<span class="chip num">Câu mới ' + opt.n + "/" + opt.of + '</span><a class="btn sm ghost" href="#home">Dừng</a>' : '<a class="btn sm ghost" href="#cau">← Danh sách câu</a>') + '<span class="muted" style="font-size:0.85rem">' + esc(s.set) + " · câu " + s.no + '</span><span class="spacer"></span>' + moreBtn(s.id) + '</div><div class="row" style="margin-bottom:12px">' + steps.map(function (t, i) { return '<button class="btn sm' + (i === step ? " primary" : "") + '" data-step="' + i + '">' + (i + 1) + ". " + t + "</button>"; }).join("") + '</div><div class="card"><div class="stage">';
       if (step === 0) h += '<div class="sent">' + rubyHTML(s, false, true) + '</div><div style="font-weight:600">' + esc(s.pa) + "</div><div>" + esc(s.dn) + '</div><p class="sub">Bấm vào từng chữ để xem âm, nghĩa và cách viết riêng của chữ đó.</p>';
       if (step === 1) h += '<div class="sent">' + rubyHTML(s, !show) + '</div><div class="' + (show ? "" : "hide") + '" style="font-weight:600">' + esc(s.pa) + "</div>";
       if (step === 2) h += '<div class="sent">' + esc(s.han) + '</div><div style="font-weight:600">' + esc(s.pa) + '</div><div class="' + (show ? "" : "hide") + '">' + esc(s.dn) + "</div>";
-      if (step === 3) h += '<div style="font-weight:700;font-size:1.1rem;text-align:center">' + esc(s.pa) + '</div><div class="muted" style="text-align:center">' + esc(s.dn) + '</div><div class="padwrap" id="padbox"></div><div class="gfb hide" id="fb" role="status"></div><div class="sent ' + (show ? "" : "hide") + '">' + esc(s.han) + "</div>";
-      h += '<div class="row acts">' + (step === 0 ? "" : '<button class="btn primary" id="rev">' + (show ? "Ẩn đáp án" : "Xem đáp án") + "</button>") + (step === 3 ? '<button class="btn" id="clr">Xóa hết</button><button class="btn" id="mdl">Hiện chữ mờ</button><button class="btn" id="chk">Chấm chữ viết</button>' : "") + (step < 3 ? '<button class="btn" id="nx">Bước tiếp →</button>' : '<button class="btn good" id="fin">Xong câu này</button>') + "</div></div></div>";
+      // bước 4 (người dùng yêu cầu 27/11/2026): đề chỉ có phiên âm + lời dịch; viết gián tiếp (ra giấy) hoặc trên bảng viết; xem đáp án rồi tự chấm
+      if (step === 3) h += '<div style="font-weight:700;font-size:1.1rem;text-align:center">' + esc(s.pa) + '</div><div class="muted" style="text-align:center">' + esc(s.dn) + "</div>" + (padOn ? '<div class="padwrap" id="padbox"></div><div class="gfb hide" id="fb" role="status"></div>' : '<div class="vguide">' + vietGuide(true) + "</div>") + '<div class="sent hide" id="sans">' + esc(s.han) + '</div><div class="gfb hide" id="sfb" role="status"></div>';
+      if (step === 3) h += '<div class="acts"><div class="row">' + (padOn ? '<button class="btn" id="clr">Xóa hết</button><button class="btn" id="mdl">Hiện chữ mờ</button><button class="btn" id="chk">Chấm chữ viết</button>' + (vietMode() === "gt" ? '<button class="btn" id="cpad">Đóng bảng viết</button>' : "") : '<button class="btn" id="opad">✎ Mở bảng viết</button>') + '<button class="btn primary" id="rev3">Xem đáp án</button><button class="btn good" id="fin">Xong câu này</button></div><div class="row hide" id="sg3"><span class="muted">Bạn viết câu này:</span><button class="btn bad" id="sbad">Còn chữ sai</button><button class="btn good" id="sgood">Viết đúng hết</button></div></div></div></div>';
+      else h += '<div class="row acts">' + (step === 0 ? "" : '<button class="btn primary" id="rev">' + (show ? "Ẩn đáp án" : "Xem đáp án") + "</button>") + '<button class="btn" id="nx">Bước tiếp →</button></div></div></div>';
       v.innerHTML = h;
       $$("[data-step]", v).forEach(function (b) { b.onclick = function () { step = +b.getAttribute("data-step"); render(false); }; });
       var r = $("#rev", v); if (r) r.onclick = function () { render(!show); };
       var nx = $("#nx", v); if (nx) nx.onclick = function () { step++; render(false); };
       if (step === 3) {
+        var sfb = $("#sfb", v);
+        var sayS = function (t) { sfb.innerHTML = t; sfb.classList.remove("hide"); };
+        $("#rev3", v).onclick = function () {
+          $("#sans", v).classList.remove("hide"); $("#sg3", v).classList.remove("hide"); this.classList.add("hide");
+          if (pad) pad.model(true);
+          if (wres === null) sayS('<div class="muted">So với câu bạn đã viết' + (padOn ? "" : " ra giấy") + ', rồi tự chấm ở hàng nút dưới cùng.</div><div class="vkh">✎ ' + VIET_KHICH + "</div>");
+        };
+        $("#sbad", v).onclick = function () { wres = false; beep(false); sayS('<div class="verdict no">Đã ghi: còn chữ sai</div><div class="muted">Không sao! Câu này sẽ được ôn lại sớm hơn. Bấm “Xong câu này” để lưu.</div>'); };
+        $("#sgood", v).onclick = function () { wres = true; beep(true); sayS('<div class="verdict ok">Đã ghi: viết đúng hết ✓</div><div class="muted">Bấm “Xong câu này” để lưu.</div>'); };
+        if (!padOn) { $("#opad", v).onclick = function () { padOn = true; render(false); }; }
+        else {
+        var cp = $("#cpad", v); if (cp) cp.onclick = function () { padOn = false; render(false); };
         var fb = $("#fb", v);
         pad = makePad($("#padbox", v), s.han, { cols: 6, cell: 74, onEdit: function () { fb.classList.add("hide"); } }); $("#clr", v).onclick = function () { pad.clear(); fb.classList.add("hide"); }; $("#mdl", v).onclick = function () { pad.model(); };
         $("#chk", v).onclick = function () {
@@ -6085,8 +6234,9 @@
             $("#rep", fb).onclick = function () { if (saveSample(s.han, gr, pad.size, "cau")) { this.parentNode.innerHTML = '<span class="muted">Đã lưu câu này để chỉnh cách chấm (Tập viết → Mẫu chấm nhầm). Cảm ơn bạn!</span>'; } };
           }, function () { toast("Không tải được dữ liệu chấm (có thể đang mất mạng)"); });
         };
-      }
-      var fin = $("#fin", v); if (fin) fin.onclick = function () { if (!introduced(s.id)) introduce(s.id, true); else grade(s.id, "r", 2); HC.addXP(5, fin); HC.after(); toast("Đã lưu: câu " + s.no); if (opt.done) opt.done(); else HC.go("cau"); };
+        }
+      } else pad = null;
+      var fin = $("#fin", v); if (fin) fin.onclick = function () { if (!introduced(s.id)) introduce(s.id, wres !== false); else grade(s.id, "r", wres === false ? 1 : 2); HC.addXP(5, fin); HC.after(); toast("Đã lưu: câu " + s.no); if (opt.done) opt.done(); else HC.go("cau"); };
     }
     render(false);
   }
@@ -6255,6 +6405,15 @@
       if (cg0) { cg0.insertAdjacentHTML("afterbegin", '<div class="card" id="tk-set"></div>'); tkCard($("#tk-set", v)); }
     }
     var cg = $(".cols2", v); if (cg) cg.insertAdjacentHTML("beforeend", '<div class="card"><h2>Thanh mục</h2><p class="sub">Đổi vị trí các mục trên thanh menu cho hợp cách học của bạn (lưu riêng trên máy này). Ở màn hẹp, các mục đầu hiện trên thanh, các mục sau nằm trong nút ».</p><button class="btn" type="button" data-msort>⇅ Sắp xếp thanh mục</button></div>');
+    if (cg) { // chế độ tập viết (người dùng yêu cầu 27/11/2026) — lưu riêng từng máy
+      var vm = vietMode();
+      cg.insertAdjacentHTML("afterbegin", '<div class="card" id="viet-set"><h2>Cách tập viết</h2><p class="sub">Chọn cách tập ở mọi phần viết chữ Hán (Tập viết, trò “Viết trên màn hình”, viết câu, kho khó, thi thử).</p>' +
+        '<label class="vopt"><input type="radio" name="vmode" value="gt"' + (vm === "gt" ? " checked" : "") + '><span><b>Viết gián tiếp — ra giấy (mặc định)</b><span class="muted">App chỉ cho âm, nghĩa và số chữ (không hiện chữ Hán nào). Bạn viết ra giấy hoặc bất cứ đâu, bấm Xem đáp án rồi tự chấm Đúng / Sai; app lưu lại để xếp lịch ôn hợp với bạn. Muốn viết trên màn hình thì bấm "Mở bảng viết" ngay tại chỗ.</span></span></label>' +
+        '<label class="vopt"><input type="radio" name="vmode" value="tt"' + (vm === "tt" ? " checked" : "") + '><span><b>Viết trực tiếp trên màn hình</b><span class="muted">Viết bằng bút cảm ứng, ngón tay hoặc chuột vào ô viết, app tự chấm. Vẫn có nút "Tự chấm" nếu bạn muốn tự so và chấm.</span></span></label>' +
+        '<p class="muted" style="font-size:0.88rem;margin-top:8px"><b>Lưu ý:</b> cài đặt này chỉ lưu trên máy này. Mỗi máy (điện thoại, máy tính bảng, máy tính) chọn riêng; đổi ở máy này không làm đổi máy khác. Máy chưa chọn thì dùng viết gián tiếp.</p></div>');
+      $$('[name="vmode"]', v).forEach(function (r) { r.onchange = function () { vietSet(this.value); toast(this.value === "tt" ? "Đã chọn viết trực tiếp trên màn hình (cho máy này)" : "Đã chọn viết gián tiếp — ra giấy (cho máy này)"); }; });
+    }
+    if (args && args[0] === "viet") HC.later(function () { var el = $("#viet-set", v); if (el) el.scrollIntoView(); }, 0);
     var redraw = bindSched($("#lich", v));
     planPick($("#ky", v), function () { route(); });
     if (args && args[0] === "ky") HC.later(function () { var el = $("#ky", v); if (el) el.scrollIntoView(); }, 0);

@@ -496,7 +496,7 @@
     } });
 
   // 9. Viết trên màn hình
-  reg({ id: "write", icon: "筆", name: "Viết trên màn hình", desc: "Viết chữ bằng ngón tay hoặc chuột, bấm Chấm điểm để app tự chấm từng nét. Tính vào lịch tập viết.",
+  reg({ id: "write", icon: "筆", name: "Viết trên màn hình", desc: "Nhìn âm và nghĩa rồi viết chữ Hán: viết ra giấy rồi tự chấm (mặc định), hoặc viết trên màn hình để app tự chấm — chọn ở Cài đặt → Cách tập viết. Tính vào lịch tập viết.",
     run: function (v) {
       var g = this, P1 = HC.pool("c", 0), P2 = HC.pool("w", 0);
       if (!P1.items.length && !P2.items.length) return lock(v, g, "Cần học ít nhất 1 chữ để chơi trò này.");
@@ -563,7 +563,7 @@
       h += "</div>";
       h += '<div class="ksg"><b>Loại mục</b><div class="ksopts">' + KS_TYPES.map(function (t) { return '<label class="plck"><input type="checkbox" data-kt="' + t[0] + '"' + (o.types.indexOf(t[0]) >= 0 ? " checked" : "") + "><span>" + t[1] + "</span></label>"; }).join("") + "</div></div>";
       h += '<div class="ksg"><b>Số câu hỏi</b><div class="ksopts">' + [10, 20, 30].map(function (n) { return '<label class="plck"><input type="radio" name="ksn" value="' + n + '"' + (o.n === n ? " checked" : "") + '><span class="num">' + n + "</span></label>"; }).join("") + "</div></div>";
-      if (gid !== "khoam") h += '<div class="ksg"><b>Chữ / từ / bộ thủ trả lời bằng</b>' + (gid ? "" : ' <small class="muted">(trò ' + esc(KG.khohan) + ")</small>") + '<div class="ksopts"><label class="plck"><input type="radio" name="ksm" value="mc"' + (o.mode === "mc" ? " checked" : "") + '><span>Trắc nghiệm 4 lựa chọn</span></label><label class="plck"><input type="radio" name="ksm" value="write"' + (o.mode === "write" ? " checked" : "") + '><span>Viết tay (app tự chấm)</span></label></div><small class="muted">Câu: luôn là xếp các chữ theo đúng thứ tự.</small></div>';
+      if (gid !== "khoam") h += '<div class="ksg"><b>Chữ / từ / bộ thủ trả lời bằng</b>' + (gid ? "" : ' <small class="muted">(trò ' + esc(KG.khohan) + ")</small>") + '<div class="ksopts"><label class="plck"><input type="radio" name="ksm" value="mc"' + (o.mode === "mc" ? " checked" : "") + '><span>Trắc nghiệm 4 lựa chọn</span></label><label class="plck"><input type="radio" name="ksm" value="write"' + (o.mode === "write" ? " checked" : "") + '><span>' + (HC.vietMode() === "tt" ? "Viết tay trên màn hình (app tự chấm)" : "Viết chữ (ra giấy rồi tự chấm)") + '</span></label></div><small class="muted">Câu: luôn là xếp các chữ theo đúng thứ tự.</small></div>';
       var msg = !nh ? "Kho khó đang trống. Bấm nút ⋯ cạnh một chữ, từ, câu hay bộ thủ (Tra cứu, Câu, Bộ thủ, thẻ học, thẻ ôn) rồi chọn “☆ Thêm vào kho khó”."
         : o.src === "pl" && !o.pls.length ? "Hãy đánh dấu ít nhất 1 playlist."
         : !o.types.length ? "Hãy chọn ít nhất 1 loại mục."
@@ -693,7 +693,7 @@
     return out;
   }
   function khoHan(v, g, items, mode) {
-    var i = 0, score = 0, N = items.length, rec = HC.gmRec();
+    var i = 0, score = 0, N = items.length, rec = HC.gmRec(), wPad = HC.vietMode() === "tt"; // chế độ viết của máy này; Mở / Đóng bảng viết đổi cho cả lượt
     function nxLabel() { return i + 1 < N ? "Câu tiếp →" : "Xem kết quả"; }
     function result(good, el) { var it = items[i]; if (good) { score++; correct(el); rec.ok(it); } else { wrong(); rec.bad(it); } setScore(v, score); }
     function round() { var it = items[i]; if (it.type === "s") qOrder(it); else if (mode === "write") qWrite(it); else qChoice(it); }
@@ -722,19 +722,31 @@
     // viết tay: chấm bằng gradeShape (HC.makePad), chỉ bắt buộc chữ phồn thể; 28 chữ hiếm chưa có dữ liệu → tự so với chữ mẫu
     function qWrite(it) {
       var scored = false, firstG = null;
-      v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="work"><div class="winfo"><div class="fc" style="min-height:auto">' + ksAns(it).replace('</div>' + HC.meanHTML(it) + '</div>', '</div>' + HC.meanHTML(it) + '<div class="extra">' + U().chars(it.key).length + " chữ · viết chữ phồn thể</div></div>") + "</div></div>" +
-        '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row" id="w1"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="chk">Chấm điểm</button></div>' +
+      var info = HC.vietPrompt(it).replace(" chữ</div></div></div>", " chữ · viết chữ phồn thể</div></div></div>");
+      var kh = "Hãy viết thật rồi tự chấm cho đúng: app ghi lại chữ nào bạn còn hay sai để bạn luyện lại trong kho khó.";
+      v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="work"><div class="winfo">' + info +
+        (wPad ? '<div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="selfg">Tự chấm (xem đáp án)</button>' + (HC.vietMode() === "gt" ? '<button class="btn sm ghost" id="cpad">Đóng bảng viết</button>' : "") + "</div>" : "") + "</div>" +
+        (wPad ? '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row" id="w1"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="chk">Chấm điểm</button></div>'
+          : '<div class="wpadc"><div class="vans" id="vans"><span class="muted">Viết ra giấy rồi bấm Xem đáp án — đáp án sẽ hiện ở đây</span></div><div class="acts"><div class="row" id="w1"><button class="btn" id="opad">✎ Mở bảng viết</button><button class="btn primary" id="rev">Xem đáp án</button></div>') +
         '<div class="row hide" id="self"><button class="btn bad" id="sbad">Tôi viết sai</button><button class="btn good" id="sgood">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn primary" id="nx">' + nxLabel() + "</button></div></div></div>" +
-        '<div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div></div></div></div>';
+        '<div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div>' + (wPad ? "" : HC.vietGuide(false, kh)) + "</div></div></div>";
       setScore(v, score);
       var q = function (s) { return v.querySelector(s); }, fb = q("#fb");
-      var pad = HC.makePad(q("#padbox"), it.key, { onEdit: function () { if (!scored) fb.classList.add("hide"); } });
       function say(h) { fb.innerHTML = h; fb.classList.remove("hide"); }
-      function show(id) { ["w1", "self", "aft"].forEach(function (x) { q("#" + x).classList.toggle("hide", x !== id); }); }
-      q("#undo").onclick = pad.undo; q("#clr").onclick = pad.clear; q("#nx").onclick = next;
+      function show(id) { ["w1", "self", "aft"].forEach(function (x) { q("#" + x).classList.toggle("hide", x !== id); }); var gu = q("#giveup"); if (gu) gu.classList.add("hide"); }
+      q("#nx").onclick = next;
+      q("#sgood").onclick = function () { scored = true; result(true, this); say('<div class="verdict ok">Đã ghi: viết đúng ✓</div>'); show("aft"); };
+      q("#sbad").onclick = function () { scored = true; result(false, this); say('<div class="verdict no">Đã ghi: viết sai ✗</div><div class="muted">Không sao, luyện thêm chữ này nhé: <span class="han">' + esc(it.key) + "</span></div>"); show("aft"); };
+      if (!wPad) { // viết gián tiếp: viết ra giấy → Xem đáp án → tự chấm
+        q("#opad").onclick = function () { wPad = true; qWrite(it); };
+        q("#rev").onclick = function () { q("#vans").innerHTML = HC.vietAnswer(it, false); say('<div class="muted">So chữ bạn đã viết với đáp án ở trên (đúng chữ phồn thể, đúng từng nét), rồi tự chấm bên dưới.</div>'); show("self"); };
+        return;
+      }
+      var pad = HC.makePad(q("#padbox"), it.key, { onEdit: function () { if (!scored) fb.classList.add("hide"); } });
+      q("#selfg").onclick = function () { if (scored) return; pad.model(true); say('<div class="verdict">Đáp án: <span class="han">' + esc(it.key) + '</span></div><div class="muted">Chữ mẫu hiện mờ trong ô viết. So với chữ bạn viết rồi tự chấm bên dưới.</div>'); show("self"); };
+      var cp = q("#cpad"); if (cp) cp.onclick = function () { wPad = false; qWrite(it); };
+      q("#undo").onclick = pad.undo; q("#clr").onclick = pad.clear;
       q("#idk").onclick = function () { scored = true; result(false, this); pad.model(true); say('<div class="verdict no">Đã tính là chưa nhớ ✗</div><div class="muted">Chữ mẫu hiện mờ trong ô viết: <span class="han">' + esc(it.key) + "</span></div>"); show("aft"); };
-      q("#sgood").onclick = function () { scored = true; result(true, this); show("aft"); };
-      q("#sbad").onclick = function () { scored = true; result(false, this); show("aft"); };
       var chk = q("#chk");
       chk.onclick = function () {
         if (pad.empty()) { HC.toast("Hãy viết chữ vào ô trước rồi bấm Chấm điểm"); return; }
@@ -823,7 +835,7 @@
       } else if (q.kind === "self") {
         h += '<div class="card" style="width:min(680px,100%);text-align:center"><div class="sent">' + esc(q.s.han) + '</div><p class="muted">Đọc to phiên âm và dịch nghĩa (hoặc viết ra giấy), rồi bấm Xem đáp án và tự chấm.</p><div id="ansbox" class="hide"><div style="font-weight:700">' + esc(q.s.pa) + "</div><div>" + esc(q.s.dn) + '</div></div></div><div class="row acts"><button class="btn primary" id="rev">Xem đáp án</button></div><div class="row hide" id="sg"><label class="row"><input type="checkbox" id="c1"> Phiên âm đúng (' + q.a + 'đ)</label><label class="row"><input type="checkbox" id="c2"> Dịch đúng (' + q.b + 'đ)</label><button class="btn primary" id="sv">Chấm &amp; tiếp</button></div>';
       } else if (q.kind === "write") {
-        h += '<div class="card" style="width:min(680px,100%);text-align:center"><div style="font-weight:700;font-size:1.1rem">' + esc(q.s.pa) + '</div><div class="muted">' + esc(q.s.dn) + '</div><p class="sub">Viết câu bằng chữ Hán (trên giấy hoặc vào ô dưới), rồi bấm Xem đáp án và tự chấm.</p></div><div class="padwrap" id="padbox"></div><div class="row acts"><button class="btn" id="clr">Xóa</button><button class="btn primary" id="rev">Xem đáp án</button></div><div id="ansbox" class="sent hide">' + esc(q.s.han) + '</div><div class="row hide" id="sg"><button class="btn bad" data-p="0">Sai nhiều (0đ)</button><button class="btn warn" data-p="' + (q.pts / 2) + '">Đúng một phần (' + (q.pts / 2) + 'đ)</button><button class="btn good" data-p="' + q.pts + '">Đúng hết (' + q.pts + "đ)</button></div>";
+        h += '<div class="card" style="width:min(680px,100%);text-align:center"><div style="font-weight:700;font-size:1.1rem">' + esc(q.s.pa) + '</div><div class="muted">' + esc(q.s.dn) + '</div><p class="sub">' + (HC.vietMode() === "tt" ? "Viết câu bằng chữ Hán vào ô dưới (hoặc ra giấy), rồi bấm Xem đáp án và tự chấm." : "Viết câu bằng chữ Hán ra giấy (hoặc bất cứ đâu), rồi bấm Xem đáp án và tự chấm cho đúng — giống như khi thi thật. Muốn viết trên màn hình thì bấm “Mở bảng viết”.") + '</p></div><div class="padwrap' + (HC.vietMode() === "tt" ? "" : " hide") + '" id="padbox"></div><div class="row acts">' + (HC.vietMode() === "tt" ? "" : '<button class="btn" id="opad">✎ Mở bảng viết</button>') + '<button class="btn' + (HC.vietMode() === "tt" ? "" : " hide") + '" id="clr">Xóa</button><button class="btn primary" id="rev">Xem đáp án</button></div><div id="ansbox" class="sent hide">' + esc(q.s.han) + '</div><div class="row hide" id="sg"><button class="btn bad" data-p="0">Sai nhiều (0đ)</button><button class="btn warn" data-p="' + (q.pts / 2) + '">Đúng một phần (' + (q.pts / 2) + 'đ)</button><button class="btn good" data-p="' + q.pts + '">Đúng hết (' + q.pts + "đ)</button></div>";
       }
       v.innerHTML = h + "</div>";
       var fb = v.querySelector("#fb"), nx = v.querySelector("#nx");
@@ -871,9 +883,11 @@
         v.querySelector("#sv").onclick = function () { var p = (v.querySelector("#c1").checked ? q.a : 0) + (v.querySelector("#c2").checked ? q.b : 0); award(q, p); if (p) HC.addXP(2, this); next(); };
       }
       if (q.kind === "write") {
-        var pad = HC.makePad(v.querySelector("#padbox"), q.s.han, { cols: 6, cell: 64 });
-        v.querySelector("#clr").onclick = pad.clear;
-        v.querySelector("#rev").onclick = function () { v.querySelector("#ansbox").classList.remove("hide"); v.querySelector("#sg").classList.remove("hide"); pad.model(true); this.classList.add("hide"); };
+        var pad = null, pb = v.querySelector("#padbox");
+        var mkPad = function () { pb.classList.remove("hide"); v.querySelector("#clr").classList.remove("hide"); pad = HC.makePad(pb, q.s.han, { cols: 6, cell: 64 }); v.querySelector("#clr").onclick = pad.clear; };
+        if (HC.vietMode() === "tt") mkPad();
+        var op = v.querySelector("#opad"); if (op) op.onclick = function () { this.remove(); mkPad(); };
+        v.querySelector("#rev").onclick = function () { v.querySelector("#ansbox").classList.remove("hide"); v.querySelector("#sg").classList.remove("hide"); if (pad) pad.model(true); var o = v.querySelector("#opad"); if (o) o.remove(); this.classList.add("hide"); };
         U().$$("#sg [data-p]", v).forEach(function (b) { b.onclick = function () { var p = +b.dataset.p; award(q, p); if (p) HC.addXP(3, b); next(); }; });
       }
     }
