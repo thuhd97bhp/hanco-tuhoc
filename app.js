@@ -1240,6 +1240,7 @@
       QT.dx.push(entry); delete QT.ma.so[u.uid]; delete QT.kh[u.uid];
       if (cach === "lai") QT.users = QT.users.filter(function (x) { return x !== u; }); else u.st = "xoa";
       bxhDrop(u.uid); // bỏ dòng trên bảng xếp hạng
+      avCol().doc(u.uid).delete().catch(function () { }); // ảnh đại diện (27/11/2026)
       meoWipe(u.uid).then(function (n) { if (n) qtLog("Xóa cách nhớ của người bị xóa", u, n + " cách nhớ"); }, function () { }); // Bước 8
       return qtWipe(u.uid).catch(function () { toast("Đã xóa tài khoản nhưng chưa xóa hết tiến độ. Bấm Tải lại rồi thử lại sau."); });
     });
@@ -1311,8 +1312,10 @@
     prog += JSON.stringify(S).length * (1 + (nbA >= 0 ? nbA : 14));
     [(QT.sach && QT.sach.sz) || {}, (QT.sachPub && QT.sachPub.sz) || {}].forEach(function (ss) { Object.keys(ss).forEach(function (k) { sach += (+ss[k] || 0) + 200; }); }); // bản riêng cũ + kho chung (Bước 6)
     try { other += JSON.stringify([QT.ma, QT.dx, QT.kh, QT.ch, QT.dk, QT.dem]).length + QT.users.length * 150; } catch (e) { }
-    var fs = Math.round((prog + prof + sach + other) * 1.15);
-    return { t: t, mo: mo, sum: sum, per: per, nDev: nDev, st: { prog: prog, prof: prof, sach: sach, other: other, fs: fs }, host: QT.host };
+    var nAnh = 0; if (BXH.d && BXH.d.u) Object.keys(BXH.d.u).forEach(function (k) { if (+BXH.d.u[k].a > 0) nAnh++; });
+    var anh = nAnh * AV_EST; // ảnh đại diện: ~40 KB/người có ảnh (27/11/2026)
+    var fs = Math.round((prog + prof + sach + anh + other) * 1.15);
+    return { t: t, mo: mo, sum: sum, per: per, nDev: nDev, st: { prog: prog, prof: prof, sach: sach, anh: anh, nAnh: nAnh, other: other, fs: fs }, host: QT.host };
   }
   // số dùng cho thanh: đọc/ghi/xóa lấy SỐ THẬT (Google Cloud) nếu vừa lấy được, còn lại là ước tính
   function qtVal(U, per, k) { var R = QT.real; return R && R[per] && R[per][k] != null ? { v: R[per][k], real: true } : { v: U.sum[per][k], real: false }; }
@@ -1380,7 +1383,7 @@
     h += '<div class="card"><h2>Dung lượng lưu</h2><div class="qtbars">' + qtBar("Firestore", st.fs, L.fs, fmtB) +
       (H && H.b ? qtBar("Hosting (bản đang chạy)", H.b, L.hs, fmtB) : "") + "</div>" +
       '<ul class="qtls"><li>Tiến độ + sao lưu (tối đa 14 bản/người): ' + fmtB(st.prog) + "</li><li>Hồ sơ + bản thống kê: " + fmtB(st.prof) + "</li><li>Hình trang sách (kho chung + bản riêng cũ nếu còn): " + fmtB(st.sach) +
-      "</li><li>Khác (danh sách họ tên, mã số, nhật ký…): " + fmtB(st.other) + "</li><li>Đã cộng thêm ~15% cho chỉ mục của Firestore.</li><li>Cách nhớ chung: chưa có (bước sau).</li></ul>" +
+      "</li><li>Ảnh đại diện (" + fmtN(st.nAnh) + " người có ảnh, ~40 KB/ảnh, đếm theo bảng xếp hạng): " + fmtB(st.anh) + "</li><li>Khác (danh sách họ tên, mã số, nhật ký…): " + fmtB(st.other) + "</li><li>Đã cộng thêm ~15% cho chỉ mục của Firestore.</li><li>Cách nhớ chung: chưa có (bước sau).</li></ul>" +
       '<p class="sub qtnote">' + (H && H.b ? "Hosting: bản phát hành lúc " + hm(H.t) + ", " + fmtN(H.n) + " tệp, " + fmtB(H.b) + " (release.py ghi). Firebase giữ cả các bản phát hành cũ và tính vào dung lượng — có thể đặt số bản giữ lại trong console → Hosting (lịch sử bản phát hành)." :
         "Hosting: chưa có số (tệp dung-luong.json do release.py ghi ở lần phát hành tới).") + "</p></div>";
     // ai dùng nhiều nhất (hôm qua + hôm nay)
@@ -2082,7 +2085,11 @@
     var sp = BADGES.filter(function (b) { return S.badges[b.id]; }).length; if (sp) bd.sp = sp;
     Object.keys(S.cup || {}).forEach(function (k) { var v = S.cup[k]; if (v >= 1 && v <= 3) cp[v - 1]++; });
     var rc = { xd: st.xd, xk: st.xk, ex: examBest(), hb: (S.rec && S.rec.hb) || 0, pf: pfSum() };
-    return { ten: bxhTen(), xp: xp, w: pv("w"), wp: pv("wp"), m: pv("m"), q: pv("q"), y: pv("y"), sc: +S.streak.c || 0, sd: +S.streak.d || 0, sm: streakMax(), lv: lvl().l, bd: bd, cp: cp, rc: rc, xm: st.xm, r: r0 };
+    var row = { ten: bxhTen(), xp: xp, w: pv("w"), wp: pv("wp"), m: pv("m"), q: pv("q"), y: pv("y"), sc: +S.streak.c || 0, sd: +S.streak.d || 0, sm: streakMax(), lv: lvl().l, bd: bd, cp: cp, rc: rc, xm: st.xm, r: r0 };
+    var me = fb.user.uid, av = avMyV(), old = BXH.u === me && BXH.d && BXH.d.u && BXH.d.u[me]; // a = phiên bản ảnh đại diện (27/11/2026)
+    if (old && +old.a > av) av = +old.a;
+    if (av > 0) row.a = av;
+    return row;
   }
   function bxhLoad(force) {
     var uid = fb.user && fb.user.uid;
@@ -2090,13 +2097,16 @@
     return bxhRef().get().then(function (s) {
       BXH.d = s.exists ? s.data() : null; BXH.t = Date.now(); BXH.u = uid; BXH.err = s.exists ? "" : "none";
       BXH.rs = BXH.d && BXH.d.rs && +BXH.d.rs[uid] || 0;
+      try { avSeen(); } catch (e) { }
       return BXH.d;
     }, function (e) { BXH.err = e && e.code === "permission-denied" ? "denied" : "net"; throw e; });
   }
   // ghi dòng của mình: chỉ khi khác lần trước; force = bỏ qua nhịp 15 phút (rời app / ẩn màn hình / chốt cúp)
   function bxhSend(force, again) {
     if (!bxhOk() || BXH.sending) return Promise.resolve(false);
-    var u = fb.user, row; try { row = bxhRow(); } catch (e) { return Promise.resolve(false); }
+    var u = fb.user, row;
+    if (!avKnown(u.uid) && !(BXH.d && BXH.u === u.uid)) { avMineCheck(); return Promise.resolve(false); } // chưa biết phiên bản ảnh: chờ, không ghi mất cột a
+    try { row = bxhRow(); } catch (e) { return Promise.resolve(false); }
     if (!row.ten) return Promise.resolve(false);
     var sig = JSON.stringify(row), g = jget(BXH_LS); if (g.u !== u.uid) g = {};
     if (sig === g.h) return Promise.resolve(true);
@@ -2120,6 +2130,252 @@
   }
   HC.bxhSend = bxhSend;
   try { addEventListener("pagehide", function () { bxhSend(true); }); document.addEventListener("visibilitychange", function () { if (document.hidden) bxhSend(true); else bxhCupCheck(); }); } catch (e) { }
+  // ---------- ẢNH ĐẠI DIỆN (người dùng yêu cầu 27/11/2026) ----------
+  // hanco_anh/{uid} = {d ảnh (data URL webp, máy không hỗ trợ thì jpeg; vuông AV_PX px, cắt giữa), v phiên bản (ms lúc đổi), upd giờ máy chủ}.
+  // Mỗi người tự tải ảnh của mình. ĐỔI ảnh = ghi đè cả tài liệu → ảnh cũ mất luôn. KHÔNG có nút gỡ ảnh (người dùng yêu cầu); chỉ quản trị
+  // xóa (khi xóa người). Thành viên "ok" đọc. Dòng bảng xếp hạng có a = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi a đổi; ảnh đã tải giữ ở
+  // Cache Storage AV_C (không bắt đầu bằng "hanco-" → không bị xóa khi phát hành). localStorage AV_LS = {uid: phiên bản ảnh của mình, 0 = chưa có}.
+  // Không thuộc S. Chưa có ảnh → chữ cái đầu của tên hiển thị trên nền tròn.
+  var AV_LS = "hanco-anh", AV_C = "anh-v1", AV_PX = 384, AV_MAX = 190000, AV_EST = 40000, AV = { mem: {}, job: {}, mine: {} };
+  var AV_BG = ["#b5523b", "#3b6fb5", "#3b8a57", "#8a5ab5", "#a0782c", "#2f8c99", "#a5486e", "#5f6b7a"];
+  function avCol() { return fb.db.collection("hanco_anh"); }
+  function avCan() { return !!(fb.on && fb.user && fb.db && (isAdmin() || tk.st === "ok")); }
+  function avKnown(uid) { return jget(AV_LS)[uid] != null; }
+  function avMyV() { var u = fb.user; return u ? +jget(AV_LS)[u.uid] || 0 : 0; }
+  function avSetMyV(uid, v) { var o = jget(AV_LS); o[uid] = v; lsSet(AV_LS, JSON.stringify(o)); }
+  function avMyTen() { var u = fb.user; if (!u) return ""; if (isAdmin()) return "Quản trị viên"; var p = tk.prof || tkCache() || {}; return String(p.ten || u.displayName || (u.email || "").split("@")[0] || ""); }
+  function avVer(uid) { // phiên bản ảnh của một người: của mình = bản trên máy; người khác = cột a trên bảng xếp hạng (đã tải)
+    if (fb.user && uid === fb.user.uid) return avMyV();
+    var r = BXH.d && BXH.d.u && BXH.d.u[uid]; return r ? +r.a || 0 : 0;
+  }
+  function avKey(uid) { return "./__anh/" + encodeURIComponent(uid); }
+  function avCacheGet(uid) {
+    if (AV.mem[uid]) return Promise.resolve(AV.mem[uid]);
+    if (!window.caches || !caches.open) return Promise.resolve(null);
+    return caches.open(AV_C).then(function (c) { return c.match(avKey(uid)); }).then(function (r) { return r ? r.json() : null; })
+      .then(function (j) { if (j && j.d) { AV.mem[uid] = j; return j; } return null; }).catch(function () { return null; });
+  }
+  function avCachePut(uid, j) {
+    AV.mem[uid] = j;
+    if (!window.caches || !caches.open) return;
+    caches.open(AV_C).then(function (c) { return c.put(avKey(uid), new Response(JSON.stringify(j), { headers: { "Content-Type": "application/json" } })); }).catch(function () { });
+  }
+  // ảnh của uid, phiên bản v → Promise<data URL | "">: bản trên máy đủ mới thì dùng, cũ hơn thì đọc 1 lần (gộp các lần gọi trùng)
+  function avGet(uid, v) {
+    if (!uid || !(v > 0)) return Promise.resolve("");
+    var k = uid + "|" + v;
+    if (AV.job[k]) return AV.job[k];
+    return (AV.job[k] = avCacheGet(uid).then(function (j) {
+      if (j && +j.v >= v) return j.d;
+      if (!fb.db || !fb.user) { delete AV.job[k]; return j ? j.d : ""; }
+      return avCol().doc(uid).get().then(function (s) {
+        var x = s.exists ? s.data() : null;
+        if (!x || !x.d) return j ? j.d : "";
+        avCachePut(uid, { v: +x.v || v, d: x.d });
+        return x.d;
+      }, function () { delete AV.job[k]; return j ? j.d : ""; });
+    }));
+  }
+  // máy chưa biết mình có ảnh chưa (máy mới / tài khoản mới trên máy) → đọc ảnh của mình 1 lần (thất bại thì ≥ 60 giây sau mới thử lại)
+  function avMineCheck() {
+    var u = fb.user; if (!u || !avCan() || avKnown(u.uid)) return;
+    if (Date.now() - (AV.mine[u.uid] || 0) < 60e3) return;
+    AV.mine[u.uid] = Date.now();
+    avCol().doc(u.uid).get().then(function (s) {
+      var x = s.exists ? s.data() : null, v = x && x.d ? +x.v || 1 : 0;
+      if (v) avCachePut(u.uid, { v: v, d: x.d });
+      if (fb.user === u) { avSetMyV(u.uid, v); renderStats(); }
+    }, function () { });
+  }
+  // bảng xếp hạng vừa tải: máy khác của mình đã đổi ảnh (a mới hơn) → nhận phiên bản mới
+  function avSeen() {
+    var u = fb.user, r = u && BXH.u === u.uid && BXH.d && BXH.d.u && BXH.d.u[u.uid];
+    if (r && +r.a > avMyV()) { avSetMyV(u.uid, +r.a); renderStats(); avRefresh(u.uid); }
+  }
+  function avInit(ten) {
+    ten = String(ten || "").trim(); if (!ten) return "?";
+    if (ten === "Quản trị viên") return "Q";
+    var w = ten.split(/\s+/); return w[w.length - 1].charAt(0).toUpperCase();
+  }
+  // vòng tròn ảnh: view = bấm để xem ảnh to (chỉ khi có ảnh); v null = tra theo avVer
+  function avHTML(uid, ten, v, cls, view) {
+    var h = 0, s = String(uid || ""); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    v = v == null ? avVer(s) : +v || 0; view = view && v > 0;
+    var tag = view ? "button" : "span";
+    return "<" + tag + (view ? ' type="button" data-avview="' + esc(ten || "") + '" aria-label="Xem ảnh đại diện của ' + esc(ten || "") + '" title="Xem ảnh đại diện"' : ' aria-hidden="true"') +
+      ' class="av' + (cls ? " " + cls : "") + '" data-av="' + esc(s) + '" data-avv="' + v + '" style="--avbg:' + AV_BG[h % AV_BG.length] + '">' + esc(avInit(ten)) + "</" + tag + ">";
+  }
+  HC.avHTML = avHTML;
+  function avFill(root) {
+    $$("[data-av]", root || document).forEach(function (el) {
+      var uid = el.getAttribute("data-av"), v = +el.getAttribute("data-avv") || 0;
+      if (!v || el.__avv === v) return; el.__avv = v;
+      avGet(uid, v).then(function (d) { if (d && el.__avv === v) { el.style.backgroundImage = 'url("' + d + '")'; el.classList.add("img"); } });
+    });
+  }
+  HC.avFill = avFill;
+  function avRefresh(uid) { // ảnh của uid vừa đổi: cập nhật mọi vòng tròn đang hiện
+    var v = avVer(uid);
+    $$('[data-av="' + uid + '"]').forEach(function (el) { el.setAttribute("data-avv", v); });
+    avFill();
+  }
+  // cách nhớ: cần số phiên bản ảnh của người khác (cột a bảng xếp hạng) → bảng chưa tải lần nào trong phiên này thì tải 1 lần rồi tô
+  function avFillBx(root, ten) {
+    function go() {
+      $$("[data-avs]", root).forEach(function (el) { // chỗ để trống chờ biết phiên bản → thay bằng vòng tròn (có ảnh thì bấm xem được)
+        var uid = el.getAttribute("data-avs"); el.outerHTML = avHTML(uid, el.getAttribute("data-avt"), null, "sm", true);
+      });
+      avFill(root);
+    }
+    if (BXH.d || !bxhOk()) return go();
+    bxhLoad(false).then(go, go);
+  }
+  function avSlot(uid, ten) { return '<span class="av sm" data-avs="' + esc(uid) + '" data-avt="' + esc(ten || "") + '" aria-hidden="true">' + esc(avInit(ten)) + "</span>"; }
+  // khung ảnh: lớp RIÊNG trên cùng (không dùng #layer → không đóng khung chi tiết / khung cách nhớ đang mở bên dưới)
+  function avModal(html) {
+    var m = document.createElement("div"); m.className = "modal avmodal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
+    m.innerHTML = '<div class="box"><button class="btn sm ghost x" type="button" data-x aria-label="Đóng">✕</button>' + html + "</div>";
+    document.body.appendChild(m);
+    function close() { m.remove(); window.removeEventListener("keydown", k, true); }
+    function k(e) { if (e.key === "Escape") { e.stopImmediatePropagation(); close(); } } // Esc chỉ đóng khung ảnh, không đóng khung bên dưới
+    m.addEventListener("click", function (e) { if (e.target === m || e.target.closest("[data-x]")) close(); });
+    window.addEventListener("keydown", k, true);
+    var f = m.querySelector(".acts .btn"); if (f) try { f.focus(); } catch (e) { }
+    return { el: m, close: close };
+  }
+  // xem ảnh to
+  function avView(uid, ten) {
+    avMenuClose();
+    var v = avVer(uid), mine = !!(fb.user && uid === fb.user.uid);
+    var m = avModal('<h2>' + esc(ten || "Ảnh đại diện") + '</h2><div class="avbig"><span class="muted">Đang tải ảnh…</span></div><div class="row acts">' +
+      (mine ? '<button class="btn primary" type="button" data-avchg>Đổi ảnh đại diện</button>' : "") + '<button class="btn" type="button" data-x>Đóng</button></div>');
+    avGet(uid, v).then(function (d) {
+      var b = $(".avbig", m.el); if (!b) return;
+      b.innerHTML = d ? '<img alt="Ảnh đại diện của ' + esc(ten || "") + '" src="' + d + '">' : '<span class="muted">Chưa tải được ảnh. Kiểm tra mạng rồi thử lại.</span>';
+    });
+    var c = $("[data-avchg]", m.el); if (c) c.onclick = function () { m.close(); avPick(); };
+  }
+  HC.avView = avView;
+  try {
+    document.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest("[data-avview]") : null;
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      avView(b.getAttribute("data-av"), b.getAttribute("data-avview"));
+    }, true);
+  } catch (e) { }
+  // nút ảnh trên thanh trên cùng / thanh dọc → menu tài khoản (theo mẫu người dùng gửi; KHÔNG có "Gỡ ảnh")
+  function avTopHTML() {
+    var u = fb.user; if (!u) return "";
+    avMineCheck();
+    return '<button type="button" class="avtop" id="avbtn" aria-haspopup="menu" aria-expanded="false" aria-label="Tài khoản: ' + esc(avMyTen()) + '" title="Tài khoản">' + avHTML(u.uid, avMyTen(), avMyV(), "", false) + "</button>";
+  }
+  var avMenuOff = null;
+  function avMenuClose() {
+    var m = document.getElementById("avmenu"); if (m) m.remove();
+    if (avMenuOff) { avMenuOff(); avMenuOff = null; }
+    var b = document.getElementById("avbtn"); if (b) b.setAttribute("aria-expanded", "false");
+  }
+  function avMenu(btn) {
+    if (document.getElementById("avmenu")) return avMenuClose();
+    var u = fb.user; if (!u) return;
+    var v = avMyV(), ten = avMyTen();
+    var el = document.createElement("div"); el.id = "avmenu"; el.className = "avmenu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "Tài khoản");
+    el.innerHTML = '<div class="avm-hd">' + avHTML(u.uid, ten, v, "lg", true) + '<div class="avm-t"><small class="muted">Đang đăng nhập</small><b>' + esc(ten) + "</b>" + (u.email ? '<span class="muted">' + esc(u.email) + "</span>" : "") + "</div></div>" +
+      (v > 0 ? '<button type="button" role="menuitem" data-avm="xem"><span class="avm-ic" aria-hidden="true">◉</span>Xem ảnh đại diện</button>' : "") +
+      '<button type="button" role="menuitem" data-avm="doi"><span class="avm-ic" aria-hidden="true">⇪</span>' + (v > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" +
+      '<button type="button" role="menuitem" data-avm="tk"><span class="avm-ic" aria-hidden="true">⚙</span>Tài khoản &amp; cài đặt</button>' +
+      '<hr><button type="button" role="menuitem" data-avm="out"><span class="avm-ic" aria-hidden="true">⇥</span>Đăng xuất</button>';
+    document.body.appendChild(el);
+    avFill(el);
+    // vị trí: thanh trên → ngay dưới nút, canh phải; thanh dọc bên trái → bên phải thanh, canh đáy nút
+    var r = btn.getBoundingClientRect(), W = window.innerWidth || 360, H = window.innerHeight || 640, w = el.offsetWidth, h = el.offsetHeight, x, y;
+    if (menuIsTop()) { x = r.right - w; y = r.bottom + 6; }
+    else { var tb = document.querySelector(".topbar"); x = (tb ? tb.getBoundingClientRect().right : r.right) + 8; y = r.bottom - h; }
+    x = Math.max(8, Math.min(x, W - w - 8)); y = Math.max(8, Math.min(y, H - h - 8));
+    el.style.left = x + "px"; el.style.top = y + "px";
+    btn.setAttribute("aria-expanded", "true");
+    el.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-avm]"); if (!b) return;
+      var k = b.getAttribute("data-avm"); avMenuClose();
+      if (k === "xem") avView(u.uid, ten);
+      else if (k === "doi") avPick();
+      else if (k === "tk") HC.go("caidat");
+      else if (k === "out") HC.fbSignOut(false).then(function (ok) { if (ok) toast("Đã đăng xuất. Tiến độ của bạn được cất riêng trên máy này"); });
+    });
+    function out(e) { if (!el.contains(e.target) && !btn.contains(e.target)) avMenuClose(); }
+    function key(e) { if (e.key === "Escape") { avMenuClose(); try { btn.focus(); } catch (x) { } } }
+    function rs() { avMenuClose(); }
+    document.addEventListener("pointerdown", out, true); document.addEventListener("keydown", key); window.addEventListener("resize", rs); window.addEventListener("hashchange", rs);
+    avMenuOff = function () { document.removeEventListener("pointerdown", out, true); document.removeEventListener("keydown", key); window.removeEventListener("resize", rs); window.removeEventListener("hashchange", rs); };
+    var f = el.querySelector("[data-avm]"); if (f) try { f.focus(); } catch (e) { }
+  }
+  HC.avMenu = function () { var b = document.getElementById("avbtn"); if (b) avMenu(b); };
+  // chọn ảnh → cắt vuông giữa, thu nhỏ, nén → xem trước → lưu (ghi đè ảnh cũ)
+  function avPick() {
+    if (!avCan()) return toast("Cần đăng nhập và đăng ký xong tài khoản mới đổi được ảnh đại diện");
+    var inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.style.display = "none";
+    inp.onchange = function () { var f = inp.files && inp.files[0]; inp.remove(); if (f) avFile(f); };
+    document.body.appendChild(inp); inp.click();
+    setTimeout(function () { if (inp.isConnected) inp.remove(); }, 600e3);
+  }
+  HC.avPick = avPick;
+  function avFile(f) {
+    if (!f || !/^image\//.test(f.type || "")) return toast("Hãy chọn một tệp ảnh (jpg, png, webp…)");
+    if (f.size > 15 * 1024 * 1024) return toast("Ảnh lớn quá (tối đa 15 MB)");
+    return avShrink(f).then(avConfirm, function (e) { toast(e && e.message === "big" ? "Ảnh này nén vẫn còn quá lớn. Hãy thử ảnh khác." : "Không đọc được ảnh này. Hãy thử ảnh khác (jpg hoặc png)."); });
+  }
+  HC.avFile = avFile;
+  function avShrink(f) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(f), im = new Image();
+      im.onload = function () {
+        try {
+          var w = im.naturalWidth, h = im.naturalHeight, s = Math.min(w, h), d = "";
+          if (!s) throw new Error("size");
+          var tries = [[AV_PX, 0.85], [AV_PX, 0.7], [320, 0.6], [256, 0.5]];
+          for (var i = 0; i < tries.length; i++) {
+            var px = tries[i][0], c = document.createElement("canvas"); c.width = c.height = px;
+            var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, px, px); // ảnh trong suốt → nền trắng
+            g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+            g.drawImage(im, (w - s) / 2, (h - s) / 2, s, s, 0, 0, px, px);
+            d = c.toDataURL("image/webp", tries[i][1]);
+            if (d.indexOf("data:image/webp;base64,") !== 0) d = c.toDataURL("image/jpeg", tries[i][1]);
+            if (d.length <= AV_MAX) break;
+          }
+          URL.revokeObjectURL(url);
+          if (d.length > AV_MAX) return rej(new Error("big"));
+          if (!/^data:image\/(webp|jpeg);base64,/.test(d)) return rej(new Error("fmt"));
+          res(d);
+        } catch (e) { URL.revokeObjectURL(url); rej(e); }
+      };
+      im.onerror = function () { URL.revokeObjectURL(url); rej(new Error("img")); };
+      im.src = url;
+    });
+  }
+  function avConfirm(d) {
+    var had = avMyV() > 0;
+    var m = avModal('<h2>' + (had ? "Đổi ảnh đại diện" : "Ảnh đại diện") + '</h2><p class="sub">Ảnh được cắt vuông ở giữa và thu nhỏ. Mọi người trong app thấy ảnh này (bảng xếp hạng, cách nhớ).' +
+      (had ? " Ảnh cũ sẽ được thay hẳn bằng ảnh mới." : "") + '</p><div class="avbig"><img alt="Ảnh mới chọn" src="' + d + '"></div>' +
+      '<div class="row acts"><button class="btn primary" type="button" id="avok">Dùng ảnh này</button><button class="btn" type="button" id="avre">Chọn ảnh khác</button><button class="btn ghost" type="button" data-x>Thôi</button></div>');
+    var ok = $("#avok", m.el);
+    ok.onclick = function () {
+      ok.disabled = true; ok.textContent = "Đang lưu…";
+      avSave(d).then(function () { m.close(); toast(had ? "Đã đổi ảnh đại diện" : "Đã lưu ảnh đại diện"); }, function (e) { ok.disabled = false; ok.textContent = "Dùng ảnh này"; toast("Chưa lưu được ảnh (" + tkErr(e) + ")"); });
+    };
+    $("#avre", m.el).onclick = function () { m.close(); avPick(); };
+  }
+  function avSave(d) {
+    var u = fb.user; if (!u || !avCan()) return Promise.reject(new Error("signedout"));
+    var v = Date.now();
+    // set() ghi đè CẢ tài liệu: ảnh cũ mất luôn (không còn bản nào)
+    return avCol().doc(u.uid).set({ d: d, v: v, upd: firebase.firestore.FieldValue.serverTimestamp() }).then(function () {
+      avCachePut(u.uid, { v: v, d: d }); avSetMyV(u.uid, v);
+      renderStats(); avRefresh(u.uid);
+      bxhSend(true); // báo phiên bản ảnh mới cho máy khác (cột a trên bảng xếp hạng)
+    });
+  }
+  HC.avSave = avSave;
   // ---- cúp tuần ----
   function cupAt(k) { return (k + 7) * 864e5 - 7 * 3600e3 + 12 * 3600e3; } // 12 giờ trưa thứ Hai tuần sau (giờ VN)
   function cupWeek() { var ws = weekStart(today()); return Date.now() >= cupAt(ws - 7) ? ws - 7 : ws - 14; } // tuần gần nhất đã chốt được
@@ -2195,7 +2451,7 @@
   }
   function rkHTML(n) { return '<span class="rk' + (n <= 3 ? " rk" + n : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>"; }
   function bxhLi(x, unit, sub) {
-    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
+    return '<li class="xhr' + (x.me ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.r.ten, x.me ? avMyV() : +x.r.a || 0, "", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + "</button>" + (x.me ? ' <span class="chip">Bạn</span>' : "") + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
       (sub ? '<small class="muted">' + sub + "</small>" : "") + '</span><b class="num">' + fmt(x.v) + " " + unit + "</b></li>";
   }
   function bxhBoard(list, unit, subf) {
@@ -2224,9 +2480,10 @@
     var x = list.filter(function (y) { return y.uid === uid; })[0]; if (!x) return;
     if (x.me) return HC.go("xh-toi");
     var r = x.r, t0 = today(), bd = r.bd || {};
-    modal('<h2>' + esc(r.ten || "?") + '</h2><p class="sub">Hồ sơ công khai — chỉ có tên hiển thị và số liệu học.</p><div class="qtst sm"><div><small>Cấp</small><b>' + (+r.lv || 1) + "</b></div><div><small>Tổng XP</small><b>" + fmt(+r.xp || 0) + "</b></div><div><small>Chuỗi hiện tại</small><b>" + (r.sd >= t0 - 1 ? +r.sc || 0 : 0) + " ngày</b></div><div><small>XP tuần này</small><b>" + fmt(bxhVal(r, "w", t0)) + "</b></div></div>" +
+    var pm = modal('<div class="row avpf">' + avHTML(uid, r.ten, +r.a || 0, "xl", true) + '<div><h2>' + esc(r.ten || "?") + '</h2><p class="sub">Hồ sơ công khai — chỉ có tên hiển thị, ảnh đại diện và số liệu học.</p></div></div><div class="qtst sm"><div><small>Cấp</small><b>' + (+r.lv || 1) + "</b></div><div><small>Tổng XP</small><b>" + fmt(+r.xp || 0) + "</b></div><div><small>Chuỗi hiện tại</small><b>" + (r.sd >= t0 - 1 ? +r.sc || 0 : 0) + " ngày</b></div><div><small>XP tuần này</small><b>" + fmt(bxhVal(r, "w", t0)) + "</b></div></div>" +
       '<h3>Cúp tuần</h3><p class="cups">' + cupHTML(r.cp) + '</p><h3>Huy hiệu</h3><div class="badges">' + BFAM.map(function (f) { return famHTML(f, +bd[f.id] || 0); }).join("") + "</div>" + (bd.sp ? '<p class="sub">+ ' + bd.sp + " thành tích đặc biệt</p>" : "") +
       "<h3>Kỷ lục</h3>" + recGrid(r.rc || {}, r) + '<div class="row acts"><button class="btn" data-x>Đóng</button></div>');
+    avFill(pm.el);
   }
   var XH_TABS = [["", "Tuần"], ["thang", "Tháng"], ["quy", "Quý"], ["nam", "Năm"], ["tat", "Toàn thời gian"], ["toi", "Hồ sơ của tôi"]];
   function xhKind(sec, sub) { return sec === "tat" ? (sub === "chuoi" ? "st" : sub === "huy" ? "bd" : "xp") : ({ thang: "m", quy: "q", nam: "y" }[sec] || "w"); }
@@ -2259,6 +2516,7 @@
         if (kind === "w") h += '<div class="card" id="xhlw"><h2>Cúp tuần trước</h2><p class="sub">Đang tải…</p></div>';
       }
       box.innerHTML = h;
+      avFill(box);
       $$("[data-pf]", box).forEach(function (b) { b.onclick = function () { bxhProfile(b.getAttribute("data-pf"), L); }; });
       if (kind === "w") xhLastWeek($("#xhlw", box), T, ep);
     }
@@ -2281,10 +2539,11 @@
     function show(e, note) {
       if (HC.epoch !== ep || !el.isConnected) return;
       var top = [], i;
-      for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)" }); }
+      for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)", a: r ? +r.a || 0 : 0 }); }
       top.forEach(function (x, j) { x.rank = j && top[j - 1].v === x.v ? top[j - 1].rank : j + 1; });
       top = top.filter(function (x) { return x.rank <= 3; });
-      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (fb.user && x.uid === fb.user.uid ? " me" : "") + '">' + rkHTML(x.rank) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (fb.user && x.uid === fb.user.uid ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, fb.user && x.uid === fb.user.uid ? avMyV() : x.a, "", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+      avFill(el);
     }
     if (!fin) return show(bxhRank(T, k), "tạm tính — chốt lúc 12 giờ trưa thứ Hai");
     bxhCupGet(k).then(function (c) { return c || bxhCupMake(k); }).then(function (c) { if (c) { cupApply(c); show(c.e || [], "đã chốt"); } else show(bxhRank(T, k), "chưa chốt được — tạm tính"); }, function () { show(bxhRank(T, k), "tạm tính"); });
@@ -2292,11 +2551,15 @@
   function xhMe(box) {
     var rc = myRecs(), cups = Object.keys(S.cup || {}).map(Number).sort(function (a, b) { return b - a; }), cp = [0, 0, 0], L = lvl();
     cups.forEach(function (k) { cp[S.cup[k] - 1]++; });
-    box.innerHTML = '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
+    var me = fb.user ? '<div class="card"><div class="row avpf">' + avHTML(fb.user.uid, avMyTen(), avMyV(), "xl", true) + '<div><h2>' + esc(avMyTen()) + '</h2><p class="sub">Ảnh đại diện và tên hiển thị là những gì người khác thấy.</p>' +
+      (avCan() ? '<button class="btn sm" type="button" id="xhavc">' + (avMyV() > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" : "") + "</div></div></div>" : "";
+    box.innerHTML = me + '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
       (rc.hb && rc.hk ? '<p class="sub" style="margin-top:8px">Hạng tuần cao nhất đạt ở ' + perName("w", rc.hk).toLowerCase() + ".</p>" : "") + "</div>" +
       '<div class="card"><h2>Huy hiệu</h2><div class="bfams">' + BFAM.map(function (f) { return famHTML(f, null, true); }).join("") + "</div><h3>Thành tích đặc biệt</h3>" +
       '<div class="badges">' + BADGES.map(function (b) { return '<div class="bdg' + (S.badges[b.id] ? " on" : "") + '"><div class="m">' + b.g + "</div>" + esc(b.t) + "</div>"; }).join("") + "</div></div>" +
       '<div class="card"><h2>Cúp tuần</h2><p class="cups">' + cupHTML(cp) + "</p>" + (cups.length ? '<ul class="qtls">' + cups.slice(0, 30).map(function (k) { return "<li>" + perName("w", k) + ": cúp " + MEDAL[S.cup[k]] + "</li>"; }).join("") + "</ul>" : '<p class="sub">Chưa có. Vào top 3 XP của một tuần để nhận cúp (chốt 12 giờ trưa thứ Hai tuần sau).</p>') + "</div>";
+    avFill(box);
+    var avc = $("#xhavc", box); if (avc) avc.onclick = avPick;
   }
 
 
@@ -3200,7 +3463,7 @@
   function meoBao() { return jget(MEO_BAO); }
   function meoItemHTML(x, mine, my) {
     var bao = !mine && fb.user && meoBao()[x.k + "_" + fb.user.uid], adm = isAdmin(); // dấu "đã báo" theo từng tài khoản (khóa = mã báo cáo)
-    var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd"><b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
+    var h = '<div class="meo-it' + (mine ? " mine" : "") + '" data-mk="' + esc(x.k) + '"><div class="row meo-hd">' + (x.uid ? (mine ? avHTML(x.uid, x.ten, avMyV(), "sm", true) : avSlot(x.uid, x.ten)) : "") + '<b class="meo-ten">' + esc(x.ten || "?") + "</b>" + (mine ? '<span class="chip ok">Của bạn</span>' : "") + '<span class="spacer"></span>' + meoAvgTxt(x) + "</div>";
     if (bao && !x._show) return h + '<div class="row meo-ft"><span class="muted">Bạn đã báo cách nhớ này cho quản trị viên.</span><span class="spacer"></span><button type="button" class="btn sm ghost" data-mact="hien">Hiện</button></div></div>';
     h += '<div class="nt">' + noteClean(x.h || "") + "</div>";
     h += '<div class="row meo-ft">';
@@ -3235,6 +3498,7 @@
       else if (my && my[0] && my[1] > (+my[2] || 0)) h += '<p class="sub">Cách nhớ bạn vừa sửa chưa đăng xong — app tự đăng sau ít giây.</p>';
       h += S2.length ? S2.map(function (x) { return meoItemHTML(x, x.uid === uid, +((x.r || {})[uid]) || 0); }).join("") : '<p class="sub">Chưa ai chia sẻ cách nhớ cho mục này. Hãy là người đầu tiên!</p>';
       list.innerHTML = h;
+      avFillBx(list);
       refreshNotes(id, null, "meo");
     }
     function load(force) {
@@ -4435,8 +4699,11 @@
         cloud = '<span class="pill cl" title="' + esc(fst + " · " + (fb.user.email || "")) + '" style="color:' + (fb.status === "error" ? "var(--seal)" : fb.status === "offline" ? "var(--warn)" : "var(--good)") + '">☁ <span class="lb">' + fst + "</span></span>";
       }
     }
-    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>";
+    var mOpen = !!document.getElementById("avmenu");
+    $("#stats").innerHTML = cloud + '<span class="pill streak" title="Chuỗi ngày học liên tục">🔥 ' + (S.streak.d >= today() - 1 ? S.streak.c : 0) + '</span><span class="pill lv" title="' + esc(sync) + '">Cấp ' + L.l + '</span><span class="pill xp num">' + fmt(S.xp) + " XP</span>" + (fb.on && fb.user ? avTopHTML() : "");
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
+    var ab = $("#avbtn"); if (ab) { ab.onclick = function () { avMenu(ab); }; avFill(ab); if (mOpen) ab.setAttribute("aria-expanded", "true"); }
+    else avMenuClose();
   }
   HC.renderStats = renderStats;
   var cur = null;

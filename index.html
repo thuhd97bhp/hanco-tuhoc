@@ -75,6 +75,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
 .pill.streak { color: var(--warn); }
 .pill.lv { color: var(--accent); }
+/* ảnh đại diện (27/11/2026): vòng tròn ảnh (chưa có ảnh → chữ cái đầu trên nền màu), nút ảnh trên thanh → menu tài khoản, khung xem ảnh to */
+.av { --avs: 34px; flex: none; display: inline-grid; place-items: center; width: var(--avs); height: var(--avs); border-radius: 50%; overflow: hidden;
+  background: var(--avbg, var(--accent)) center / cover no-repeat; color: #fff; font-weight: 700; font-size: calc(var(--avs) * 0.44); line-height: 1;
+  border: 0; padding: 0; font-family: inherit; user-select: none; }
+.av.img { color: transparent; background-color: var(--surface-2); }
+button.av { cursor: zoom-in; }
+button.av:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.av.sm { --avs: 26px; }
+.av.lg { --avs: 48px; }
+.av.xl { --avs: 72px; }
+.avtop { flex: none; display: inline-grid; place-items: center; padding: 1px; border: 2px solid transparent; border-radius: 50%; background: none; cursor: pointer; margin: -6px 0; } /* lề âm: vùng bấm 36px nhưng không làm thanh trên cao thêm */
+.avtop .av { --avs: 30px; }
+.avtop:hover, .avtop[aria-expanded="true"] { border-color: var(--accent); }
+.avtop:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.avmenu { position: fixed; z-index: 70; width: min(300px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.22); padding: 6px; display: grid; gap: 2px; }
+.avmenu .avm-hd { display: flex; align-items: center; gap: 12px; padding: 8px 8px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.avmenu .avm-t { display: grid; min-width: 0; line-height: 1.3; }
+.avmenu .avm-t b, .avmenu .avm-t span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avmenu .avm-t small { font-size: 0.78rem; }
+.avmenu button[data-avm] { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 42px; padding: 8px 10px; border: 0; border-radius: 10px; background: none; color: var(--ink); text-align: left; font-weight: 500; cursor: pointer; }
+.avmenu button[data-avm]:hover, .avmenu button[data-avm]:focus-visible { background: var(--surface-2); outline: none; }
+.avmenu .avm-ic { width: 22px; text-align: center; color: var(--muted); font-size: 1.05rem; }
+.avmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.modal.avmodal { z-index: 65; } /* trên khung chi tiết (50) và khung cách nhớ (60), dưới menu bật lên (70) */
+.avmodal .box { max-width: 520px; }
+.avbig { display: grid; place-items: center; min-height: 160px; margin: 8px 0 12px; }
+.avbig img { display: block; width: min(384px, 100%, calc(100dvh - 240px)); min-width: 160px; aspect-ratio: 1; object-fit: cover; border-radius: 16px; border: 1px solid var(--line); }
+.avpf { gap: 14px; align-items: center; flex-wrap: nowrap; }
+.avpf h2 { margin: 0 0 2px; overflow-wrap: anywhere; }
+.avpf > div { min-width: 0; }
 nav.menu { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
 nav.menu::-webkit-scrollbar { display: none; }
 nav.menu a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 0.9rem; padding: 7px 12px; border-radius: 999px; white-space: nowrap; }
@@ -466,7 +496,7 @@ button.lnk { background: none; border: 0; padding: 4px 0; font: inherit; font-we
 .xhsub { margin-top: 0; }
 .xhls { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .xhls.xhme { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
-.xhr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; border: 1px solid transparent; }
+.xhr { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; border: 1px solid transparent; }
 .xhr:nth-child(odd) { background: var(--surface-2); }
 .xhr.me { border-color: var(--accent); background: var(--accent-soft); }
 .xht { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }

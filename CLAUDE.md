@@ -123,6 +123,11 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
 - CÁCH NHỚ CHUNG (Bước 8): ô "Cách nhớ" (`S.meo`, mọi người thấy, đăng ở `hanco_meo/{id}_{uid}` — KHÔNG đăng chữ đang gõ dở: `meoPub`/
   `meoEditing`) + ô "Ghi chú khác" (= `S.note` cũ, chỉ mình thấy, quản trị cũng không thấy). Chấm 1–5 sao (không chấm của mình), báo không phù hợp
   `hanco_bao` (chỉ quản trị đọc), Quản trị → Cách nhớ. Cách nhớ người khác LUÔN qua `noteClean`. localStorage `hanco-meo-bao`.
+- ẢNH ĐẠI DIỆN (người dùng yêu cầu 27/11/2026): `hanco_anh/{uid}` = {d data URL webp/jpeg ≤ 200.000 ký tự (cắt vuông giữa, 384px), v phiên bản ms, upd}.
+  Thành viên "ok" đọc; chủ ảnh tạo / ĐỔI (ghi đè → ảnh cũ mất); KHÔNG có gỡ ảnh — chỉ quản trị xóa (khi xóa người, `qtDelete`). Dòng bảng xếp hạng
+  có `a` = phiên bản ảnh → máy khác chỉ đọc lại ảnh khi `a` đổi (`avVer`/`avGet`); ảnh đã tải ở Cache Storage `anh-v1`. Nút ảnh cuối thanh mục →
+  menu tài khoản (`avMenu`: xem / đổi / tài khoản / đăng xuất); khung xem ảnh = lớp riêng `avModal` (không đóng khung bên dưới). Ảnh hiện ở Xếp hạng,
+  hồ sơ, cúp tuần, Hồ sơ của tôi, Cách nhớ (`avHTML` + `avFill`). localStorage `hanco-anh` {uid: phiên bản ảnh của mình}. Không thuộc `S`.
 - Thêm bộ sưu tập Firestore mới → viết luật + thêm trường hợp vào `.claude/test-rules.js`; thêm trường vào `S` → blank/normalize/merge/`fbAhead`
   + `.claude/test-merge.js`.
 

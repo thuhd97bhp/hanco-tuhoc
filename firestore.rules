@@ -134,7 +134,8 @@ service cloud.firestore {
       function perOk(n, f) { return !(f in n) || (n[f] is list && n[f].size() == 2 && n[f][0] is int && n[f][1] is int && n[f][1] >= 0 && n[f][1] <= n.xp); }
       function rowOk(n, o, T) {
         return n is map
-          && n.keys().hasOnly(['ten', 'xp', 'w', 'wp', 'm', 'q', 'y', 'sc', 'sd', 'sm', 'lv', 'bd', 'cp', 'rc', 'xm', 'r', 'upd'])
+          && n.keys().hasOnly(['ten', 'xp', 'w', 'wp', 'm', 'q', 'y', 'sc', 'sd', 'sm', 'lv', 'bd', 'cp', 'rc', 'xm', 'r', 'a', 'upd'])
+          && (!('a' in n) || (n.a is int && n.a >= 0))
           && n.keys().hasAll(['ten', 'xp', 'upd'])
           && n.ten == get(userPath(request.auth.uid)).data.ten
           && n.xp is int && n.xp >= 0 && n.xp <= 100000000 && n.upd == request.time
@@ -194,6 +195,20 @@ service cloud.firestore {
           && d.u == request.auth.uid && k == d.m + '_' + request.auth.uid && d.t == request.time
           && d.m is string && d.ly is string && d.ly.size() <= 300
           && exists(mp) && get(mp).data.uid == d.a && get(mp).data.id == d.id && d.a != request.auth.uid;
+      }
+    }
+
+    // ẢNH ĐẠI DIỆN (27/11/2026): hanco_anh/{uid} = {d ảnh data URL webp/jpeg ≤ 200.000 ký tự, v phiên bản (ms), upd giờ máy chủ}.
+    // Thành viên "ok" đọc. Chỉ chủ ảnh (đang "ok") tạo / ĐỔI (ghi đè cả tài liệu → ảnh cũ mất). KHÔNG ai tự gỡ ảnh (người dùng yêu cầu):
+    // chỉ quản trị xóa (khi xóa người). Dòng bảng xếp hạng có a = phiên bản ảnh (máy khác chỉ đọc lại ảnh khi a đổi).
+    match /hanco_anh/{uid} {
+      allow read: if isAdmin() || okMe();
+      allow create, update: if me(uid) && (isAdmin() || okMe()) && anhOk(request.resource.data);
+      allow delete: if isAdmin();
+      function anhOk(d) {
+        return d.keys().hasOnly(['d', 'v', 'upd']) && d.keys().hasAll(['d', 'v', 'upd'])
+          && d.d is string && d.d.size() >= 100 && d.d.size() <= 200000 && d.d.matches('data:image/(webp|jpeg);base64,[A-Za-z0-9+/=]+')
+          && d.v is int && d.v > 0 && d.upd == request.time;
       }
     }
 
