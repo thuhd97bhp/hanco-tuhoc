@@ -194,7 +194,10 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   không học kỳ nào → bộ thủ + chữ, từ theo số lần xuất hiện (bỏ mục đã học; `S.set.newC`/`newW` mỗi ngày, không giao câu) + khối
   "Ôn lại những gì đã học" (`#viet-dahoc`, loại từ `#hoc-chung-lt`, trò kho khó nguồn "Mọi mục đã học" `#kho-luyen-da`). Bộ thủ: người
   học đặt NGÀY HỌC XONG 214 bộ ở Cài đặt → Kế hoạch (`S.set.bo` = số ngày, 0/không có = lịch cũ theo `S.start`), mỗi ngày chia đều số
-  bộ chưa học cho số ngày còn lại, ≤ `BO_CAP` = 40 (`boQuota`/`restQuota`/`HC.boInfo`). KHÔNG có tab "Học mới" trên thanh mục (bỏ
+  bộ chưa học cho số ngày còn lại, ≤ `BO_CAP` = 40 (`boQuota`/`restQuota`/`HC.boInfo`). ẨN PHẦN CHUNG (người dùng yêu cầu 28/11/2026):
+  nút ⋯ cạnh tiêu đề "Chung" + công tắc ở Cài đặt → Kế hoạch → `S.set.anChung` = 1 (theo tài khoản, không có = hiện; chỉ tác dụng khi
+  đang học ≥ 1 kỳ — `chungOn()`): Việc hôm nay không có mục Chung, số đếm thanh mục / Ôn tập / Tập viết chung / thông báo dùng `dueVis`
+  (bỏ mục thuộc Chung), `sections()` bỏ "chung". Lịch SRS không đổi, `#hoc-chung` / `#on-chung` vẫn vào được. KHÔNG có tab "Học mới" trên thanh mục (bỏ
   27/11/2026): vào bài từ Việc hôm nay, `#hoc…` vẫn chạy (router cho riêng "hoc"), số bài mới hiện ở mục "Hôm nay".
   Loại từ có lịch ôn riêng `S.lt`. Tên kỳ: tên đầy đủ ở chỗ rộng, tên gọi tắt ở chỗ hẹp.
 - BÀI ĐANG DỞ (người dùng yêu cầu 27/11/2026): học dở (vd chưa xong nhóm 5 mục) → hôm sau / lần sau mở lại mục đó PHẢI học tiếp ĐÚNG những

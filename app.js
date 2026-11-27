@@ -3058,7 +3058,11 @@
   function secOf(id) { return PLN().own[id] || "chung"; }
   function dueSec(card, sec) { var own = PLN().own; return due(card).filter(function (id) { return (own[id] || "chung") === sec; }); }
   function ltDue(sec) { var t = today(), own = PLN().own; return Object.keys(S.lt).filter(function (x) { return LTI[x] && S.lt[x][1] <= t && (own["lt:" + x] || "chung") === sec; }).sort(function (a, b) { return S.lt[a][1] - S.lt[b][1]; }).map(function (x) { return LTI[x]; }); }
-  function sections() { return PLN().ps.map(function (p) { return p.k; }).concat(["chung"]); }
+  // ẨN PHẦN CHUNG (người dùng yêu cầu 28/11/2026): S.set.anChung = 1 (theo tài khoản; không có / 0 = hiện). Chỉ có tác dụng khi đang học ≥ 1 kỳ.
+  // Khi ẩn: Việc hôm nay không có mục Chung, các số đếm (thanh mục, Ôn tập / Tập viết chung, thông báo) không tính mục thuộc Chung. Lịch SRS không đổi.
+  function chungOn() { return !(S.set && S.set.anChung && PLN().ps.length); }
+  function dueVis(card) { return chungOn() ? due(card) : due(card).filter(function (id) { return secOf(id) !== "chung"; }); }
+  function sections() { var a = PLN().ps.map(function (p) { return p.k; }); return chungOn() ? a.concat(["chung"]) : a; }
   function newTotal() { var n = 0; sections().forEach(function (k) { var q = secQuota(k); n += (q.c || 0) + (q.w || 0) + (q.s || 0) + (q.r || 0); }); return n; }
   function secName(k, short) { return k === "chung" ? "Chung" : TERM[k] ? (short ? TERM[k].short : TERM[k].name) : k; }
   HC.focusLt = function () { var p = PLN().ps[0]; return p ? p.T.lt : null; }; // bảng loại từ của kỳ thi gần nhất đang học
@@ -3551,6 +3555,34 @@
     });
     try { pop.querySelector("button").focus({ preventScroll: true }); } catch (e) { }
   }
+  // ẩn / hiện phần Chung (S.set.anChung, theo tài khoản — xem chungOn)
+  function setChung(hide, quiet) { // quiet: gọi từ Cài đặt → không vẽ lại cả màn
+    if (hide) S.set.anChung = 1; else delete S.set.anChung;
+    S.upd = Date.now(); save(); renderMenu();
+    if (!quiet) route();
+    toast(hide ? (quiet ? "Đã ẩn phần Chung" : "Đã ẩn phần Chung. Bấm ⋯ cạnh chữ Chung để hiện lại.") : "Đã hiện lại phần Chung");
+  }
+  HC.setChung = setChung;
+  function openChungMenu(btn) {
+    if (pop && pop.getAttribute("data-for") === "#chung") { closePop(); return; }
+    closePop();
+    var hid = !chungOn();
+    pop = document.createElement("div");
+    pop.className = "pop"; pop.setAttribute("role", "menu"); pop.setAttribute("data-for", "#chung");
+    pop.innerHTML = '<div class="ph">Phần Chung</div><button type="button" role="menuitem" data-pm="t">' + (hid ? "◉ Hiện lại phần Chung" : "◌ Ẩn phần Chung") + "</button>" +
+      '<div class="ph" style="white-space:normal;max-width:300px">' + (hid ? "Hiện lại: bộ thủ và phần ôn tập chung được giao và tính số liệu như cũ." : "Khi ẩn: không giao bộ thủ, ôn thẻ, tập viết của phần Chung; các con số chỉ tính các kỳ bạn đang học. Những gì đã học vẫn giữ nguyên.") + "</div>";
+    document.body.appendChild(pop);
+    btn.setAttribute("aria-expanded", "true");
+    var r = btn.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight, pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var x = Math.max(8, Math.min(r.right - pw, W - pw - 8)), y = r.bottom + 6;
+    if (y + ph > H - 8) y = Math.max(8, r.top - ph - 6);
+    pop.style.left = x + "px"; pop.style.top = y + "px";
+    pop.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-pm]"); if (!b) return;
+      e.stopPropagation(); closePop(); setChung(!hid);
+    });
+    try { pop.querySelector("button").focus({ preventScroll: true }); } catch (e) { }
+  }
   function refreshHard(id) {
     var on = isHard(id);
     $$('[data-more="' + id + '"]').forEach(function (b) { b.classList.toggle("on", on); });
@@ -3605,6 +3637,8 @@
     if (b) { e.preventDefault(); e.stopPropagation(); openMore(b); return; }
     var mm = e.target.closest && e.target.closest("#mmore"); // nút » của thanh mục (định nghĩa ở phần router)
     if (mm) { e.preventDefault(); e.stopPropagation(); openMenuMore(mm); return; }
+    var cm = e.target.closest && e.target.closest("[data-chungmenu]"); // nút ⋯ cạnh tiêu đề "Chung" ở Việc hôm nay
+    if (cm) { e.preventDefault(); e.stopPropagation(); openChungMenu(cm); return; }
     if (pop && !e.target.closest(".pop")) { closePop(); }
   }, true);
   document.addEventListener("keydown", function (e) { if (pop && e.key === "Escape") { e.stopPropagation(); closePop(); } }, true);
@@ -4137,7 +4171,7 @@
         var left = p.e - t0; if ([7, 3, 1, 0].indexOf(left) < 0) return;
         tbxAdd("thi:" + T.k + ":" + p.e + ":" + left, "vl", left ? "Còn " + left + " ngày nữa là thi " + T.name + " (" + dateY(p.e) + "). Nhớ làm đề thi thử và ôn phần còn yếu nhé!" : "Hôm nay thi " + T.name + ". Chúc bạn thi thật tốt!", left && T.exam ? "#thi-" + T.exam : "#home");
       });
-      var dr = due("r").length, dw = due("w").length;
+      var dr = dueVis("r").length, dw = dueVis("w").length;
       if (dr || dw) tbxAdd("on:" + t0, "vl", "Hôm nay có " + [dr && dr + " thẻ cần ôn", dw && dw + " chữ / từ cần viết lại"].filter(Boolean).join(" và ") + ".", "#home");
       var sc = S.streak.d === t0 - 1 ? S.streak.c : 0;
       if (hr >= 18 && sc >= 2) tbxAdd("chuoi:" + t0, "vl", "Hôm nay bạn chưa học. Ôn vài thẻ để giữ chuỗi " + sc + " ngày nhé!", "#home");
@@ -5214,7 +5248,7 @@
   function badgeHTML(b) { return b ? '<span class="badge">' + (b > 99 ? "99+" : b) + "</span>" : ""; }
   function renderMenu(cur) {
     if (cur) menuCur = cur === "hoc" ? "home" : cur; cur = menuCur; // màn học mới thuộc "Hôm nay"
-    var dr = due("r").length, dw = due("w").length, nq = newTotal();
+    var dr = dueVis("r").length, dw = dueVis("w").length, nq = newTotal();
     menuBadge = { on: dr, viet: dw, home: nq };
     $("#menu").innerHTML = menuOrder().map(function (k) {
       var name = viewName(k), ic = MENU_IC[k] || ["", name];
@@ -5439,8 +5473,14 @@
       h += task("戲", "red", "Trò chơi ôn tập " + T.short, "Chỉ dùng chữ, từ, câu, loại từ của " + T.short + " bạn đã học", '<a class="btn" href="#choi-' + p.k + '">Chơi</a>');
       if (st.tail) h += task("試", "red", "Thi thử " + T.short, "Chặng ôn cuối: làm đề thi thử theo cấu trúc đề, xem phần sai rồi ôn lại", '<a class="btn primary" href="#thi-' + T.exam + '">Làm đề</a>');
     });
+    var cmBtn = '<button type="button" class="more ksm" data-chungmenu aria-haspopup="menu" aria-expanded="false" aria-label="Tùy chọn phần Chung" title="Ẩn / hiện phần Chung">⋯</button>';
+    if (multi && !chungOn()) { // người học đã ẩn phần Chung: chỉ còn tiêu đề + nút ⋯ để hiện lại
+      h += '<h3 class="ksec kshd"><span>Chung <small class="muted">đang ẩn · bấm ⋯ để hiện lại</small></span>' + cmBtn + "</h3>";
+      if (anyRv) h += task("試", "red", "Đấu cuối tuần", "Ngày ôn của tuần: làm bài thi ngắn trên những gì đã học", '<a class="btn primary" href="#choi-weekly">Vào đấu</a>');
+      return h;
+    }
     var q = restQuota(t0), n = q.c + q.w + q.s + q.r, dR = dueSec("r", "chung").length, dW = dueSec("w", "chung").length, lD = ltDue("chung").length;
-    if (multi) h += '<h3 class="ksec">Chung <small class="muted">bộ thủ và phần không thuộc kỳ nào bạn đang học</small></h3>';
+    if (multi) h += '<h3 class="ksec kshd"><span>Chung <small class="muted">Học 214 bộ thủ và ôn tập toàn bộ phần đã học</small></span>' + cmBtn + "</h3>";
     var ndc = bdCount("chung");
     if (n || ndc || !multi) h += task("新", "", "Học mới", ndc ? "Bài đang học dở: còn " + ndc + " mục" : n ? [q.c && q.c + " chữ", q.w && q.w + " từ", q.r && q.r + " bộ thủ", q.s && q.s + " câu"].filter(Boolean).join(" · ") : "Đã xong phần mới của hôm nay.", '<a class="btn' + (n || ndc ? " primary" : "") + '" href="#hoc-chung">' + (ndc ? "Học tiếp" : n ? "Bắt đầu" : "Học thêm") + "</a>");
     if (dR || !multi) h += task("溫", "green", multi ? "Ôn thẻ khác" : "Ôn thẻ đến hạn", dR ? dR + " thẻ cần ôn" : "Không có thẻ đến hạn", dR ? '<a class="btn primary" href="#on-chung">Ôn ngay</a>' : '<a class="btn" href="#choi">Chơi trò ôn</a>');
@@ -5651,7 +5691,7 @@
   // ---------- REVIEW (ôn thẻ) ----------
   function vReview(v, args) {
     var mode = args[0] === "kho" ? "kho" : "due", sec = args[0] === "chung" || TERM[args[0]] ? args[0] : null;
-    var ids = mode === "kho" ? HC.hard().map(function (x) { return x.id; }).slice(0, 40) : (sec ? dueSec("r", sec) : due("r")).slice(0, 120);
+    var ids = mode === "kho" ? HC.hard().map(function (x) { return x.id; }).slice(0, 40) : (sec ? dueSec("r", sec) : dueVis("r")).slice(0, 120);
     if (!ids.length) {
       v.innerHTML = '<div class="card"><h1>Ôn tập</h1><p class="sub">' + (mode === "kho" ? "Chưa có chữ hay quên." : "Không còn thẻ đến hạn hôm nay. Thẻ sẽ tự quay lại đúng ngày cần ôn.") + '</p><div class="row"><a class="btn primary" href="#choi' + (TERM[sec] ? "-" + sec : "") + '">Chơi trò ôn</a><a class="btn" href="#hoc">Học mới</a></div></div>';
       return;
@@ -5760,7 +5800,7 @@
     if (tab === "mau") return sampleTab(v, tabs);
     if (tab === "phieu") return sheet(v, tabs);
     if (tab === "dahoc") return learnedTab(v, tabs);
-    var ids = (sec ? dueSec("w", sec) : due("w")).slice(0, 30);
+    var ids = (sec ? dueSec("w", sec) : dueVis("w")).slice(0, 30);
     if (!ids.length) { v.innerHTML = tabs + '<div class="card"><p class="sub">Không có chữ cần viết hôm nay. Học thêm chữ mới, hoặc luyện tự do với trò "Viết trên màn hình".</p><div class="row"><a class="btn primary" href="#viet-dahoc">Luyện chữ đã học</a><a class="btn" href="#choi-write">Viết tự do</a><a class="btn" href="#hoc">Học mới</a></div></div>'; return; }
     return writeSession(v, tabs, ids.map(function (id) { return ITEM[id]; }), true);
   }
@@ -6232,7 +6272,7 @@
     var sync = remote.status === "synced" ? "Tiến độ đang được lưu vào tài khoản Claude của bạn, nên mở app trên máy tính hay điện thoại (cùng tài khoản) đều thấy cùng tiến độ." : remote.status === "error" ? "Chưa lưu được lên tài khoản lúc này; tiến độ vẫn được giữ trên trình duyệt này và sẽ thử lưu lại." : "Tiến độ đang lưu trên trình duyệt này. Hãy sao lưu thường xuyên bằng mã bên dưới.";
     var last = Object.keys(S.log).map(Number).sort(function (a, b) { return b - a; }).slice(0, 14);
     v.innerHTML = '<h1>Tiến độ &amp; cài đặt</h1><div class="card" id="ky" style="margin-bottom:14px"></div><div class="card hero" id="lich" style="margin-bottom:14px"></div><div class="cols2"><div class="card"><h2>Lưu tiến độ</h2><p class="sub">' + sync + '</p>' + (fb.on ? '<div class="row" style="margin:8px 0">' + (fb.user ? '<button class="btn" id="fbnow">Đồng bộ ngay</button><button class="btn" id="fbbk">Xem bản sao lưu</button><button class="btn ghost" id="fbout">Đăng xuất</button><button class="btn ghost" id="fbwipe">Đăng xuất và xóa tiến độ khỏi máy này</button>' : '<button class="btn primary" id="fbin3">Đăng nhập bằng Google</button>') + '</div>' + (fb.user ? '<p class="sub">Dùng chung máy với người khác: "Đăng xuất" cất tiến độ của bạn riêng trên máy này (lần sau đăng nhập có ngay); người khác đăng nhập sẽ dùng tiến độ của họ, không gộp với của bạn.</p>' : "") + '<div id="bklist"></div>' : "") + '<h3>Sao lưu thủ công bằng mã</h3><p class="sub">Bấm Sao chép để lấy mã tiến độ. Ở máy khác, dán mã vào ô rồi bấm Khôi phục.</p><textarea id="bk" aria-label="Mã sao lưu"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="cp">Sao chép mã</button><button class="btn" id="im">Khôi phục từ mã đã dán</button></div></div>' +
-      '<div class="card"><h2>Kế hoạch</h2><p class="sub">Lộ trình từng kỳ chọn ở khung "Chọn kỳ học" phía trên. Bộ thủ học ở mục Chung, theo ngày bạn muốn học xong cả 214 bộ.</p><div class="field"><label for="bo">Học xong 214 bộ thủ trước ngày</label><div class="row"><input id="bo" type="date" value="' + (HC.boInfo().e != null ? ymd(HC.boInfo().e) : "") + '"><button class="btn sm ghost" type="button" id="bo0"' + (HC.boInfo().e != null ? "" : " disabled") + '>Dùng lịch mặc định</button></div><small class="muted" id="boinf"></small></div><p class="sub" style="margin-top:10px">Hai ô dưới đây = số chữ, từ mới mỗi ngày khi bạn không học kỳ nào (hoặc các kỳ đã thi xong).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày khi không học kỳ nào</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày khi không học kỳ nào</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh (trả lời đúng / sai, cộng điểm, lên cấp)</label></div>' +
+      '<div class="card"><h2>Kế hoạch</h2><p class="sub">Lộ trình từng kỳ chọn ở khung "Chọn kỳ học" phía trên. Bộ thủ học ở mục Chung, theo ngày bạn muốn học xong cả 214 bộ.</p><div class="field"><label for="bo">Học xong 214 bộ thủ trước ngày</label><div class="row"><input id="bo" type="date" value="' + (HC.boInfo().e != null ? ymd(HC.boInfo().e) : "") + '"><button class="btn sm ghost" type="button" id="bo0"' + (HC.boInfo().e != null ? "" : " disabled") + '>Dùng lịch mặc định</button></div><small class="muted" id="boinf"></small></div><label class="row" style="margin-top:6px"><input type="checkbox" id="anchung"' + (S.set.anChung ? " checked" : "") + '> Ẩn phần Chung ở Việc hôm nay (bộ thủ, ôn tập chung) khi đang học kỳ</label><small class="muted">Khi ẩn, các con số chỉ tính các kỳ bạn đang học. Những gì đã học vẫn giữ nguyên. Không học kỳ nào thì phần Chung luôn hiện.</small><p class="sub" style="margin-top:10px">Hai ô dưới đây = số chữ, từ mới mỗi ngày khi bạn không học kỳ nào (hoặc các kỳ đã thi xong).</p><div class="row"><div class="field"><label for="nc">Chữ mới / ngày khi không học kỳ nào</label><input id="nc" type="number" min="5" max="60" value="' + S.set.newC + '"></div><div class="field"><label for="nw">Từ mới / ngày khi không học kỳ nào</label><input id="nw" type="number" min="5" max="60" value="' + S.set.newW + '"></div></div><label class="row" style="margin-top:10px"><input type="checkbox" id="snd"' + (S.set.sound ? " checked" : "") + '> Âm thanh (trả lời đúng / sai, cộng điểm, lên cấp)</label></div>' +
       '<div class="card"><h2>14 ngày gần nhất</h2><table class="t"><thead><tr><th>Ngày</th><th>Học mới</th><th>Lượt ôn</th><th>XP</th></tr></thead><tbody>' + (last.length ? last.map(function (d) { var l = S.log[d]; return "<tr><td>" + dateOf(d) + '</td><td class="num">' + (l.n || 0) + '</td><td class="num">' + (l.r || 0) + '</td><td class="num">' + (l.x || 0) + "</td></tr>"; }).join("") : '<tr><td colspan="4" class="muted">Chưa có buổi học nào.</td></tr>') + '</tbody></table></div>' +
       '<div class="card"><h2>Kỷ lục trò chơi</h2><table class="t"><tbody>' + HC.games.map(function (g) { return "<tr><td>" + esc(g.name) + '</td><td class="num">' + (S.best[g.id] != null ? S.best[g.id] : "—") + "</td></tr>"; }).join("") + '</tbody></table><h3>Xóa toàn bộ tiến độ</h3><div id="rz"><button class="btn bad" id="reset">Xóa và học lại từ đầu</button></div></div><div class="card" id="sach-set"></div></div>';
     if (fb.user) { // thẻ tài khoản đứng đầu lưới thẻ (quản trị: tab Quản trị riêng)
@@ -6284,6 +6324,7 @@
     }
     boInf();
     $("#bo", v).onchange = function () { var d = fromYmd(this.value); if (d == null) { S.set.bo = 0; } else S.set.bo = Math.max(today(), d); this.value = S.set.bo ? ymd(S.set.bo) : ""; $("#bo0", v).disabled = !S.set.bo; S.upd = Date.now(); save(); boInf(); renderMenu(); };
+    $("#anchung", v).onchange = function () { HC.setChung(this.checked, true); };
     $("#bo0", v).onclick = function () { S.set.bo = 0; $("#bo", v).value = ""; this.disabled = true; S.upd = Date.now(); save(); boInf(); renderMenu(); };
     $("#nc", v).onchange = function () { S.set.newC = Math.max(5, Math.min(60, +this.value || 20)); save(); redraw(); };
     $("#nw", v).onchange = function () { S.set.newW = Math.max(5, Math.min(60, +this.value || 17)); save(); redraw(); };
