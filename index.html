@@ -583,26 +583,61 @@ button.xhn:hover { color: var(--accent); text-decoration: underline; }
 .rk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border-radius: 999px; font-weight: 700; font-size: 0.9rem; color: var(--muted); border: 1px solid var(--line); }
 .xhr span.rk { justify-self: center; border: 0; min-width: 32px; padding: 0; font-weight: 800; font-size: 1.02rem; font-variant-numeric: tabular-nums; }
 .xhr span.rk.up { color: var(--good); } .xhr span.rk.dn { color: var(--seal); }
-/* huy chương hạng 1–3: vòng tròn có số + 2 dải ruy băng (SVG tự vẽ) */
-span.rk.mdl { width: 32px; height: 40px; min-width: 0; padding: 0; border: 0; display: block; }
-.mdl svg { display: block; width: 32px; height: 40px; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.22)); }
-.mdl text { font: 800 12.5px var(--f-ui); }
-.mdl .mi { stroke-width: 1.2; }
-.m1 .mo { fill: #f1b12c; } .m1 .mi { fill: #ffd85c; stroke: #e39d17; } .m1 .mr { fill: #e2871b; } .m1 .r2 { fill: #c87212; } .m1 text { fill: #8a5800; }
-.m2 .mo { fill: #b5c1cc; } .m2 .mi { fill: #e4eaf0; stroke: #98a7b5; } .m2 .mr { fill: #8193a5; } .m2 .r2 { fill: #6c7e90; } .m2 text { fill: #4b5967; }
-.m3 .mo { fill: #d8894c; } .m3 .mi { fill: #f3bb8c; stroke: #c27233; } .m3 .mr { fill: #b3642b; } .m3 .r2 { fill: #985321; } .m3 text { fill: #6d3712; }
-/* giải đấu tuần (27/11/2026): khiên 7 giải (chữ Hán giữa khiên), vạch nhóm thăng / xuống hạng */
-.gds { --gc: #c98446; position: relative; flex: none; display: inline-grid; place-items: center; width: 44px; height: 50px; }
-.gds svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.gds .gs1 { fill: var(--gc); } .gds .gs2 { fill: color-mix(in srgb, var(--gc) 62%, #fff); }
-.gds b.han { position: relative; top: -2px; font-family: var(--f-han); font-weight: normal; font-size: 22px; line-height: 1; color: color-mix(in srgb, var(--gc) 40%, #000); }
-.gds.gbig { width: 76px; height: 86px; } .gds.gbig b.han { font-size: 38px; top: -3px; }
-.gds.sm { width: 30px; height: 34px; } .gds.sm b.han { font-size: 15px; top: -1px; }
-.gds.t1 { --gc: #c98446; } .gds.t2 { --gc: #a7b3bf; } .gds.t3 { --gc: #efb325; } .gds.t4 { --gc: #2fae84; } .gds.t5 { --gc: #dcc3ae; } .gds.t6 { --gc: #4fb6e4; } .gds.t7 { --gc: #8b7cf4; }
+/* huy chương hạng 1–3 kiểu 3D (28/11/2026): đồng xu có cạnh dày (.mk), mặt bóng (gradient c0–c3), ruy băng gấp 2 tông; hạng 1 có tia lấp lánh */
+span.rk.mdl { position: relative; width: 34px; height: 44px; min-width: 0; padding: 0; border: 0; display: block; }
+.mdl svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+.mdl text { font: 800 13px var(--f-ui); paint-order: stroke; stroke: rgba(255,255,255,.55); stroke-width: 0.7px; }
+.mdl .c0 { stop-color: var(--m0); } .mdl .c1 { stop-color: var(--m1); } .mdl .c2 { stop-color: var(--m2); } .mdl .c3 { stop-color: var(--m3); }
+.mdl .mk { fill: var(--m3); } .mdl .mr { fill: var(--m4); } .mdl .r2 { fill: var(--m5); } .mdl text { fill: var(--m6); }
+.m1 { --m0: #fff6c8; --m1: #ffd85c; --m2: #e39d17; --m3: #a86e00; --m4: #e2871b; --m5: #b8670c; --m6: #7a4e00; }
+.m2 { --m0: #ffffff; --m1: #e4eaf0; --m2: #98a7b5; --m3: #66788a; --m4: #8193a5; --m5: #5f7183; --m6: #3f4b57; }
+.m3 { --m0: #ffe7d2; --m1: #f3bb8c; --m2: #c27233; --m3: #8e4f1f; --m4: #b3642b; --m5: #8a4a1c; --m6: #5e2f0f; }
+.mdl .gsp { top: -3px; right: -4px; width: 11px; height: 11px; }
+/* dòng hạng 1–3: nền nhạt vàng / bạc / đồng, viền dưới dày như phím nổi (dòng của mình vẫn giữ nền xanh) */
+.xhr.p1, .xhr.p2, .xhr.p3 { border-bottom-width: 4px; }
+.xhr.p1 { border-color: color-mix(in srgb, #e9b949 70%, transparent); background: linear-gradient(90deg, color-mix(in srgb, #ffd85c 32%, transparent), transparent 78%); }
+.xhr.p2 { border-color: color-mix(in srgb, #a7b4c0 75%, transparent); background: linear-gradient(90deg, color-mix(in srgb, #c8d2dc 38%, transparent), transparent 78%); }
+.xhr.p3 { border-color: color-mix(in srgb, #cf8a55 70%, transparent); background: linear-gradient(90deg, color-mix(in srgb, #e6965a 28%, transparent), transparent 78%); }
+.xhr.me.p1, .xhr.me.p2, .xhr.me.p3 { background: var(--accent-soft); }
+/* giải đấu tuần (27/11/2026): khiên 7 giải (chữ Hán giữa khiên), vạch nhóm thăng / xuống hạng.
+   Kiểu 3D (28/11/2026): màu theo lớp .tN (--gl sáng · --gc giữa · --gd tối · --ge/--gk cạnh · --gh chữ); .gbig = 12 lớp chồng (.gl) trong .g3 xoay nghiêng */
+.gds { --gl: #ffd6ad; --gc: #c98446; --gd: #7a431a; --ge: #a9612b; --gk: #5e3112; --gh: #5a2e0c; position: relative; flex: none; display: inline-block; width: 44px; height: 51px; }
+.gds svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.gds .g0 { stop-color: var(--gl); } .gds .g1 { stop-color: var(--gc); } .gds .g2 { stop-color: var(--gd); }
+.gds .ge, .gds .gl path { fill: var(--gk); } .gds .gq { fill: var(--gd); opacity: 0.6; }
+.gds b.han { position: absolute; inset: 0 0 8% 0; display: grid; place-items: center; font-family: var(--f-han); font-weight: normal; font-size: 22px; line-height: 1; color: var(--gh); filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.55)) drop-shadow(0 -1px 0 rgba(0,0,0,.3)); }
+.gds.gbig { width: 84px; height: 98px; perspective: 420px; } .gds.gbig b.han { font-size: 40px; }
+.gds.sm { width: 30px; height: 35px; } .gds.sm b.han { font-size: 15px; filter: drop-shadow(0 1px 0 rgba(255,255,255,.5)); }
+.gds .g3 { position: absolute; inset: 0; transform-style: preserve-3d; animation: gdtilt 5s ease-in-out infinite; }
+.gds .g3 > .gf { transform: translateZ(6.5px); } .gds .g3 > b.han { transform: translateZ(7px); }
+.gds .gnd { position: absolute; left: 12%; right: 12%; bottom: -9px; height: 10px; border-radius: 50%; background: radial-gradient(rgba(0,0,0,.26), transparent 70%); transform: translateZ(-8px); }
+.gds .gsh { position: absolute; inset: 4% 7% 14%; clip-path: polygon(50% 0, 100% 13%, 100% 50%, 90% 75%, 50% 100%, 10% 75%, 0 50%, 0 13%); overflow: hidden; transform: translateZ(7.5px); pointer-events: none; }
+.gds .gsh::after { content: ""; position: absolute; top: -20%; left: -70%; width: 38%; height: 140%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.8), transparent); transform: skewX(-15deg); animation: gdsweep 3.2s ease-in-out infinite; }
+.gsp { position: absolute; width: 12px; height: 12px; pointer-events: none; animation: gdtw 1.9s ease-in-out infinite; }
+.gsp::before { content: ""; position: absolute; inset: 0; background: #fff; clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); filter: drop-shadow(0 0 3px #ffe9a8); }
+.gds .gsp { top: 3%; right: 6%; transform: translateZ(9px); }
+.gds .gsp.s2 { top: auto; right: auto; bottom: 26%; left: -2%; animation-delay: 0.8s; }
+.gds .gsp.s3 { top: 40%; right: -6%; width: 9px; height: 9px; animation-delay: 1.3s; }
+@keyframes gdtilt { 0%, 100% { transform: rotateY(-30deg) rotateX(6deg); } 50% { transform: rotateY(30deg) rotateX(6deg); } }
+@keyframes gdspin { 0% { transform: rotateY(-540deg) scale(0.4); } 100% { transform: rotateY(-30deg) rotateX(6deg) scale(1); } }
+@keyframes gdsweep { 0%, 50% { left: -70%; } 100% { left: 140%; } }
+@keyframes gdtw { 0%, 100% { opacity: 0; scale: 0; rotate: 0deg; } 50% { opacity: 1; scale: 1; rotate: 45deg; } }
+.gdup .gds .g3 { animation: gdspin 1.3s cubic-bezier(.2,.8,.3,1), gdtilt 5s 1.3s ease-in-out infinite; }
+.gds.t1 { --gl: #ffd6ad; --gc: #c98446; --gd: #7a431a; --ge: #a9612b; --gk: #5e3112; --gh: #5a2e0c; }
+.gds.t2 { --gl: #ffffff; --gc: #a7b3bf; --gd: #56626e; --ge: #8a97a3; --gk: #47525d; --gh: #36414c; }
+.gds.t3 { --gl: #fff2a8; --gc: #efb325; --gd: #9a6a00; --ge: #c98d0a; --gk: #7a5200; --gh: #5e3c00; }
+.gds.t4 { --gl: #b4f5dc; --gc: #2fae84; --gd: #0f5c43; --ge: #1f8a66; --gk: #0b4a36; --gh: #063a2a; }
+.gds.t5 { --gl: #fffaf3; --gc: #dcc3ae; --gd: #8f7058; --ge: #b89a82; --gk: #6e5442; --gh: #4f3a2a; }
+.gds.t6 { --gl: #d8f4ff; --gc: #4fb6e4; --gd: #1b6890; --ge: #3592bd; --gk: #124f70; --gh: #0a3a55; }
+.gds.t7 { --gl: #ece8ff; --gc: #8b7cf4; --gd: #3e2fa0; --ge: #6c5bd8; --gk: #2c1f80; --gh: #21166a; }
+@media (prefers-reduced-motion: reduce) {
+  .gds .g3, .gdup .gds .g3 { animation: none; transform: rotateY(-22deg) rotateX(6deg); }
+  .gds .gsh, .gsp { display: none; }
+}
 .gdhd { text-align: center; }
 .gdhd h2 { margin: 4px 0 2px; }
 .gdhd .sub { margin: 4px auto; max-width: 52ch; }
-.gdrow { display: flex; align-items: center; justify-content: center; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: none; }
+.gdrow { display: flex; align-items: center; justify-content: center; gap: 12px; overflow-x: auto; padding: 10px 8px 16px; scrollbar-width: none; }
 .gdrow::-webkit-scrollbar { display: none; }
 .gdi { display: inline-grid; flex: none; }
 .gdi.khoa .gds { filter: grayscale(1); opacity: 0.4; }
@@ -619,9 +654,9 @@ span.rk.mdl { width: 32px; height: 40px; min-width: 0; padding: 0; border: 0; di
 @media (max-width: 480px) {
   .xhr { gap: 8px; padding: 6px 8px; grid-template-columns: 34px auto minmax(0, 1fr) auto; }
   .xhr .av.xm { --avs: 38px; }
-  .gdrow { gap: 4px; }
-  .gdrow .gds { width: 34px; height: 39px; } .gdrow .gds b.han { font-size: 17px; }
-  .gdrow .gds.gbig { width: 60px; height: 68px; } .gdrow .gds.gbig b.han { font-size: 30px; }
+  .gdrow { gap: 4px; padding-left: 2px; padding-right: 2px; }
+  .gdrow .gds { width: 34px; height: 40px; } .gdrow .gds b.han { font-size: 17px; }
+  .gdrow .gds.gbig { width: 64px; height: 75px; } .gdrow .gds.gbig b.han { font-size: 30px; }
 }
 .xhyou { margin: 8px 0 4px; }
 .cups { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }

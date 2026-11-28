@@ -2939,9 +2939,28 @@
     if (t > prev) { tbxAdd("gd:" + st.k, "tt", "Bạn được thăng lên giải " + GD[t].t + "!", "#xh"); gdUpShow(t); }
     else if (t < prev) { tbxAdd("gd:" + st.k, "tt", "Tuần này bạn ở giải " + GD[t].t + ". Học đều để thăng hạng lại nhé!", "#xh"); toast("Tuần này bạn ở giải " + GD[t].t + " — học đều để thăng hạng lại nhé!"); }
   }
-  function gdShield(t, cls) { // khiên giải t: chữ Hán ở giữa (tự vẽ)
-    var g = GD[t] || GD[1];
-    return '<span class="gds t' + t + (cls ? " " + cls : "") + '" title="Giải ' + esc(g.t) + '" aria-hidden="true"><svg viewBox="0 0 64 72" focusable="false"><path class="gs1" d="M32 2 60 12V36C60 54 47 64 32 70 17 64 4 54 4 36V12Z"/><path class="gs2" d="M32 9 53 17V36C53 50 43 58 32 63 21 58 11 50 11 36V17Z"/></svg><b class="han">' + g.h + "</b></span>";
+  // khiên giải t (28/11/2026, người dùng yêu cầu "long lanh, 3D, có độ dày"): mặt kim loại đổ bóng + viền vát + chữ chạm nổi (màu theo lớp .tN).
+  // "gbig" (giải hiện tại, khung Thăng hạng) = GD_D lớp chồng theo chiều sâu, khẽ xoay → thấy cạnh dày + vệt sáng + tia lấp lánh;
+  // cỡ khác = cạnh dày nhìn nghiêng, đứng yên (đỡ nặng máy). id gradient riêng từng lần vẽ (gdId) để nhiều khiên trên 1 trang không lẫn màu.
+  var GD_P = "M48 4 90 18V54C90 82 70 97 48 108 26 97 6 82 6 54V18Z", GD_Q = "M48 15 80 26V54C80 76 64 88 48 96 32 88 16 76 16 54V26Z", GD_D = 12, gdId = 0;
+  function gdEdge(k, n) { return "fill:color-mix(in srgb, var(--ge) " + Math.round(100 * k / Math.max(1, n - 1)) + "%, var(--gk))"; }
+  function gdShield(t, cls) {
+    var g = GD[t] || GD[1], i = "gd" + (++gdId), big = (cls || "").indexOf("gbig") >= 0, k, ed = "", h;
+    if (!big) for (k = 7; k > 0; k--) ed += '<path class="ge" d="' + GD_P + '" transform="translate(' + (k * 0.5) + " " + (k * 1.2) + ')" style="' + gdEdge(7 - k, 7) + '"/>';
+    var face = '<svg class="gf" viewBox="0 0 96 112" focusable="false"><defs><linearGradient id="' + i + 'r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="g0"/><stop offset=".45" class="g1"/><stop offset="1" class="g2"/></linearGradient>' +
+      '<radialGradient id="' + i + 'f" cx=".38" cy=".28" r=".85"><stop offset="0" class="g0"/><stop offset=".55" class="g1"/><stop offset="1" class="g2"/></radialGradient>' +
+      '<linearGradient id="' + i + 'b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".4"/></linearGradient></defs>' +
+      (big ? "" : '<ellipse cx="50" cy="114" rx="30" ry="4.5" fill="#000" opacity=".16"/>') + ed +
+      '<path d="' + GD_P + '" fill="url(#' + i + 'r)"/><path d="' + GD_P + '" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/>' +
+      '<path class="gq" d="' + GD_Q + '" transform="translate(0 -2)"/><path d="' + GD_Q + '" fill="url(#' + i + 'f)"/><path d="' + GD_Q + '" fill="none" stroke="url(#' + i + 'b)" stroke-width="3"/>' +
+      '<path d="M48 15 80 26V40C62 34 34 46 16 40V26Z" fill="#fff" opacity=".3"/></svg>';
+    var han = '<b class="han">' + g.h + "</b>";
+    if (big) {
+      h = '<span class="g3"><i class="gnd"></i>';
+      for (k = 0; k < GD_D; k++) h += '<svg class="gl" viewBox="0 0 96 112" focusable="false" style="transform:translateZ(' + (k - GD_D / 2) + 'px)"><path d="' + GD_P + '" style="' + gdEdge(k, GD_D) + '"/></svg>';
+      h += face + han + '<i class="gsh"></i><i class="gsp"></i><i class="gsp s2"></i><i class="gsp s3"></i></span>';
+    } else h = face + han;
+    return '<span class="gds t' + t + (cls ? " " + cls : "") + '" title="Giải ' + esc(g.t) + '" aria-hidden="true">' + h + "</span>";
   }
   function gdUpShow(t) {
     var o = document.createElement("div"); o.className = "lvup gdup"; o.setAttribute("role", "status");
@@ -2985,11 +3004,17 @@
   }
   // hạng: 1–3 = huy chương có ruy băng (vàng / bạc / đồng, tự vẽ SVG); từ 4 = số (xanh: nhóm thăng hạng, đỏ: nhóm xuống hạng)
   function rkHTML(n, zone) {
-    if (n <= 3) return '<span class="rk mdl m' + n + '" role="img" aria-label="Hạng ' + n + '"><svg viewBox="0 0 32 40" aria-hidden="true" focusable="false"><path class="mr" d="M9 21 4.5 37l5.8-2.4 3.4 4.4L16 27z"/><path class="mr r2" d="M23 21l4.5 16-5.8-2.4-3.4 4.4L16 27z"/><circle class="mo" cx="16" cy="15" r="13"/><circle class="mi" cx="16" cy="15" r="9.6"/><text x="16" y="19.4" text-anchor="middle">' + n + "</text></svg></span>";
+    if (n <= 3) { // huy chương 3D (28/11/2026): đồng xu có cạnh dày, mặt bóng, ruy băng gấp 2 tông; hạng 1 có tia lấp lánh
+      var i = "rk" + (++gdId);
+      return '<span class="rk mdl m' + n + '" role="img" aria-label="Hạng ' + n + '"><svg viewBox="0 0 36 46" aria-hidden="true" focusable="false"><defs><radialGradient id="' + i + 'f" cx=".35" cy=".3" r=".9"><stop offset="0" class="c0"/><stop offset=".45" class="c1"/><stop offset="1" class="c2"/></radialGradient><linearGradient id="' + i + 'e" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="c1"/><stop offset="1" class="c3"/></linearGradient></defs>' +
+        '<path class="mr" d="M10 22 5 42l6.4-2.6 3.8 4.8L18 30z"/><path class="r2" d="M10 22l3 1.4L8 41.3 5 42z"/><path class="r2" d="M26 22l5 20-6.4-2.6-3.8 4.8L18 30z"/><path class="mr" d="M26 22l-3 1.4 5 17.9 3 .7z"/>' +
+        '<circle class="mk" cx="18" cy="18.6" r="14"/><circle cx="18" cy="16" r="14" fill="url(#' + i + 'e)"/><circle class="mk" cx="18" cy="15.2" r="10.2" opacity=".5"/><circle cx="18" cy="16" r="10.2" fill="url(#' + i + 'f)"/>' +
+        '<ellipse cx="14" cy="11" rx="5" ry="2.6" fill="#fff" opacity=".55" transform="rotate(-25 14 11)"/><text x="18" y="20.6" text-anchor="middle">' + n + "</text></svg>" + (n === 1 ? '<i class="gsp"></i>' : "") + "</span>";
+    }
     return '<span class="rk' + (zone ? " " + zone : "") + '" aria-label="Hạng ' + n + '">' + n + "</span>";
   }
   function bxhLi(x, unit, sub, zone) {
-    return '<li class="xhr' + (x.me ? " me" : "") + (zone ? " z" + zone : "") + '">' + rkHTML(x.rank, zone) + avHTML(x.uid, x.r.ten, x.me ? avMyV(x.uid) : +x.r.a || 0, "xm", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + (x.me ? '<span class="vh"> (bạn)</span>' : "") + "</button>" + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
+    return '<li class="xhr' + (x.me ? " me" : "") + (x.rank <= 3 ? " p" + x.rank : "") + (zone ? " z" + zone : "") + '">' + rkHTML(x.rank, zone) + avHTML(x.uid, x.r.ten, x.me ? avMyV(x.uid) : +x.r.a || 0, "xm", true) + '<span class="xht"><button type="button" class="xhn" data-pf="' + esc(x.uid) + '">' + esc(x.r.ten || "?") + (x.me ? '<span class="vh"> (bạn)</span>' : "") + "</button>" + (x.hid ? ' <span class="chip warn">đang ẩn</span>' : "") +
       (sub ? '<small class="muted">' + sub + "</small>" : "") + '</span><b class="num">' + fmt(x.v) + " " + unit + "</b></li>";
   }
   function bxhBoard(list, unit, subf) {
@@ -3133,7 +3158,7 @@
       for (i = 0; i < e.length && i < 12; i++) { var r = (T.u || {})[e[i].u]; top.push({ uid: e[i].u, v: e[i].v, ten: r ? r.ten : "(đã rời bảng)", a: r ? +r.a || 0 : 0 }); }
       top.forEach(function (x, j) { x.rank = j && top[j - 1].v === x.v ? top[j - 1].rank : j + 1; });
       top = top.filter(function (x) { return x.rank <= 3; });
-      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (isMine(x.uid) ? " me" : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, isMine(x.uid) ? avVer(x.uid) : x.a, "xm", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
+      el.innerHTML = '<h2>Cúp tuần trước</h2><p class="sub">' + perName("w", k) + " · " + note + "</p>" + (top.length ? '<ol class="xhls">' + top.map(function (x) { return '<li class="xhr' + (isMine(x.uid) ? " me" : "") + (x.rank <= 3 ? " p" + x.rank : "") + '">' + rkHTML(x.rank) + avHTML(x.uid, x.ten, isMine(x.uid) ? avVer(x.uid) : x.a, "xm", true) + '<span class="xht"><span class="xhn">' + esc(x.ten) + '</span><small class="muted">cúp ' + MEDAL[x.rank] + '</small></span><b class="num">' + fmt(x.v) + " XP</b></li>"; }).join("") + "</ol>" : '<p class="sub">Tuần trước chưa ai có XP.</p>');
       avFill(el);
     }
     if (!fin) return show(bxhRank(T, k), "tạm tính — chốt lúc 12 giờ trưa thứ Hai");
