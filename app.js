@@ -377,7 +377,7 @@
     if (!fb.ref) return Promise.resolve();
     if (fb.busy) { fb.again = true; return Promise.resolve(); }
     if (navigator.onLine === false) { fb.status = "offline"; renderStats(); return Promise.resolve(); }
-    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); tkSend(); bxhSend(false); meoPub(); return Promise.resolve(); } // không có gì mới: không ghi
+    if (fb.remOk && !fb.dirty) { fb.status = "ok"; renderStats(); tkSend(); bxhSend(false); meoPub(); chamFlush(); return Promise.resolve(); } // không có gì mới: không ghi
     fb.busy = true; fb.status = "syncing"; renderStats();
     var ref = fb.ref;
     var got = fb.remOk ? Promise.resolve() : ref.get({ source: "server" }).then(function (snap) { if (ref === fb.ref) fbGot(snap.exists ? snap.data() : null, false); });
@@ -393,7 +393,7 @@
     }).then(function () { fb.status = "ok"; fb.last = Date.now(); })
       .catch(function (e) { fb.status = navigator.onLine === false ? "offline" : "error"; try { console.warn("hanco sync", e && e.code); } catch (x) { } })
       .then(function () {
-        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub(); avmBoot(); try { tbxSao(false); } catch (e) { }
+        fb.busy = false; renderStats(); tkSend(); bxhSend(false); bxhCupCheck(); meoPub(); avmBoot(); chamFlush(); try { tbxSao(false); } catch (e) { }
         if (fb.again) { fb.again = false; fbSync(); } else if (fb.dirty && fb.status === "ok") scheduleFb();
       });
   }
@@ -1319,6 +1319,7 @@
       bxhDrop(u.uid); // bỏ dòng trên bảng xếp hạng
       avCol().doc(u.uid).delete().catch(function () { }); // ảnh đại diện (27/11/2026)
       meoWipe(u.uid).then(function (n) { if (n) qtLog("Xóa cách nhớ của người bị xóa", u, n + " cách nhớ"); }, function () { }); // Bước 8
+      chamWipe(u.uid).then(function (n) { if (n) qtLog("Xóa mẫu chấm nhầm của người bị xóa", u, n + " mẫu"); }, function () { }); // 28/11/2026
       return qtWipe(u.uid).catch(function () { toast("Đã xóa tài khoản nhưng chưa xóa hết tiến độ. Bấm Tải lại rồi thử lại sau."); });
     });
   }
@@ -1520,14 +1521,14 @@
   function vAdmin(v, args) {
     if (!isAdmin()) { v.innerHTML = '<p class="sub">Chỉ quản trị viên mở được mục này.</p>'; return; }
     var sec = args[0] || "tong", ep = HC.epoch;
-    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["bxh", "Xếp hạng"], ["anh", "Ảnh mặc định"], ["meo", "Cách nhớ"], ["nk", "Nhật ký"]];
+    var tabs = [["tong", "Tổng quan"], ["nguoi", "Người học"], ["nhac", "Cần nhắc"], ["ten", "Họ tên"], ["cai", "Cài đặt"], ["sach", "Hình sách"], ["han", "Hạn mức"], ["bxh", "Xếp hạng"], ["anh", "Ảnh mặc định"], ["meo", "Cách nhớ"], ["cham", "Chấm nhầm"], ["nk", "Nhật ký"]];
     v.innerHTML = '<div class="row"><h1 style="margin:0">Quản trị</h1><span class="spacer"></span><button class="btn sm ghost" type="button" id="qtre">Tải lại</button></div>' +
       '<nav class="qtnav" aria-label="Các mục quản trị">' + tabs.map(function (a) { return '<a class="btn sm" href="#qt-' + a[0] + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="qtwarn"></div><div id="qtb"><p class="sub">Đang tải…</p></div>';
     var box = $("#qtb", v);
     function draw() {
       if (HC.epoch !== ep) return;
       try { qtWarn($("#qtwarn", v)); } catch (e) { }
-      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, bxh: qtBxh, anh: qtAnh, meo: qtMeo, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
+      try { ({ tong: qtTong, nguoi: qtNguoi, nhac: qtNhac, ten: qtTen, cai: qtCai, sach: qtSach, han: qtHan, bxh: qtBxh, anh: qtAnh, meo: qtMeo, cham: qtCham, nk: qtNk }[sec] || qtTong)(box, draw); } catch (e) { box.innerHTML = '<p class="tkmsg">Lỗi hiển thị: ' + esc(e && e.message) + "</p>"; }
     }
     function load() {
       box.innerHTML = '<p class="sub">Đang tải…</p>';
@@ -4629,6 +4630,150 @@
     }).catch(function (e) { if (cur === "qt-meo") box.innerHTML = '<div class="card"><h2>Cách nhớ</h2><p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Luật Firestore mới (Bước 8) đã deploy chưa?</p></div>"; });
   }
 
+  // ---------- QUẢN TRỊ → CHẤM NHẦM (28/11/2026, người dùng yêu cầu): mẫu chữ viết tay người học báo app chấm nhầm (hanco_cham) ----------
+  // Quản trị so chữ viết với chữ gốc, kết luận qd: "appsai" (app chấm sai thật) | "appdung" (app chấm đúng, người học nhầm) | "bo" (bỏ qua),
+  // tải tệp mẫu đã kết luận (cùng dạng tệp #viet-mau + qd, ma, v) để chỉnh ngưỡng bộ chấm; "Chấm lại" = chấm bằng bộ chấm của bản app đang chạy.
+  var qtChamN = 50, QTC = { f: "chua", k: "", q: "", ov: true };
+  var CHAM_K = { dung: "Viết đúng mà app chấm Sai", sai: "Viết sai mà app chấm Đúng", cau: "Báo từ phần viết câu" };
+  var CHAM_QD = { appsai: "App chấm sai thật", appdung: "App chấm đúng", bo: "Bỏ qua" };
+  function chamParse(d) {
+    var x = d.data(); x.id = d.id;
+    try { x.S = JSON.parse(x.s || "[]"); } catch (e) { x.S = []; }
+    try { x.R = JSON.parse(x.r || "[]"); } catch (e) { x.R = []; }
+    x.cs = chars(x.ch || "").filter(isHan); if (!x.cs.length) x.cs = [x.ch || "?"];
+    return x;
+  }
+  // vẽ 1 mẫu: m = false → nét người học (ov: chữ mẫu mờ phía sau, như ô viết sau khi chấm); m = true → chữ gốc MS Song từng ô
+  function chamDraw(cv, x, m, ov) {
+    var cell = +x.cell || 230, cols = Math.max(1, Math.min(+x.cols || 1, x.cs.length)), n = x.cs.length, rows = Math.ceil(n / cols);
+    var W = cols * cell, H = rows * cell, k = Math.min(150 / cell, 300 / W), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(W * k * dpr); cv.height = Math.round(H * k * dpr); cv.style.width = Math.round(W * k) + "px"; cv.style.height = Math.round(H * k) + "px";
+    var g = cv.getContext("2d"), css = getComputedStyle(document.documentElement);
+    function col(v) { return css.getPropertyValue(v).trim(); }
+    function paint() {
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); g.scale(k * dpr, k * dpr);
+      g.lineWidth = 1 / k; g.strokeStyle = col("--line") || "#ccc";
+      for (var i = 0; i < n; i++) {
+        var cx = (i % cols) * cell, cy = Math.floor(i / cols) * cell, ch = x.cs[i];
+        g.setLineDash([]); g.strokeRect(cx, cy, cell, cell);
+        g.setLineDash([4 / k, 5 / k]); g.beginPath(); g.moveTo(cx, cy + cell / 2); g.lineTo(cx + cell, cy + cell / 2); g.moveTo(cx + cell / 2, cy); g.lineTo(cx + cell / 2, cy + cell); g.stroke(); g.setLineDash([]);
+        if (m || ov) {
+          g.globalAlpha = m ? 1 : 0.3; g.fillStyle = m ? (col("--ink") || "#000") : (col("--seal") || "#b00");
+          var F = cell * 0.8, hi = HIMG[hanKey(ch)], im = hi && hi.ok ? hi.img : null;
+          if (!localSong() && im) { var w = F * HAN_IMG_K; g.drawImage(tintImg(im, g.fillStyle), cx + cell / 2 - w / 2, cy + cell / 2 + cell * 0.03 - w / 2, w, w); }
+          else { g.font = Math.round(F) + "px " + (col("--f-han") || "serif"); g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(ch, cx + cell / 2, cy + cell / 2 + cell * 0.03); }
+          g.globalAlpha = 1;
+        }
+      }
+      if (m) return;
+      g.strokeStyle = col("--ink") || "#000"; g.lineWidth = Math.max(3, cell / 30); g.lineCap = "round"; g.lineJoin = "round";
+      (x.S || []).forEach(function (st) { if (!st || !st.length) return; g.beginPath(); g.moveTo(st[0][0], st[0][1]); st.forEach(function (q) { g.lineTo(q[0], q[1]); }); if (st.length === 1) g.lineTo(st[0][0] + 0.1, st[0][1]); g.stroke(); });
+    }
+    paint();
+    if ((m || ov) && !localSong()) x.cs.forEach(function (ch) { hanImg(ch, paint); });
+  }
+  function chamNum(v) { return v == null || isNaN(v) ? "—" : (+v).toFixed(2).replace(".", ","); }
+  function chamRes(r) { // 1 dòng kết quả chấm 1 chữ (lúc người học báo, hoặc khi chấm lại)
+    if (!r) return "";
+    if (r.nodata) return '<span class="han">' + esc(r.ch) + "</span>: chữ chưa có dữ liệu nét (app không tự chấm)";
+    return '<span class="han">' + esc(r.ch) + "</span>: " + (r.ok ? '<b class="ok">Đúng</b>' : '<b class="bad">Sai</b>') +
+      (r.best ? ' · giống nhất <span class="han">' + esc(r.best) + "</span>" + (r.best !== r.ch && r.rank != null ? " (chữ cần viết xếp hạng " + (r.rank + 1) + ")" : "") : "") +
+      " · lệch " + chamNum(r.d) + " (≤ " + chamNum(G_ABS) + ")" + " · thừa " + chamNum(r.extra) + " (≤ " + chamNum(G_RUN) + ")" + " · thiếu " + chamNum(r.lack) + " (≤ " + chamNum(G_LRUN) + ")" +
+      (r.ids && !r.ids.length ? " · ô này không có nét" : "");
+  }
+  function chamRe(x) { // chấm lại bằng bộ chấm hiện tại; trả mảng kết quả (cùng thứ tự chữ)
+    return loadStrokes().then(function () {
+      return (x.R || []).map(function (r) { if (!r || !r.ids) return null; var g = gradeShape(r.ids.map(function (i) { return x.S[i] || []; }).filter(function (s) { return s.length; }), r.ch); g.ids = r.ids; return g; });
+    });
+  }
+  function chamItem(x) {
+    var u = meoWho(x.u), tm = x.t ? sampTime(x) : "", qd = x.qd || "";
+    return '<div class="qtch" data-ck="' + esc(x.id) + '"><div class="row meo-hd"><span class="chip' + (x.k === "sai" ? " warn" : "") + '">' + esc(CHAM_K[x.k] || x.k) + "</span>" +
+      (qd ? '<span class="chip' + (qd === "appsai" ? " bad" : qd === "appdung" ? " ok" : "") + '">' + esc(CHAM_QD[qd] || qd) + "</span>" : "") + "</div>" +
+      '<div class="muted nsm"><span class="num">' + qtMa(x.u) + "</span> " + esc(u.ten || "?") + (u.hoten ? " (" + esc(u.hoten) + ")" : "") + (tm ? " · " + tm : "") + "</div>" +
+      '<div class="qtch-cv"><figure><canvas data-cu aria-label="Chữ người học viết"></canvas><figcaption>Chữ viết tay</figcaption></figure><figure><canvas data-cm aria-label="Chữ gốc"></canvas><figcaption>Chữ gốc</figcaption></figure></div>' +
+      '<div class="qtch-r"><div class="k">Lúc báo' + (x.v ? ' <span class="muted">(' + esc(x.v) + ")</span>" : "") + "</div>" + (x.R || []).map(function (r) { return "<div>" + chamRes(r) + "</div>"; }).join("") + '<div class="qtch-re"></div></div>' +
+      '<div class="row qtch-b"><button type="button" class="btn sm' + (qd === "appsai" ? " primary" : "") + '" data-cq="appsai">App chấm sai thật</button><button type="button" class="btn sm' + (qd === "appdung" ? " primary" : "") + '" data-cq="appdung">App chấm đúng</button><button type="button" class="btn sm ghost' + (qd === "bo" ? " primary" : "") + '" data-cq="bo">Bỏ qua</button>' +
+      '<span class="spacer"></span><button type="button" class="btn sm ghost" data-cq="re">Chấm lại</button><button type="button" class="btn sm ghost bad" data-cq="xoa">Xóa</button></div></div>';
+  }
+  function chamWipe(uid) { // xóa người (qtDelete): xóa mọi mẫu chấm nhầm của người đó
+    var db = fb.db;
+    return db.collection("hanco_cham").where("u", "==", uid).get().then(function (q) {
+      var refs = []; q.forEach(function (d) { refs.push(d.ref); });
+      var p = Promise.resolve();
+      for (var i = 0; i < refs.length; i += 400) (function (part) { p = p.then(function () { var b = db.batch(); part.forEach(function (r) { b.delete(r); }); return b.commit(); }); })(refs.slice(i, i + 400));
+      return p.then(function () { return refs.length; });
+    });
+  }
+  function qtCham(box, redraw) {
+    box.innerHTML = '<p class="sub">Đang tải mẫu chấm nhầm…</p>';
+    var col = fb.db.collection("hanco_cham");
+    col.orderBy("upd", "desc").limit(qtChamN).get().then(function (q) {
+      if (cur !== "qt-cham") return;
+      var all = []; q.forEach(function (d) { all.push(chamParse(d)); });
+      var cnt = { chua: 0, appsai: 0, appdung: 0, bo: 0 };
+      all.forEach(function (x) { cnt[x.qd || "chua"] = (cnt[x.qd || "chua"] || 0) + 1; });
+      function opt(v, t, c) { return '<option value="' + v + '"' + (QTC[c] === v ? " selected" : "") + ">" + t + "</option>"; }
+      var h = '<div class="card"><h2>Mẫu chấm nhầm</h2><p class="sub">Mỗi lần người học bấm "Tôi viết đúng mà" / "Tôi viết sai mà", chữ viết tay được gửi về đây (mỗi máy tối đa ' + CHAM_CAP + ' mẫu/ngày). So chữ viết tay với chữ gốc rồi kết luận. Xong thì bấm <b>Tải mẫu đã kết luận</b> và gửi tệp cho Claude để chỉnh bộ chấm; sau khi app cập nhật, bấm <b>Chấm lại</b> để xem bộ chấm mới đã chấm đúng chưa.</p>' +
+        '<p class="nsm">' + all.length + " mẫu mới nhất: <b>" + cnt.chua + "</b> chưa kết luận · " + cnt.appsai + " app chấm sai thật · " + cnt.appdung + " app chấm đúng · " + cnt.bo + " bỏ qua</p>" +
+        '<div class="row qtch-f"><label class="nsm">Trạng thái <select id="qcf">' + opt("chua", "Chưa kết luận", "f") + opt("appsai", "App chấm sai thật", "f") + opt("appdung", "App chấm đúng", "f") + opt("bo", "Bỏ qua", "f") + opt("", "Tất cả", "f") + "</select></label>" +
+        '<label class="nsm">Loại <select id="qck">' + opt("", "Tất cả", "k") + opt("dung", CHAM_K.dung, "k") + opt("sai", CHAM_K.sai, "k") + opt("cau", CHAM_K.cau, "k") + "</select></label>" +
+        '<label class="nsm">Chữ <input id="qcq" type="search" size="6" value="' + esc(QTC.q) + '" aria-label="Lọc theo chữ"></label>' +
+        '<label class="nsm"><input type="checkbox" id="qcov"' + (QTC.ov ? " checked" : "") + "> Chữ mẫu mờ dưới nét viết</label></div>" +
+        '<div class="row"><button type="button" class="btn sm primary" id="qcdl">Tải mẫu đã kết luận (.json)</button><button type="button" class="btn sm" id="qcre">Chấm lại các mẫu đang hiện</button></div></div>';
+      var vis = all.filter(function (x) { return (QTC.f === "" || (x.qd || "chua") === QTC.f) && (!QTC.k || x.k === QTC.k) && (!QTC.q || (x.ch || "").indexOf(QTC.q) >= 0); });
+      h += '<div class="qtch-l">' + (vis.length ? vis.map(chamItem).join("") : '<p class="sub">Không có mẫu nào khớp bộ lọc.</p>') + "</div>";
+      if (all.length >= qtChamN) h += '<div class="row"><button type="button" class="btn sm" id="qcmore">Xem thêm mẫu cũ hơn</button></div>';
+      box.innerHTML = h;
+      var byId = {}; all.forEach(function (x) { byId[x.id] = x; });
+      function canv() { $$("[data-ck]", box).forEach(function (c) { var x = byId[c.getAttribute("data-ck")]; chamDraw($("[data-cu]", c), x, false, QTC.ov); chamDraw($("[data-cm]", c), x, true); }); }
+      canv();
+      function filt(k, v) { QTC[k] = v; redraw(); }
+      $("#qcf", box).onchange = function () { filt("f", this.value); };
+      $("#qck", box).onchange = function () { filt("k", this.value); };
+      $("#qcq", box).onchange = function () { filt("q", this.value.trim()); };
+      $("#qcov", box).onchange = function () { QTC.ov = this.checked; canv(); };
+      var more = $("#qcmore", box); if (more) more.onclick = function () { qtChamN += 50; redraw(); };
+      function reOne(c) {
+        var x = byId[c.getAttribute("data-ck")], o = $(".qtch-re", c);
+        o.innerHTML = '<div class="muted">Đang chấm lại…</div>';
+        return chamRe(x).then(function (rs) {
+          var ch = rs.some(function (g, i) { return g && x.R[i] && !!g.ok !== !!x.R[i].ok; });
+          o.innerHTML = '<div class="k">Chấm lại bằng bản app này' + (ch ? ' <span class="chip warn">kết quả đã đổi</span>' : ' <span class="muted">(như lúc báo)</span>') + "</div>" + rs.map(function (g) { return g ? "<div>" + chamRes(g) + "</div>" : ""; }).join("");
+        }, function () { o.innerHTML = '<div class="tkmsg">Chưa tải được dữ liệu nét để chấm lại.</div>'; });
+      }
+      $("#qcre", box).onclick = function () { var b = this; b.disabled = true; $$("[data-ck]", box).reduce(function (p, c) { return p.then(function () { return reOne(c); }); }, Promise.resolve()).then(function () { b.disabled = false; }); };
+      $("#qcdl", box).onclick = function () {
+        var b = this; b.disabled = true;
+        col.where("qd", "in", ["appsai", "appdung"]).get().then(function (qq) {
+          var out = []; qq.forEach(function (d) { var x = chamParse(d); out.push({ t: x.t, k: x.k, ch: x.ch, cell: x.cell, cols: x.cols, s: x.S, r: x.R, v: x.v || "", qd: x.qd, ma: qtMa(x.u) }); });
+          b.disabled = false;
+          if (!out.length) { toast("Chưa có mẫu nào kết luận \"App chấm sai thật\" / \"App chấm đúng\"."); return; }
+          out.sort(function (a, c) { return a.t < c.t ? -1 : 1; });
+          HC.download("mau-cham-nham-ket-luan-" + dateOf(today()).replace(/\//g, "-") + ".json", JSON.stringify(out));
+        }, function (e) { b.disabled = false; toast(tkErr(e)); });
+      };
+      box.onclick = function (e) {
+        var b = e.target.closest("[data-cq]"); if (!b) return;
+        var a = b.getAttribute("data-cq"), c = b.closest("[data-ck]"), x = byId[c.getAttribute("data-ck")];
+        if (a === "re") { reOne(c); return; }
+        if (a === "xoa") {
+          if (!b.classList.contains("sure")) { b.classList.add("sure"); b.textContent = "Bấm lần nữa để xóa"; setTimeout(function () { if (b.isConnected) { b.classList.remove("sure"); b.textContent = "Xóa"; } }, 4000); return; }
+          b.disabled = true;
+          col.doc(x.id).delete().then(function () { c.remove(); toast("Đã xóa mẫu"); }, function (er) { b.disabled = false; toast(tkErr(er)); });
+          return;
+        }
+        var v = x.qd === a ? "" : a; // bấm lại kết luận đang chọn = bỏ kết luận
+        $$("[data-cq]", c).forEach(function (y) { y.disabled = true; });
+        col.doc(x.id).update({ qd: v, qdt: firebase.firestore.FieldValue.serverTimestamp() }).then(function () {
+          x.qd = v;
+          var nw = document.createElement("div"); nw.innerHTML = chamItem(x); nw = nw.firstChild; c.parentNode.replaceChild(nw, c);
+          chamDraw($("[data-cu]", nw), x, false, QTC.ov); chamDraw($("[data-cm]", nw), x, true);
+        }, function (er) { $$("[data-cq]", c).forEach(function (y) { y.disabled = false; }); toast(tkErr(er)); });
+      };
+    }).catch(function (e) { if (cur === "qt-cham") box.innerHTML = '<div class="card"><h2>Mẫu chấm nhầm</h2><p class="tkmsg">Chưa tải được (' + esc(tkErr(e)) + "). Luật Firestore mới (hanco_cham) đã deploy chưa?</p></div>"; });
+  }
+
   // ---------- giải thích từng chữ (tự soạn, KHÔNG có trong tài liệu → luôn ghi ※) ----------
   // giai/<mã hex>.json sinh bằng tools/build_giai.py từ tools/work/giai/dot*.txt (định dạng: README.txt ở đó), mỗi chữ / bộ thủ 1 file,
   // tải khi mở (như net/). {c, py pinyin, pyo âm khác tự động, pyx 1 = đa âm chưa soát, py2 âm khác kèm nghĩa, n [nghĩa + từ loại],
@@ -6115,24 +6260,68 @@
   function saveSample(text, g, size, k) {
     if (!g) return false;
     var a = samples();
-    a.push({ t: new Date().toISOString(), k: k || "dung", ch: text, cell: size.cell, cols: size.cols, s: g.s, r: g.res.map(function (r) { return { ch: r.ch, ok: r.ok, d: r.d, rank: r.rank, best: r.best, extra: r.extra, lack: r.lack, ids: r.ids }; }) });
+    a.push({ t: new Date().toISOString(), k: k || "dung", ch: text, cell: size.cell, cols: size.cols, s: g.s, r: g.res.map(function (r) { return { ch: r.ch, ok: r.ok, d: r.d, rank: r.rank, best: r.best, extra: r.extra, lack: r.lack, ids: r.ids }; }), u: fb.user ? fb.user.uid : "", v: gVer() });
     while (a.length > 150) a.shift();
     // bộ nhớ máy đầy → bỏ dần mẫu cũ nhất cho tới khi lưu được
-    while (a.length) { try { localStorage.setItem(SAMPLE_KEY, JSON.stringify(a)); return true; } catch (e) { if (a.length === 1) break; a.shift(); } }
+    while (a.length) { try { localStorage.setItem(SAMPLE_KEY, JSON.stringify(a)); setTimeout(chamFlush, 0); return true; } catch (e) { if (a.length === 1) break; a.shift(); } }
     toast("Không lưu được mẫu (bộ nhớ máy đầy). Vào Tập viết → Mẫu chấm nhầm, tải các mẫu về rồi xóa bớt.");
     return false;
   }
   HC.saveSample = saveSample; // trò viết tay của kho khó (games.js) dùng cho nút "Tôi viết đúng mà"
+  // gửi mẫu về kho chung hanco_cham để quản trị soát (28/11/2026, người dùng yêu cầu): hanco_cham/{uid}_{giờ ms} = {u, k, ch, cell, cols,
+  // s (chuỗi JSON các nét — Firestore không cho mảng lồng mảng), r (chuỗi JSON kết quả chấm), t (giờ máy ISO), v (ngưỡng bộ chấm lúc đó), upd}
+  // + quản trị ghi qd ("appsai" | "appdung" | "bo") + qdt. Người học chỉ TẠO mẫu của mình; chỉ quản trị đọc / kết luận / xóa (firestore.rules).
+  // Mẫu ở máy có thêm u (uid lúc lưu, "" = chưa đăng nhập → không gửi) và g (1 = đã gửi, 2 = bỏ: luật từ chối / quá cỡ). Mẫu cũ (trước bản này,
+  // không có u) gửi dưới tài khoản đang đăng nhập. Mỗi máy gửi ≤ CHAM_CAP mẫu/ngày (localStorage hanco-cham-gui {d, n}); chưa gửi được thì gửi bù.
+  var CHAM_LS = "hanco-cham-gui", CHAM_CAP = 100, CHAM_MAX = 300000, chamBusy = false;
+  function gVer() { return "g " + [G_ABS, G_TIE, G_RUN, G_LRUN, G_SHIFT].join("/"); }
+  function chamDoc(x, uid) {
+    var s = x.s || [], js = JSON.stringify(s), step = 2;
+    while (js.length > CHAM_MAX && step <= 16) { js = JSON.stringify(s.map(function (st) { return st.filter(function (q, i) { return i % step === 0 || i === st.length - 1; }); })); step *= 2; } // quá dài → bớt điểm
+    if (js.length > CHAM_MAX) return null;
+    var r = JSON.stringify(x.r || []); if (r.length > 30000) r = "[]";
+    var cols = Math.round(+x.cols || 1);
+    return { u: uid, k: /^(dung|sai|cau)$/.test(x.k) ? x.k : "dung", ch: String(x.ch).slice(0, 200), cell: +x.cell || 0, cols: cols < 1 ? 1 : cols > 30 ? 30 : cols, s: js, r: r, t: String(x.t || "").slice(0, 40), v: String(x.v || "").slice(0, 60), upd: firebase.firestore.FieldValue.serverTimestamp() };
+  }
+  function chamFlush() {
+    if (chamBusy || !fb.on || !fb.db || !fb.user || navigator.onLine === false || (!isAdmin() && tk.st !== "ok")) return;
+    var uid = fb.user.uid, c = jget(CHAM_LS), d = today();
+    if (c.d !== d) c = { d: d, n: 0 };
+    var todo = samples().filter(function (x) { return !x.g && (x.u == null || x.u === uid) && x.ch && x.s; });
+    var room = CHAM_CAP - (+c.n || 0); if (!todo.length || room <= 0) return;
+    todo = todo.slice(0, Math.min(room, 20)); // mỗi lượt ≤ 20 mẫu, còn thì lượt sau
+    chamBusy = true;
+    var done = {}, col = fb.db.collection("hanco_cham"), p = Promise.resolve();
+    todo.forEach(function (x) {
+      p = p.then(function () {
+        if (!fb.user || fb.user.uid !== uid) throw new Error("doi");
+        var key = x.t + "|" + x.ch, doc = chamDoc(x, uid), ms = Date.parse(x.t);
+        if (!doc || !(ms > 0)) { done[key] = 2; return; }
+        return col.doc(uid + "_" + ms).set(doc).then(function () { done[key] = 1; c.n = (+c.n || 0) + 1; },
+          function (e) { if (e && e.code === "permission-denied") done[key] = 2; else throw e; }); // permission-denied: thường là mẫu đã gửi rồi (không cho ghi đè)
+      });
+    });
+    p.catch(function () { }).then(function () {
+      chamBusy = false;
+      lsSet(CHAM_LS, JSON.stringify(c));
+      if (!Object.keys(done).length) return;
+      var cur = samples();
+      cur.forEach(function (x) { var v = done[x.t + "|" + x.ch]; if (v) { x.g = v; if (x.u == null) x.u = uid; } });
+      try { localStorage.setItem(SAMPLE_KEY, JSON.stringify(cur)); } catch (e) { }
+      if (todo.length === 20 && Object.keys(done).length === 20) setTimeout(chamFlush, 2000);
+    });
+  }
+  HC.chamFlush = chamFlush;
   function sampleTab(v, tabs) {
     var a = samples();
     var grp = [["dung", "Bạn viết đúng nhưng app chấm Sai"], ["sai", "Bạn viết sai nhưng app chấm Đúng"], ["cau", "Báo từ phần viết câu"]].map(function (g) {
       var xs = a.filter(function (x) { return (x.k || "dung") === g[0]; });
       return xs.length ? '<h3 style="margin:14px 0 6px">' + g[1] + " (" + xs.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px">' + xs.map(function (x) {
         var i = a.indexOf(x), tm = sampTime(x);
-        return '<div style="border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:var(--surface-2);display:flex;flex-direction:column;align-items:center;gap:4px;max-width:100%"><canvas data-th="' + i + '" aria-label="Chữ bạn đã viết" style="max-width:100%"></canvas><span class="han" style="font-size:1.05rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.ch) + '</span><span class="muted" style="font-size:0.78rem">' + tm + '</span><button class="btn sm ghost" data-del="' + i + '" aria-label="Xóa mẫu ' + esc(x.ch) + " " + tm + '">✕ Xóa</button></div>';
+        return '<div style="border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:var(--surface-2);display:flex;flex-direction:column;align-items:center;gap:4px;max-width:100%"><canvas data-th="' + i + '" aria-label="Chữ bạn đã viết" style="max-width:100%"></canvas><span class="han" style="font-size:1.05rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.ch) + '</span><span class="muted" style="font-size:0.78rem">' + tm + (x.g === 1 ? " · đã gửi" : "") + '</span><button class="btn sm ghost" data-del="' + i + '" aria-label="Xóa mẫu ' + esc(x.ch) + " " + tm + '">✕ Xóa</button></div>';
       }).join("") + "</div>" : "";
     }).join("");
-    v.innerHTML = tabs + '<div class="card"><h2>Mẫu chữ bị chấm nhầm</h2><p class="sub">Mỗi lần bạn bấm nút báo chấm nhầm ("Tôi viết đúng mà", "Tôi viết sai mà"), chữ bạn viết được lưu ở máy này. Bấm Tải để lấy tệp rồi gửi cho người làm app để chỉnh cách chấm cho đúng với chữ viết tay của bạn.</p><p class="muted" style="font-size:0.88rem">Mẫu chỉ nằm trong trình duyệt của máy này (không đồng bộ sang máy khác), xóa dữ liệu trình duyệt là mất — nên tải về thường xuyên. Lưu tối đa 150 mẫu mới nhất.</p>' + (a.length ? grp + '<div class="row" style="margin-top:12px"><button class="btn primary" id="dls">Tải ' + a.length + ' mẫu (.json)</button><button class="btn" id="clrs">Xóa các mẫu đã gửi</button></div>' : '<p class="sub">Chưa có mẫu nào.</p>') + "</div>";
+    v.innerHTML = tabs + '<div class="card"><h2>Mẫu chữ bị chấm nhầm</h2><p class="sub">Mỗi lần bạn bấm nút báo chấm nhầm ("Tôi viết đúng mà", "Tôi viết sai mà"), chữ bạn viết được lưu ở máy này và (khi bạn đang đăng nhập) tự gửi đi để giúp app chấm chữ viết tay đúng hơn.</p><p class="muted" style="font-size:0.88rem">Danh sách dưới đây chỉ nằm trong trình duyệt của máy này (không đồng bộ sang máy khác). Mẫu viết lúc chưa đăng nhập không được gửi — muốn góp mẫu đó thì bấm Tải để lấy tệp. Lưu tối đa 150 mẫu mới nhất.</p>' + (a.length ? grp + '<div class="row" style="margin-top:12px"><button class="btn primary" id="dls">Tải ' + a.length + ' mẫu (.json)</button><button class="btn" id="clrs">Xóa các mẫu đã gửi</button></div>' : '<p class="sub">Chưa có mẫu nào.</p>') + "</div>";
     var d = $("#dls", v); if (d) d.onclick = function () { HC.download("mau-cham-nham-" + dateOf(today()).replace(/\//g, "-") + ".json", JSON.stringify(a)); };
     var c = $("#clrs", v); if (c) c.onclick = function () { if (!confirm("Xóa " + a.length + " mẫu đã lưu?")) return; try { localStorage.removeItem(SAMPLE_KEY); } catch (e) { } sampleTab(v, tabs); };
     // hình thu nhỏ chữ người học đã viết (vẽ lại từ nét đã lưu, toạ độ theo ô viết lúc đó)

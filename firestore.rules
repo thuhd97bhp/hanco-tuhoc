@@ -218,6 +218,24 @@ service cloud.firestore {
       }
     }
 
+    // MẪU CHẤM NHẦM (28/11/2026): hanco_cham/{uid}_{giờ ms} = {u, k dung|sai|cau, ch chữ cần viết, cell, cols, s (chuỗi JSON các nét),
+    // r (chuỗi JSON kết quả chấm), t giờ máy, v ngưỡng bộ chấm, upd giờ máy chủ} — người học bấm "Tôi viết đúng mà" / "Tôi viết sai mà".
+    // Thành viên "ok" (và quản trị) chỉ TẠO mẫu của chính mình, không đọc / sửa / xóa. Chỉ quản trị đọc, xóa, ghi kết luận qd + qdt.
+    match /hanco_cham/{k} {
+      allow read, delete: if isAdmin();
+      allow create: if (isAdmin() || okMe()) && chamNew(k, request.resource.data);
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qd', 'qdt'])
+        && request.resource.data.get('qd', '') in ['appsai', 'appdung', 'bo', ''] && request.resource.data.get('qdt', null) == request.time;
+      function chamNew(k, d) {
+        return d.keys().hasOnly(['u', 'k', 'ch', 'cell', 'cols', 's', 'r', 't', 'v', 'upd']) && d.keys().hasAll(['u', 'k', 'ch', 'cell', 'cols', 's', 'r', 't', 'v', 'upd'])
+          && d.u == request.auth.uid && k.matches(request.auth.uid + '_[0-9]{1,15}')
+          && d.k in ['dung', 'sai', 'cau'] && d.ch is string && d.ch.size() > 0 && d.ch.size() <= 200
+          && d.cell is number && d.cols is int && d.cols >= 1 && d.cols <= 30
+          && d.s is string && d.s.size() <= 300000 && d.r is string && d.r.size() <= 30000
+          && d.t is string && d.t.size() <= 40 && d.v is string && d.v.size() <= 60 && d.upd == request.time;
+      }
+    }
+
     // ẢNH ĐẠI DIỆN (27/11/2026): hanco_anh/{uid} = {d ảnh data URL webp/jpeg ≤ 200.000 ký tự, v phiên bản (ms), upd giờ máy chủ}.
     // Thành viên "ok" đọc. Chỉ chủ ảnh (đang "ok") tạo / ĐỔI (ghi đè cả tài liệu → ảnh cũ mất). KHÔNG ai tự gỡ ảnh (người dùng yêu cầu):
     // chỉ quản trị xóa (khi xóa người). Dòng bảng xếp hạng có a = phiên bản ảnh (máy khác chỉ đọc lại ảnh khi a đổi).

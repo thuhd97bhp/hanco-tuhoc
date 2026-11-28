@@ -22,7 +22,7 @@
   thừa (kể cả đường nối giữa các nét) hay đoạn thiếu dài quá G_RUN / G_LRUN; từng nét được xê dịch ≤ G_SHIFT (chữ tay lệch
   theo bộ phận). Ngưỡng hiệu chỉnh bằng chữ viết mô phỏng (`.claude/harness.js`, chạy trong trình duyệt ở trang app).
   Chấm nhầm → người học bấm "Tôi viết đúng mà" (tính Đúng, lưu mẫu ở localStorage `hanco-mau-cham-nham`, tải ở #viet-mau dạng
-  JSON: `ch` chữ/từ, `cell`/`cols` ô viết, `s` các nét toạ độ canvas, `r` kết quả chấm). Có tệp mẫu → chấm lại bằng
+  JSON: `ch` chữ/từ, `cell`/`cols` ô viết, `s` các nét toạ độ canvas, `r` kết quả chấm). Đang đăng nhập → mẫu còn TỰ GỬI về Quản trị → Chấm nhầm (mục "MẪU CHẤM NHẦM" ở phần Nhiều người dùng). Có tệp mẫu → chấm lại bằng
   `HC.gradeShape(nét thuộc ô, chữ)` để chỉnh ngưỡng; điểm tập viết chỉ ghi vào lịch khi bấm Tiếp.
   Sinh bằng `cd tools && python build_strokes.py` (dữ liệu gốc ở `tools/ref/hanzi-writer-data/`). 28 chữ hiếm chưa có dữ liệu → tự so.
 - `net/<mã hex>.json` = thứ tự nét từng chữ (viền nét `s` + đường giữa `m`, cùng nguồn Make Me a Hanzi/Arphic, giống dữ liệu
@@ -148,6 +148,14 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   Cách nhớ người khác LUÔN qua `noteClean`. Khung "Cách nhớ" (người dùng yêu cầu 27/11/2026): KHÔNG hiện mẹo nhớ của app (vẫn ở ※ Giải thích),
   KHÔNG có nút "Báo không phù hợp" — thay bằng dòng khích lệ chấm sao `.meo-khich` (chỉ hiện ở cách nhớ mình chưa chấm). `hanco_bao` + phần "Bị báo"
   ở Quản trị giữ để đọc báo cáo cũ; localStorage `hanco-meo-bao` cũ không dùng nữa (không xóa).
+- MẪU CHẤM NHẦM (người dùng yêu cầu 28/11/2026): mỗi lần bấm "Tôi viết đúng mà" / "Tôi viết sai mà" (`saveSample`) mẫu vẫn lưu ở máy và, khi đang
+  đăng nhập, gửi nền lên `hanco_cham/{uid}_{giờ ms}` = {u, k dung|sai|cau, ch, cell, cols, s chuỗi JSON nét (Firestore không cho mảng lồng mảng; ≤ 300.000 ký
+  tự, dài hơn thì bớt điểm), r chuỗi JSON kết quả chấm, t, v ngưỡng bộ chấm lúc đó (`gVer`), upd} (`chamFlush`: lúc lưu mẫu + sau mỗi lần đồng bộ). Mẫu ở máy
+  thêm `u` (uid lúc lưu, "" = chưa đăng nhập → không gửi) + `g` (1 đã gửi, 2 bỏ); mẫu cũ không có `u` gửi dưới tài khoản đang đăng nhập. Trần `CHAM_CAP` = 100
+  mẫu/ngày/máy (localStorage `hanco-cham-gui` {d, n}), mỗi lượt ≤ 20, còn thì gửi bù. Luật: thành viên "ok" + quản trị chỉ TẠO mẫu của mình; chỉ quản trị đọc,
+  xóa, ghi kết luận `qd` appsai | appdung | bo + `qdt`. Quản trị → Chấm nhầm (`qtCham`): chữ viết tay (chữ mẫu mờ phía sau) cạnh chữ gốc, kết quả lúc báo +
+  ngưỡng, "Chấm lại" bằng bộ chấm hiện tại (`chamRe`), lọc, xóa, "Tải mẫu đã kết luận" (dạng tệp #viet-mau + qd, ma, v — không uid/họ tên) để đưa Claude chỉnh
+  ngưỡng `gradeShape` (giữ đúng cả mẫu "appdung" — bộ thử chống chấm sai ngược). Xóa người → `chamWipe`. Màn người học chỉ nói mẫu "gửi đi để giúp app chấm đúng hơn".
 - THÔNG BÁO (người dùng yêu cầu 27/11/2026): nút chuông `#tbxbtn` (số chưa đọc) cạnh nút ảnh, khung danh sách `tbxOpen`. Thêm thông báo CHỈ qua
   `tbxAdd(khóa riêng, loại tt|vl|qt|sao, chữ, "#địa chỉ" | "meo:<id>")` (trùng khóa → bỏ qua). Đang có: huy hiệu (`checkBadges`), lên cấp (`lvUp`),
   cúp tuần (`cupApply`), thông báo chung + ngày thi chung, còn 7/3/1/0 ngày tới ngày thi, thẻ cần ôn hôm nay, chuỗi sắp đứt (sau 18 giờ) — `tbxScan`
