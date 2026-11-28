@@ -951,9 +951,9 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
    cao hơn chỗ hiện, đầu khung bị cắt trên máy tính bảng 26/11/2026); margin auto: khung cao quá thì vẫn cuộn lên thấy đầu */
 .modal .box { background: var(--surface); border-radius: 16px; max-width: 640px; width: 100%; max-height: 90vh; max-height: calc(100dvh - 32px); margin: auto; overflow: auto; padding: 18px; position: relative; }
 /* Băng Phách Đan (28/11/2026) */
-:root { --ice: #1f74a8; --ice-soft: #e2f2fb; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ice: #8fd0f2; --ice-soft: #16303f; } }
-:root[data-theme="dark"] { --ice: #8fd0f2; --ice-soft: #16303f; }
+:root { --ice: #1f74a8; --ice-soft: #e2f2fb; --ice-btn: linear-gradient(135deg, #2f93d0, #17588a); --ice-ink: #fff; --ice-glow: rgba(31, 116, 168, .5); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ice: #8fd0f2; --ice-soft: #16303f; --ice-btn: linear-gradient(135deg, #b4e6fb, #6cbfe8); --ice-ink: #0b1a24; --ice-glow: rgba(143, 208, 242, .55); } }
+:root[data-theme="dark"] { --ice: #8fd0f2; --ice-soft: #16303f; --ice-btn: linear-gradient(135deg, #b4e6fb, #6cbfe8); --ice-ink: #0b1a24; --ice-glow: rgba(143, 208, 242, .55); }
 .stats .pill.streak[role="button"] { cursor: pointer; }
 .dan { display: flex; gap: 14px; align-items: flex-start; }
 .dan-ic { flex: 0 0 auto; width: 72px; height: 72px; }
@@ -964,7 +964,20 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
 .dan-hd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .dan-hd b { font-size: 1.05rem; }
 .dan-hd .han { font-family: var(--f-han); font-weight: 400; color: var(--muted); }
-.dan-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--ice-soft); color: var(--ice); font-size: .8rem; font-weight: 800; white-space: nowrap; }
+.dan-pill { display: inline-flex; align-items: baseline; gap: .5em; padding: 3px 12px; border-radius: 999px; background: var(--ice-soft); color: var(--ice); font-size: .8rem; font-weight: 800; white-space: nowrap; word-spacing: .12em; }
+.dan-cnt { font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .06em; }
+/* nút mua Băng Phách Đan: xanh băng đặc, nổi hẳn so với nút thường / nút khóa (người dùng yêu cầu 28/11/2026) */
+.btn.dan-buy { background: var(--ice-btn); border-color: transparent; color: var(--ice-ink); font-weight: 800; box-shadow: 0 3px 10px var(--ice-glow); }
+.btn.dan-buy:hover { border-color: transparent; filter: brightness(1.07); }
+.btn.dan-buy:active { transform: translateY(1px); box-shadow: 0 1px 4px var(--ice-glow); }
+.btn.dan-big { flex: 1 1 180px; min-height: 58px; padding: 10px 22px; gap: 12px; font-size: 1.1rem; border-radius: 14px; animation: danglow 2.2s ease-out infinite; }
+.btn.dan-big small { display: block; font-size: .82rem; font-weight: 700; opacity: .92; }
+.dan-sn { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .24); font-size: 1.25rem; line-height: 1; }
+.dan-bt { display: grid; justify-items: start; line-height: 1.2; text-align: left; }
+.btn.dan-no { flex: 0 1 auto; min-height: 58px; padding-inline: 20px; }
+.dan-q { flex: 1 1 100%; text-align: center; }
+@keyframes danglow { 0% { box-shadow: 0 3px 10px var(--ice-glow), 0 0 0 0 var(--ice-glow); } 70%, 100% { box-shadow: 0 3px 10px var(--ice-glow), 0 0 0 12px transparent; } }
+@media (prefers-reduced-motion: reduce) { .btn.dan-big { animation: none; } }
 .dan-pill.full { background: var(--good-soft); color: var(--good); }
 .dan-lad { list-style: none; margin: 6px 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .dan-lad li { display: grid; justify-items: center; gap: 2px; padding: 8px 2px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
@@ -977,8 +990,7 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
 .dan-xp { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0 4px; }
 .dan-xp > div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .dan-xp span { font-size: .8rem; }
-.dan-q { font-weight: 700; }
-@media (max-width: 420px) { .dan-ic { width: 56px; height: 56px; } .dan-lad li { padding: 6px 1px; } .dan-lad li b { font-size: .85rem; } }
+.dan-q { font-weight: 700; }@media (max-width: 420px) { .dan-ic { width: 56px; height: 56px; } .dan-lad li { padding: 6px 1px; } .dan-lad li b { font-size: .85rem; } }
 .modal .x { position: absolute; top: 10px; right: 10px; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: calc(100% - 32px); }
 .xpfly { position: fixed; z-index: 61; font-weight: 800; font-size: 1.15rem; color: var(--gold); pointer-events: none; white-space: nowrap; text-shadow: 0 1px 0 var(--bg), 0 0 8px var(--bg); opacity: 0; }
