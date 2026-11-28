@@ -428,7 +428,10 @@ a.lk { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--mu
 .work > .gtwrap { width: min(560px, 100%); }
 /* chế độ tập viết gián tiếp (người dùng yêu cầu 27/11/2026): hướng dẫn, khích lệ, khung đáp án, lựa chọn ở Cài đặt */
 .vhd { width: 100%; font-size: 0.9rem; line-height: 1.45; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface-2); }
-.vkh { width: 100%; font-size: 0.86rem; line-height: 1.45; color: var(--good); }
+/* dòng khích lệ làm nổi bật (người dùng yêu cầu 28/11/2026): thẻ nền xanh + viền trái dày + huy hiệu ✎; cụm chính in đậm */
+.vkh { width: 100%; box-sizing: border-box; display: flex; gap: 10px; align-items: flex-start; font-size: 0.94rem; line-height: 1.45; color: var(--ink); background: var(--good-soft); border: 1px solid var(--good); border-left-width: 5px; border-radius: 10px; padding: 9px 12px; }
+.vkh::before { content: "\270E"; flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; background: var(--good); color: var(--accent-ink); display: grid; place-items: center; font-size: 0.85rem; line-height: 1; }
+.vkh b { color: var(--good); font-weight: 700; }
 .vmode { width: 100%; font-size: 0.8rem; color: var(--muted); }
 .vguide { width: min(560px, 100%); display: grid; gap: 8px; }
 .vans { width: 100%; min-height: 150px; display: grid; gap: 6px; place-items: center; align-content: center; text-align: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }

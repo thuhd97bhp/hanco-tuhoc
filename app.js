@@ -3663,12 +3663,12 @@
     if (it.nb) h += '<div class="nb">' + esc(noHan(it.nb)) + "</div>";
     return h;
   }
-  var VIET_KHICH = "Hãy tập viết thật, rồi cho app biết bạn viết đúng hay sai. App lưu lại mức độ nhớ từng chữ của bạn để xếp lịch ôn cho phù hợp: chữ hay sai sẽ được ôn lại sớm hơn, chữ đã vững thì giãn ra.";
+  var VIET_KHICH = "Hãy <b>tập viết thật</b>, rồi cho app biết bạn viết <b>đúng hay sai</b>. App lưu lại mức độ nhớ từng chữ của bạn để xếp lịch ôn cho phù hợp: chữ hay sai sẽ được <b>ôn lại sớm hơn</b>, chữ đã vững thì giãn ra.";
   // đề viết: CHỈ âm, nghĩa, số chữ
   function vietPrompt(it) { return '<div class="fc" style="min-height:auto"><div class="ans"><div class="am">' + esc(noHan(it.am)) + "</div>" + meanNoHan(it) + '<div class="extra">' + chars(it.key).filter(isHan).length + " chữ</div></div></div>"; }
   function vietGuide(sent, kh) { // kh: lời khích lệ riêng (vd kho khó không đổi lịch ôn)
     return '<div class="vhd"><b>Cách tập:</b> viết ' + (sent ? "cả câu bằng chữ Hán theo phiên âm và lời dịch" : "chữ Hán theo âm và nghĩa ở trên") + ' ra giấy (hoặc bất cứ đâu bạn muốn). Viết xong bấm <b>Xem đáp án</b>, so với chữ bạn viết rồi tự chấm <b>Đúng / Sai</b>. Muốn viết ngay trên màn hình thì bấm <b>Mở bảng viết</b>.</div>' +
-      '<div class="vkh">✎ ' + (kh || VIET_KHICH) + '</div><div class="vmode">Đang dùng chế độ viết gián tiếp (ra giấy) · <a href="#caidat-viet">đổi ở Cài đặt</a></div>';
+      '<div class="vkh"><span>' + (kh || VIET_KHICH) + '</span></div><div class="vmode">Đang dùng chế độ viết gián tiếp (ra giấy) · <a href="#caidat-viet">đổi ở Cài đặt</a></div>';
   }
   // phần bên phải của màn viết gián tiếp (dùng chung id với màn viết trực tiếp: #self #bad #good #aft #nx #fb)
   function vietIndirect(guide) { // guide = hướng dẫn + khích lệ: nằm DƯỚI hàng nút (điện thoại không phải kéo xuống mới thấy nút)
@@ -6368,7 +6368,7 @@
         $("#rev3", v).onclick = function () {
           $("#sans", v).classList.remove("hide"); $("#sg3", v).classList.remove("hide"); this.classList.add("hide");
           if (pad) pad.model(true);
-          if (wres === null) sayS('<div class="muted">So với câu bạn đã viết' + (padOn ? "" : " ra giấy") + ', rồi tự chấm ở hàng nút dưới cùng.</div><div class="vkh">✎ ' + VIET_KHICH + "</div>");
+          if (wres === null) sayS('<div class="muted">So với câu bạn đã viết' + (padOn ? "" : " ra giấy") + ', rồi tự chấm ở hàng nút dưới cùng.</div><div class="vkh"><span>' + VIET_KHICH + "</span></div>");
         };
         $("#sbad", v).onclick = function () { wres = false; beep(false); sayS('<div class="verdict no">Đã ghi: còn chữ sai</div><div class="muted">Không sao! Câu này sẽ được ôn lại sớm hơn. Bấm “Xong câu này” để lưu.</div>'); };
         $("#sgood", v).onclick = function () { wres = true; beep(true); sayS('<div class="verdict ok">Đã ghi: viết đúng hết ✓</div><div class="muted">Bấm “Xong câu này” để lưu.</div>'); };

@@ -739,7 +739,7 @@
     function qWrite(it) {
       var scored = false, firstG = null;
       var info = HC.vietPrompt(it).replace(" chữ</div></div></div>", " chữ · viết chữ phồn thể</div></div></div>");
-      var kh = "Hãy viết thật rồi tự chấm cho đúng: app ghi lại chữ nào bạn còn hay sai để bạn luyện lại trong kho khó.";
+      var kh = "Hãy <b>viết thật</b> rồi tự chấm cho <b>đúng</b>: app ghi lại chữ nào bạn còn hay sai để bạn luyện lại trong kho khó.";
       v.innerHTML = head(g) + '<div class="stage">' + ksTop(it, i, N) + '<div class="work"><div class="winfo">' + info +
         (wPad ? '<div class="row" style="justify-content:center" id="giveup"><button class="btn sm ghost" id="selfg">Tự chấm (xem đáp án)</button>' + (HC.vietMode() === "gt" ? '<button class="btn sm ghost" id="cpad">Đóng bảng viết</button>' : "") + "</div>" : "") + "</div>" +
         (wPad ? '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row" id="w1"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="chk">Chấm điểm</button></div>'
