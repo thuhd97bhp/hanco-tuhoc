@@ -745,7 +745,7 @@
         (wPad ? '<div class="wpadc"><div class="padwrap" id="padbox"></div><div class="acts"><div class="row" id="w1"><button class="btn" id="undo">Xóa nét cuối</button><button class="btn" id="clr">Xóa hết</button><button class="btn" id="idk">Không nhớ</button><button class="btn primary" id="chk">Chấm điểm</button></div>'
           : '<div class="wpadc"><div class="vans" id="vans"><span class="muted">Viết ra giấy rồi bấm Xem đáp án — đáp án sẽ hiện ở đây</span></div><div class="acts"><div class="row" id="w1"><button class="btn" id="opad">✎ Mở bảng viết</button><button class="btn primary" id="rev">Xem đáp án</button></div>') +
         '<div class="row hide" id="self"><button class="btn bad" id="sbad">Tôi viết sai</button><button class="btn good" id="sgood">Tôi viết đúng</button></div><div class="row hide" id="aft"><button class="btn primary" id="nx">' + nxLabel() + "</button></div></div></div>" +
-        '<div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div>' + (wPad ? "" : HC.vietGuide(false, kh)) + "</div></div></div>";
+        '<div class="wfb"><div class="gfb hide" id="fb" role="status"></div><div class="row hide" id="apl" style="justify-content:center"><button class="btn sm ghost" id="appeal">Tôi viết đúng mà — tính là Đúng</button></div><div class="row hide" id="apn" style="justify-content:center"><button class="btn sm ghost" id="appealno">Tôi viết sai mà — tính là Sai</button></div>' + (wPad ? "" : HC.vietGuide(false, kh)) + "</div></div></div>";
       setScore(v, score);
       var q = function (s) { return v.querySelector(s); }, fb = q("#fb");
       function say(h) { fb.innerHTML = h; fb.classList.remove("hide"); }
@@ -775,7 +775,7 @@
           scored = true; firstG = pad.graded(); result(good, chk);
           var asGt = !good && it.gt && pad.alsoIs(it.gt).some(Boolean) ? '<div class="no">Bạn đã viết dạng rút gọn <span class="han">' + esc(it.gt) + '</span>. Ở đây cần chữ phồn thể <span class="han">' + esc(it.key) + "</span>.</div>" : "";
           say('<div class="verdict ' + (good ? "ok" : "no") + '">' + (good ? "Đúng ✓" : "Chưa đúng ✗") + "</div>" + asGt + lines + (good ? "" : '<div class="muted">Chữ mẫu hiện mờ phía sau.</div>'));
-          q("#apl").classList.toggle("hide", good);
+          q("#apl").classList.toggle("hide", good); q("#apn").classList.toggle("hide", !good);
           show("aft");
         }, function () {
           chk.disabled = false; chk.textContent = "Chấm điểm"; pad.model(true);
@@ -788,6 +788,13 @@
         if (firstG) HC.saveSample(it.key, firstG, pad.size, "dung");
         q("#apl").classList.add("hide");
         say('<div class="verdict ok">Đã tính là Đúng ✓</div><div class="muted">Cảm ơn bạn! Chữ này đã được lưu để chỉnh lại cách chấm (Tập viết → Mẫu chấm nhầm).</div>');
+      };
+      q("#appealno").onclick = function () {
+        if (q("#apn").classList.contains("hide")) return; // đã bấm rồi → không trừ điểm lần nữa
+        rec.unfix(it); score = Math.max(0, score - 1); setScore(v, score);
+        if (firstG) HC.saveSample(it.key, firstG, pad.size, "sai");
+        q("#apn").classList.add("hide"); pad.model(true);
+        say('<div class="verdict no">Đã tính là Sai ✗</div><div class="muted">Cảm ơn bạn! Chữ này đã được lưu để chỉnh lại cách chấm (Tập viết → Mẫu chấm nhầm). Chữ mẫu hiện mờ phía sau, luyện thêm chữ này nhé: <span class="han">' + esc(it.key) + "</span></div>");
       };
     }
     // câu: xếp các chữ theo đúng thứ tự (câu dài: từng vế); đúng khi không bấm sai lần nào
