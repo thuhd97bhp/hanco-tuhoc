@@ -77,7 +77,7 @@
   // ---------- state + storage ----------
   var LS = "hanco-tuhoc-v1";
   var S, remote = { db: null, ref: null, status: "local", writing: false, pending: false };
-  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {}, hard: {}, pl: {}, note: {}, plans: {}, lt: {}, cup: {}, rec: {}, meo: {} }; }
+  function blank() { return { v: 1, start: today(), set: { newC: 20, newW: 17, sound: true }, it: {}, xp: 0, streak: { d: 0, c: 0 }, best: {}, log: {}, badges: {}, upd: 0, itT: {}, gm: {}, hard: {}, pl: {}, note: {}, plans: {}, lt: {}, cup: {}, rec: {}, meo: {}, dan: { m: {}, u: {} } }; }
   // plans[kỳ] = {s ngày bắt đầu, e ngày thi, t ms sửa, x ms bỏ (0 = đang học)} · lt[từ ngữ pháp] = [hộp, hạn ôn, số lần sai, ngày học, ms chấm]
   // hard[id] = t (ms thêm vào kho khó; âm = −ms lúc bỏ) · pl[plId] = {n tên, nt ms đặt tên, x ms xóa (0 = còn), ids {id: t như hard}}
   // note[id] = ["văn bản", ms] (văn bản rỗng = đã xóa). Gộp đồng bộ theo từng mục (mergeT) để máy nào thêm/xóa cũng không mất.
@@ -232,6 +232,9 @@
     if (rb.hb && (!ra.hb || rb.hb < ra.hb || (rb.hb === ra.hb && rb.hk && (!ra.hk || rb.hk < ra.hk)))) { m.rec.hb = rb.hb; m.rec.hk = rb.hk; }
     Object.keys(rb.pf).forEach(function (d) { m.rec.pf[d] = Math.max(+m.rec.pf[d] || 0, +rb.pf[d] || 0); });
     if (ra.lg || rb.lg) m.rec.lg = Math.max(ra.lg || 0, rb.lg || 0);
+    // Băng Phách Đan (28/11/2026): gộp HỢP — mỗi lần mua có mã riêng (không mất lần mua nào), lần dùng theo ngày (1 ngày chỉ trừ 1 viên)
+    var da = danNorm(a.dan), db = danNorm(b.dan);
+    m.dan = { m: Object.assign({}, da.m, db.m), u: Object.assign({}, da.u, db.u) };
     return m;
   }
   // gộp {id: t}: t > 0 = thêm lúc t, t < 0 = bỏ lúc −t. Lấy |t| lớn hơn; bằng nhau thì "bỏ" thắng (gộp theo thứ tự nào cũng ra một kết quả)
@@ -356,6 +359,7 @@
     a = s.cup || {}; b = r.cup || {}; for (k in a) if (!b[k] || gt(b[k], a[k])) return true;
     a = s.rec || {}; b = r.rec || {}; if (a.hb > 0 && (!(b.hb > 0) || a.hb < b.hb)) return true; if (gt(a.lg, b.lg)) return true;
     a = a.pf || {}; b = b.pf || {}; for (k in a) if (gt(a[k], b[k])) return true;
+    a = s.dan || {}; b = r.dan || {}; for (k in a.m || {}) if (!(b.m || {})[k]) return true; for (k in a.u || {}) if (!(b.u || {})[k]) return true;
     return gt(s.xp, r.xp) || (gt(s.upd, r.upd) && (s.start !== r.start || JSON.stringify(s.set) !== JSON.stringify(r.set)));
   }
   // nhận bản của tài khoản từ máy chủ (get hoặc onSnapshot): gộp vào S; máy còn phần tài khoản chưa có → dirty (sẽ ghi)
@@ -1928,7 +1932,14 @@
     Object.keys(s.lt).forEach(function (k) { if (!Array.isArray(s.lt[k]) || s.lt[k].length < 5) delete s.lt[k]; });
     return normalize0(s);
   }
-  function normalize0(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note", "cup", "rec", "meo"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); recNorm(s.rec); return s; }
+  function normalize0(s) { var b = blank(); Object.keys(b).forEach(function (k) { if (s[k] == null) s[k] = b[k]; }); Object.keys(b.set).forEach(function (k) { if (s.set[k] == null) s.set[k] = b.set[k]; }); ["hard", "pl", "note", "cup", "rec", "meo"].forEach(function (k) { if (typeof s[k] !== "object" || Array.isArray(s[k])) s[k] = {}; }); recNorm(s.rec); s.dan = danNorm(s.dan); return s; }
+  // Băng Phách Đan: dan = {m {mã lần mua: giá XP}, u {ngày đã dùng: 1}} — số viên đang giữ = số lần mua − số ngày đã dùng
+  function danNorm(o) {
+    var r = { m: {}, u: {} }; if (!o || typeof o !== "object" || Array.isArray(o)) return r;
+    if (o.m && typeof o.m === "object") Object.keys(o.m).forEach(function (k) { var v = +o.m[k]; if (v > 0) r.m[k] = v; });
+    if (o.u && typeof o.u === "object") Object.keys(o.u).forEach(function (k) { if (+k > 0) r.u[k] = 1; });
+    return r;
+  }
   // kỷ lục (Bước 7): rec = {hb hạng tuần cao nhất (0 = chưa có), hk tuần đạt hạng đó, pf {ngày: số bài không sai}}
   // + lg giải đấu cao nhất từng đạt 1–7 (27/11/2026; chỉ có khi > 0 → tiến độ cũ không đổi)
   function recNorm(r) { r.hb = +r.hb > 0 ? +r.hb : 0; r.hk = +r.hk || 0; if (typeof r.pf !== "object" || !r.pf || Array.isArray(r.pf)) r.pf = {}; var lg = Math.floor(+r.lg || 0); if (lg >= 1) r.lg = Math.min(lg, 7); else delete r.lg; return r; }
@@ -2122,12 +2133,80 @@
   // ---------- XP, streak, log, badges ----------
   function addLog(k, n) { var t = today(); var l = S.log[t] || (S.log[t] = { n: 0, r: 0, x: 0 }); l[k] = (l[k] || 0) + n; }
   function addXP(n, el) {
-    if (!n) return; var l0 = lvl().l; S.xp += n; addLog("x", n);
+    if (!n) return; danFreeze(); var l0 = lvl().l; S.xp += n; addLog("x", n);
     var t = today();
     if (S.streak.d !== t) { S.streak.c = (S.streak.d === t - 1) ? S.streak.c + 1 : 1; S.streak.d = t; }
     if (n > 0) xpShow(n, el, lvl().l > l0 ? lvl().l : 0); // MỌI lần cộng điểm đều hiện "+N XP" + âm thanh (người dùng yêu cầu 26/11/2026)
   }
   HC.addXP = function (n, el) { addXP(n, el); };
+  // ---------- BĂNG PHÁCH ĐAN 冰魄丹 (người dùng yêu cầu 28/11/2026) ----------
+  // Giống "Streak Freeze": ngày không học → tự dùng 1 viên, chuỗi ngày giữ nguyên (ngày dùng đan không cộng thêm vào chuỗi).
+  // Mua bằng XP TIÊU ĐƯỢC = S.xp − tổng giá đã mua (S.xp, cấp, bảng xếp hạng, giải đấu KHÔNG bị trừ). Giữ tối đa DAN_MAX viên;
+  // giá theo SỐ VIÊN ĐANG GIỮ (DAN_GIA[số đang giữ]). Bỏ lỡ nhiều ngày hơn số viên đang giữ → chuỗi đứt, không tiêu viên nào.
+  var DAN_MAX = 5, DAN_GIA = [500, 1000, 2000, 3500, 5000];
+  function danSo() { var d = S.dan || {}; return Math.max(0, Object.keys(d.m || {}).length - Object.keys(d.u || {}).length); }
+  function danChi() { var n = 0, m = (S.dan || {}).m || {}; Object.keys(m).forEach(function (k) { n += +m[k] || 0; }); return n; }
+  function danXP() { return Math.max(0, (S.xp || 0) - danChi()); }
+  function danGia() { var n = danSo(); return n < DAN_MAX ? DAN_GIA[n] : 0; }
+  function danFreeze(scan) { // trả số viên vừa dùng
+    if (!S || !S.streak) return 0;
+    if (scan && fb.user && !fb.remOk) return 0; // còn chờ bản tiến độ của tài khoản (máy khác có thể đã học hôm qua)
+    var t = today(), d = +S.streak.d || 0, c = +S.streak.c || 0, gap = t - 1 - d, have = danSo(), u = (S.dan || {}).u || {}, need = 0, i;
+    if (!d || c < 1 || gap < 1) return 0;
+    for (i = d + 1; i < t; i++) if (!u[i]) need++; // ngày đã dùng đan rồi (vd ở máy khác) không trừ thêm viên
+    if (need > have) return 0;
+    S.dan = danNorm(S.dan);
+    for (i = d + 1; i < t; i++) S.dan.u[i] = 1;
+    S.streak.d = t - 1; save();
+    if (!need) return 0;
+    var msg = "Băng Phách Đan đã giữ chuỗi " + c + " ngày của bạn (" + (gap > 1 ? "dùng " + need + " viên cho " + gap + " ngày nghỉ" : "dùng 1 viên cho ngày nghỉ hôm qua") + "). Còn " + danSo() + " viên.";
+    tbxAdd("dan:" + (t - 1), "dan", msg, "dan:");
+    setTimeout(function () { try { toast("❄ " + msg); renderStats(); } catch (e) { } }, 0);
+    return need;
+  }
+  HC.danFreeze = danFreeze;
+  var DAN_SVG = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="dang" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#f4fcff"/><stop offset=".45" stop-color="#9fdcf7"/><stop offset="1" stop-color="#2f8fcf"/></radialGradient></defs>' +
+    '<circle cx="32" cy="34" r="22" fill="url(#dang)" stroke="#2a7fb8" stroke-width="1.5"/><path d="M32 20v28M20 27l24 14M44 27 20 41" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".85"/>' +
+    '<path d="M32 20l-3 3m3-3 3 3M32 48l-3-3m3 3 3-3" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".85"/><ellipse cx="25" cy="25" rx="6" ry="3.5" fill="#fff" opacity=".7" transform="rotate(-30 25 25)"/>' +
+    '<path d="M18 16l2-5 2 5-5-2 5-2zM48 12l1.5-3.5L51 12l-3.5-1.5L51 9z" fill="#bfe9fb"/></svg>';
+  function danOpen(onClose) {
+    var ask = false, mo = modal('<div id="danbox"></div>', typeof onClose === "function" ? onClose : null);
+    function draw() {
+      var box = mo.el.querySelector("#danbox"); if (!box) return;
+      var n = danSo(), gia = danGia(), xp = danXP(), chi = danChi(), du = Object.keys((S.dan || {}).u || {}).length;
+      var sc = S.streak.d >= today() - 1 ? S.streak.c : 0;
+      var lad = DAN_GIA.map(function (g, i) { return '<li class="' + (i < n ? "on" : i === n ? "nx" : "") + '"><span class="dan-i">' + (i < n ? "❄" : i + 1) + "</span><b>" + fmt(g) + "</b><small>XP</small></li>"; }).join("");
+      var btn;
+      if (n >= DAN_MAX) btn = '<button class="btn" type="button" disabled>Đã trang bị đủ</button>';
+      else if (xp < gia) btn = '<button class="btn" type="button" disabled>Cần thêm ' + fmt(gia - xp) + " XP</button>";
+      else if (ask) btn = '<span class="dan-q">Mua viên thứ ' + (n + 1) + " với giá " + fmt(gia) + ' XP?</span><button class="btn" type="button" data-dan="ok">Mua</button><button class="btn ghost" type="button" data-dan="no">Thôi</button>';
+      else btn = '<button class="btn" type="button" data-dan="buy">Mua viên thứ ' + (n + 1) + " · " + fmt(gia) + " XP</button>";
+      box.innerHTML = '<h2>Tăng sức mạnh</h2><div class="dan"><div class="dan-ic">' + DAN_SVG + '</div><div class="dan-tx"><div class="dan-hd"><b>Băng Phách Đan <span class="han">冰魄丹</span></b><span class="dan-pill' + (n >= DAN_MAX ? " full" : "") + '">Đã trang bị ' + n + " / " + DAN_MAX + "</span></div>" +
+        '<p class="sub">Ngày nào bạn không vào học, một viên Băng Phách Đan tự được dùng để giữ nguyên chuỗi ngày học. Nghỉ nhiều ngày hơn số viên đang có thì chuỗi vẫn đứt và đan không bị dùng.</p></div></div>' +
+        '<h3>Giá từng viên</h3><ol class="dan-lad">' + lad + '</ol><p class="sub">Giá tính theo số viên đang giữ: càng giữ nhiều, viên mua thêm càng đắt. Dùng bớt một viên thì lần mua sau rẻ lại.</p>' +
+        '<div class="dan-xp"><div><span class="muted">XP tiêu được</span><b class="num">' + fmt(xp) + ' XP</b></div><div><span class="muted">Chuỗi hiện tại</span><b>🔥 ' + sc + ' ngày</b></div><div><span class="muted">Đã dùng</span><b>' + du + " lần</b></div></div>" +
+        '<p class="sub">XP tiêu được = tổng XP (' + fmt(S.xp || 0) + ") − XP đã mua đan (" + fmt(chi) + "). Mua đan không làm giảm tổng XP, cấp hay thứ hạng của bạn.</p>" +
+        '<div class="row acts">' + btn + "</div>";
+    }
+    mo.el.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-dan]"); if (!b) return;
+      var a = b.getAttribute("data-dan");
+      if (a === "buy") ask = true;
+      else if (a === "no") ask = false;
+      else if (a === "ok") {
+        ask = false;
+        var gia = danGia();
+        if (gia && danXP() >= gia) {
+          S.dan = danNorm(S.dan); S.dan.m["b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)] = gia; save();
+          coin(8); toast("Đã trang bị Băng Phách Đan (" + danSo() + " / " + DAN_MAX + ")");
+          try { renderStats(); } catch (er) { }
+        }
+      }
+      draw();
+    });
+    draw();
+  }
+  HC.danOpen = danOpen;
   function lvl() { var x = S.xp, l = 1, need = 100; while (x >= need) { x -= need; l++; need = Math.round(need * 1.15); } return { l: l, cur: x, need: need }; }
   var BADGES = [ // thành tích đặc biệt 1 cấp (các huy hiệu cũ khác nay là cấp của nhóm huy hiệu — BFAM bên dưới)
     { id: "c594", g: "通", t: "Xong chữ thông dụng", ok: function () { return QC.slice(0, COMMON_C).every(function (c) { return introduced(c.id); }); } },
@@ -3226,6 +3305,7 @@
       (avCan() ? '<button class="btn sm" type="button" id="xhavc">' + (avMyV(mk) > 0 ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên") + "</button>" : "") + "</div></div></div>" : "";
     var gk = mk && BXH.gd ? gdOf(BXH.gd, mk).t : 0, glg = (S.rec && S.rec.lg) || 0;
     if (fb.user && (gk || glg)) me += '<div class="card"><h2>Giải đấu</h2><p class="gdpf">' + gdShield(gk || glg, "sm") + "<span>" + (gk ? "Tuần này: giải <b>" + esc(GD[gk].t) + "</b>" : "Giải cao nhất: <b>" + esc(GD[glg].t) + "</b>") + (gk && glg > gk ? ' <small class="muted">· cao nhất từng đạt: ' + esc(GD[glg].t) + "</small>" : "") + ' · <a href="#xh">Xem nhóm của tôi</a></span></p></div>';
+    me += '<div class="card"><div class="dan dan-sm"><div class="dan-ic">' + DAN_SVG + '</div><div class="dan-tx"><div class="dan-hd"><b>Băng Phách Đan</b><span class="dan-pill' + (danSo() >= DAN_MAX ? " full" : "") + '">Đã trang bị ' + danSo() + " / " + DAN_MAX + '</span></div><p class="sub">Giữ chuỗi ngày học khi bạn lỡ nghỉ một ngày.</p><button class="btn sm" type="button" id="xhdan">' + (danSo() >= DAN_MAX ? "Xem" : "Mua thêm") + "</button></div></div></div>";
     box.innerHTML = me + '<div class="card"><h2>Kỷ lục cá nhân</h2><p class="sub">Cấp ' + L.l + " · " + fmt(S.xp || 0) + " XP · chuỗi hiện tại " + (S.streak.d >= today() - 1 ? S.streak.c : 0) + " ngày.</p>" + recGrid(rc, rc) +
       (rc.hb && rc.hk ? '<p class="sub" style="margin-top:8px">Hạng tuần cao nhất đạt ở ' + perName("w", rc.hk).toLowerCase() + ".</p>" : "") + "</div>" +
       '<div class="card"><h2>Huy hiệu</h2><div class="bfams">' + BFAM.map(function (f) { return famHTML(f, null, true); }).join("") + "</div><h3>Thành tích đặc biệt</h3>" +
@@ -3233,6 +3313,7 @@
       '<div class="card"><h2>Cúp tuần</h2><p class="cups">' + cupHTML(cp) + "</p>" + (cups.length ? '<ul class="qtls">' + cups.slice(0, 30).map(function (k) { return "<li>" + perName("w", k) + ": cúp " + MEDAL[S.cup[k]] + "</li>"; }).join("") + "</ul>" : '<p class="sub">Chưa có. Vào top 3 XP của một tuần để nhận cúp (chốt 12 giờ trưa thứ Hai tuần sau).</p>') + "</div>";
     avFill(box);
     var avc = $("#xhavc", box); if (avc) avc.onclick = function () { avPick(mk); };
+    var xd = $("#xhdan", box); if (xd) xd.onclick = function () { var n0 = danSo(); danOpen(function () { if (danSo() !== n0 && box.isConnected) route(); }); };
   }
 
 
@@ -4375,7 +4456,7 @@
   //   sk mã vai lúc lấy mốc, sc ms lần đọc sao gần nhất}. Trùng khóa → bỏ qua (không báo 2 lần).
   // Sao: KHÔNG có Cloud Functions → máy tự đọc cách nhớ của mình (hanco_meo where uid == myKey("me")) tối đa 1 lần/giờ; lượt chấm MỚI hoặc
   //   vừa nâng lên 4–5 sao → báo (1–3 sao không báo; không nói tên người chấm). Lần đầu (hoặc đổi vai) chỉ ghi mốc, không báo dồn.
-  var TBX_MAX = 50, TBX_SAO_GAP = 3600e3, TBX_IC = { tt: "🏆", vl: "📌", qt: "📣", sao: "⭐" };
+  var TBX_MAX = 50, TBX_SAO_GAP = 3600e3, TBX_IC = { tt: "🏆", vl: "📌", qt: "📣", sao: "⭐", dan: "❄" };
   function tbxKey() { return "hanco-tb-" + (fb.user ? fb.user.uid : "khach"); }
   function tbxGet() { var o = jget(tbxKey()); if (!o.L || !o.L.push) o.L = []; return o; }
   function tbxPut(o) { if (o.L.length > TBX_MAX) o.L = o.L.slice(0, TBX_MAX); lsSet(tbxKey(), JSON.stringify(o)); tbxBadge(); }
@@ -4434,6 +4515,7 @@
       var x = tbxGet().L[+b.getAttribute("data-tbi")]; if (!x || !x.h) return;
       closeSheet();
       if (x.h.indexOf("meo:") === 0) { if (ITEM[x.h.slice(4)]) meoSheet(x.h.slice(4)); }
+      else if (x.h === "dan:") danOpen();
       else if (location.hash === x.h) route(); else location.hash = x.h;
     });
     tbxOpenEl.querySelector("#tbxx").onclick = function () {
@@ -4448,6 +4530,7 @@
   function tbxScan() {
     if (!S || !D) return;
     try {
+      danFreeze(true); // Băng Phách Đan: ngày nghỉ học → tự dùng đan giữ chuỗi
       var t0 = today(), hr = new Date().getHours(), tb = CHG.tb;
       if (tb && tb.h && tb.t) { var s = String(tb.h).replace(/\s+/g, " ").trim(); tbxAdd("qt:" + tb.t, "qt", "Thông báo chung: " + (s.length > 160 ? s.slice(0, 157) + "…" : s), "#home"); }
       thiRows(t0).forEach(function (r) { tbxAdd("thic:" + r.k + ":" + r.e, "vl", "Quản trị viên đặt ngày thi chung " + r.T.name + ": " + dateY(r.e) + ". Bấm để xem và áp dụng cho lộ trình của bạn.", "#home"); });
@@ -5671,6 +5754,7 @@
     var sw = $("#scwho"); if (sw) sw.onclick = function () { var b = $("#avbtn"); if (b) avMenu(b); };
     var fi = $("#fbin"); if (fi) fi.onclick = HC.fbSignIn;
     var tq = $("#tbxbtn"); if (tq) tq.onclick = tbxOpen;
+    var stk = $("#stats .pill.streak"); if (stk) { stk.setAttribute("role", "button"); stk.tabIndex = 0; stk.title = "Chuỗi ngày học liên tục · bấm để xem Băng Phách Đan (" + danSo() + " / " + DAN_MAX + ")"; stk.onclick = danOpen; stk.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); danOpen(); } }; }
     var ab = $("#avbtn"); if (ab) { ab.onclick = function () { avMenu(ab); }; avFill(ab); if (mOpen) ab.setAttribute("aria-expanded", "true"); }
     else avMenuClose();
   }

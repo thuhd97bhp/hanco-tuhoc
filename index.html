@@ -934,6 +934,35 @@ table.t th { border-top: 0; font-size: 0.76rem; color: var(--muted); text-transf
 /* chiều cao khung: 100dvh = phần màn hình NHÌN THẤY (Chrome Android tính vh theo cả màn hình kể cả thanh địa chỉ → khung
    cao hơn chỗ hiện, đầu khung bị cắt trên máy tính bảng 26/11/2026); margin auto: khung cao quá thì vẫn cuộn lên thấy đầu */
 .modal .box { background: var(--surface); border-radius: 16px; max-width: 640px; width: 100%; max-height: 90vh; max-height: calc(100dvh - 32px); margin: auto; overflow: auto; padding: 18px; position: relative; }
+/* Băng Phách Đan (28/11/2026) */
+:root { --ice: #1f74a8; --ice-soft: #e2f2fb; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ice: #8fd0f2; --ice-soft: #16303f; } }
+:root[data-theme="dark"] { --ice: #8fd0f2; --ice-soft: #16303f; }
+.stats .pill.streak[role="button"] { cursor: pointer; }
+.dan { display: flex; gap: 14px; align-items: flex-start; }
+.dan-ic { flex: 0 0 auto; width: 72px; height: 72px; }
+.dan-ic svg { width: 100%; height: 100%; display: block; }
+.dan-sm .dan-ic { width: 52px; height: 52px; }
+.dan-tx { flex: 1 1 auto; min-width: 0; }
+.dan-tx .sub { margin: 6px 0 8px; }
+.dan-hd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.dan-hd b { font-size: 1.05rem; }
+.dan-hd .han { font-family: var(--f-han); font-weight: 400; color: var(--muted); }
+.dan-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--ice-soft); color: var(--ice); font-size: .8rem; font-weight: 800; white-space: nowrap; }
+.dan-pill.full { background: var(--good-soft); color: var(--good); }
+.dan-lad { list-style: none; margin: 6px 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.dan-lad li { display: grid; justify-items: center; gap: 2px; padding: 8px 2px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.dan-lad li b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.dan-lad li small { font-size: .7rem; }
+.dan-lad .dan-i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); font-weight: 800; font-size: .85rem; }
+.dan-lad li.on { border-color: var(--ice); background: var(--ice-soft); }
+.dan-lad li.on .dan-i { background: var(--ice); color: var(--surface); }
+.dan-lad li.nx { border: 2px solid var(--ice); }
+.dan-xp { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 10px 0 4px; }
+.dan-xp > div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.dan-xp span { font-size: .8rem; }
+.dan-q { font-weight: 700; }
+@media (max-width: 420px) { .dan-ic { width: 56px; height: 56px; } .dan-lad li { padding: 6px 1px; } .dan-lad li b { font-size: .85rem; } }
 .modal .x { position: absolute; top: 10px; right: 10px; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 0.9rem; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: calc(100% - 32px); }
 .xpfly { position: fixed; z-index: 61; font-weight: 800; font-size: 1.15rem; color: var(--gold); pointer-events: none; white-space: nowrap; text-shadow: 0 1px 0 var(--bg), 0 0 8px var(--bg); opacity: 0; }
