@@ -132,11 +132,14 @@ Không có Cloud Functions → mọi kiểm soát nằm ở luật Firestore + t
   (giữ id huy hiệu cũ). `S.cup`, `S.rec`. localStorage `hanco-bxh-gui`, `hanco-bxh-cup`, `hanco-qt-xpla`. Chỉ hiện TÊN HIỂN THỊ.
   Giao diện kiểu thoáng (người dùng yêu cầu 27/11/2026): hạng 1–3 = huy chương ruy băng SVG tự vẽ (`rkHTML`), dòng của mình tô nền cả dòng (không chip "Bạn").
 - GIẢI ĐẤU TUẦN (người dùng duyệt 27/11/2026): tab đầu của Xếp hạng (`#xh`; bảng tuần cả lớp chuyển sang `#xh-tuan`). 7 giải `GD` 銅 Đồng · 銀 Bạc ·
-  金 Vàng · 玉 Ngọc bích · 珠 Trân châu · 晶 Pha lê · 鑽 Kim cương (khiên `gdShield`, lớp `gbig` — KHÔNG dùng lớp `big`: songify thay cả ruột). Nhóm tự co
-  giãn: giải có n ≤ 10 người → 1 nhóm, > 10 → ⌈n/10⌉ nhóm chia đều, xáo mỗi tuần bằng băm (`gdHash`, máy nào cũng ra một kết quả). Thăng: nhóm < 8 người
-  top 1, 8–10 top 2 (`gdUp`) VÀ XP tuần ≥ 50 × số giải (`gdNeed`); xuống: nhóm 5–7 1 người cuối, 8–10 2 người, < 5 không ai (`gdDown`) + mọi người 0 XP
-  cả tuần. Chốt CÙNG bản chốt cúp: `hanco_bxh/c<k>.g` = {mã dòng: giải×100+nhóm} của tuần k+7 (`gdCompute` từ XP trong `e` + bảng; nhóm 0 = đang ẩn →
-  giữ giải). Mới vào → Đồng, nhóm theo băm mã. Máy bản cũ chốt thiếu g → máy mới bổ sung (`gdFix`, luật cho thêm g đúng 1 lần); sáng thứ Hai chưa chốt
+  金 Vàng · 玉 Ngọc bích · 珠 Trân châu · 晶 Pha lê · 鑽 Kim cương (khiên `gdShield`, lớp `gbig` — KHÔNG dùng lớp `big`: songify thay cả ruột; lớp `xs` =
+  khiên nhỏ cạnh tên khi nhóm có nhiều giải). CHIA NHÓM (người dùng yêu cầu 28/11/2026): dưới `GD_POOL` = 30 người tham gia (dòng bảng, trừ người ẩn) → cả lớp
+  1 nhóm và tab "Tuần" ẨN (trùng Giải đấu; `#xh-tuan` mở Giải đấu, thẻ "Cúp tuần trước" chuyển sang Giải đấu — `gdPool`); từ 30 người → `gdGroups` nhóm
+  15–20 người (41–44 người: 2 nhóm 20–22), xếp mọi người theo giải tuần sau cao → thấp (cùng giải theo băm `gdHash` + số tuần) rồi cắt liền → 1 nhóm có thể
+  gồm giải liền kề, mỗi người vẫn giữ giải riêng. Bản chốt kiểu mới có `g._v = 2` (nhóm = số chung 1..nG, `gdFrom` → `nG`, `R`); bản cũ không có `_v` = nhóm
+  riêng từng giải (`gdGk` vẫn đọc được). Thăng: nhóm < 8 người top 1, từ 8 người ~20% (`gdUp`) VÀ XP tuần ≥ 50 × số giải (`gdNeed`); xuống: nhóm 5–7 1 người
+  cuối, từ 8 người ~20%, < 5 không ai (`gdDown`) + mọi người 0 XP cả tuần. Chốt CÙNG bản chốt cúp: `hanco_bxh/c<k>.g` = {mã dòng: giải×100+nhóm, _v: 2} của
+  tuần k+7 (`gdCompute` từ XP trong `e` + bảng; nhóm 0 = đang ẩn → giữ giải). Mới vào → Đồng, nhóm có người cùng giải / giải gần nhất (`gdNear`). Máy bản cũ chốt thiếu g → máy mới bổ sung (`gdFix`, luật cho thêm g đúng 1 lần); sáng thứ Hai chưa chốt
   → dùng bản trước (`gdNow`, `old`). Quản trị → Xếp hạng → "Tính lại giải đấu" (`gdRedo`, ghi đè g). Đổi giải → `gdSeen`: thăng = khung "Thăng hạng!"
   + nhạc (`gdUpShow`), xuống = lời nhắc; `tbxAdd`. `S.rec.lg` = giải cao nhất (chỉ có khi > 0; gộp lấy lớn hơn) + dòng bảng `rc.lg`. localStorage
   `hanco-giai-xem` {u, k, t}. Người học LUÔN tham gia (không có công tắc ẩn); quản trị ẩn tay / khóa → giữ giải. Mô phỏng: `.claude/sim-gd.js app.js`.

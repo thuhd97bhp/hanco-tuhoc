@@ -1570,7 +1570,7 @@
       // giải đấu: số người mỗi giải tuần sau (theo bản chốt) + tính lại
       var gs = c ? gdFrom(c) : null, gn = {};
       if (gs) Object.keys(gs.g).forEach(function (u) { var t = Math.floor((+gs.g[u] || 0) / 100); if (t >= 1 && t <= GD_N) gn[t] = (gn[t] || 0) + 1; });
-      h += '<div class="card"><h2>Giải đấu</h2>' + (gs ? '<p class="sub">Tuần ' + dateOf(gs.k) + " – " + dateY(gs.k + 6) + ": " + GD.slice(1).map(function (g, i) { return g.t + " " + (gn[i + 1] || 0); }).join(" · ") + " người" + (Object.keys(gs.G).length ? " · số nhóm: " + Object.keys(gs.G).map(function (t) { return GD[t].t + " " + gs.G[t]; }).join(", ") : "") + ".</p>" : '<p class="sub">' + (c ? "Bản chốt tuần này chưa có giải (máy bản cũ chốt) — bấm Tính lại." : "Chưa chốt tuần nào — tuần đầu mọi người ở giải Đồng.") + "</p>") +
+      h += '<div class="card"><h2>Giải đấu</h2>' + (gs ? '<p class="sub">Tuần ' + dateOf(gs.k) + " – " + dateY(gs.k + 6) + ": " + GD.slice(1).map(function (g, i) { return g.t + " " + (gn[i + 1] || 0); }).join(" · ") + " người" + (gs.v === 2 ? " · " + (gs.nG <= 1 ? "cả lớp 1 nhóm" : gs.nG + " nhóm") : Object.keys(gs.G).length ? " · số nhóm: " + Object.keys(gs.G).map(function (t) { return GD[t].t + " " + gs.G[t]; }).join(", ") : "") + ".</p>" : '<p class="sub">' + (c ? "Bản chốt tuần này chưa có giải (máy bản cũ chốt) — bấm Tính lại." : "Chưa chốt tuần nào — tuần đầu mọi người ở giải Đồng.") + "</p>") +
         '<p class="sub">Tính lại = tính giải + nhóm tuần này từ bản chốt cúp và bảng hiện tại (vd sau khi chốt lại cúp hoặc ẩn một người).</p><div class="row"><button class="btn" id="qtgd"' + (c ? "" : " disabled") + ">Tính lại giải đấu</button></div></div>";
       box.innerHTML = h;
       $("#qtgd", box).onclick = function () {
@@ -2823,8 +2823,11 @@
     }).catch(function () { });
   }
   // ---------- GIẢI ĐẤU TUẦN (người dùng yêu cầu 27/11/2026) ----------
-  // 7 giải (GD). Mỗi tuần (thứ Hai 0 giờ → Chủ nhật) mỗi người thi XP tuần với những người CÙNG NHÓM của cùng giải. Nhóm 5–10 người, tự co giãn:
-  // giải có n người: n ≤ 10 → 1 nhóm, n > 10 → ⌈n/10⌉ nhóm chia đều; xáo lại mỗi tuần (băm mã người + số tuần → máy nào cũng ra một kết quả).
+  // 7 giải (GD). Mỗi tuần (thứ Hai 0 giờ → Chủ nhật) mỗi người thi XP tuần với những người CÙNG NHÓM. Chia nhóm (người dùng yêu cầu 28/11/2026):
+  // dưới GD_POOL = 30 người tham gia → cả lớp 1 nhóm (tab "Tuần" ẩn vì trùng); từ 30 người → gdGroups nhóm 15–20 người (41–44 người: 2 nhóm 20–22),
+  // xếp mọi người theo giải tuần sau từ cao xuống (cùng giải thì theo băm mã + số tuần) rồi cắt liền → 1 nhóm có thể gồm 2 giải liền nhau; mỗi người
+  // vẫn giữ giải riêng. Bản chốt kiểu này có g._v = 2 (nhóm = số chung 1..nG); bản cũ không có _v = nhóm riêng từng giải (≤ 10 người / nhóm),
+  // khi đó dưới 30 người vẫn coi cả lớp 1 nhóm (gdGk / gdPool). Máy nào cũng ra một kết quả (băm, không ngẫu nhiên).
   // Chốt cùng lúc cúp tuần (12 giờ trưa thứ Hai tuần sau): bản chốt hanco_bxh/c<k> có thêm g = {mã dòng: giải × 100 + nhóm} = giải + nhóm
   // của TUẦN SAU (k + 7); nhóm 0 = đang ẩn (giữ nguyên giải, không thi). Thăng: top gdUp(n) của nhóm VÀ ≥ GD_MIN × số giải XP trong tuần;
   // xuống: gdDown(n) người cuối (nhóm ≥ 5 người) + mọi người 0 XP cả tuần. Đồng không xuống, Kim cương không thăng.
@@ -2832,7 +2835,7 @@
   // Người học luôn tham gia (không có công tắc ẩn); quản trị tham gia bằng vai người học hoặc ẩn. Giải cao nhất từng đạt: S.rec.lg.
   // localStorage MỚI: hanco-giai-xem {u mã, k tuần, t giải} = giải đã báo (để báo thăng / xuống hạng 1 lần). Không thuộc S.
   var GD = [null, { t: "Đồng", h: "銅" }, { t: "Bạc", h: "銀" }, { t: "Vàng", h: "金" }, { t: "Ngọc bích", h: "玉" }, { t: "Trân châu", h: "珠" }, { t: "Pha lê", h: "晶" }, { t: "Kim cương", h: "鑽" }];
-  var GD_N = 7, GD_MIN = 50, GD_MAX = 10, GD_LS = "hanco-giai-xem";
+  var GD_N = 7, GD_MIN = 50, GD_POOL = 30, GD_LO = 15, GD_HI = 20, GD_LS = "hanco-giai-xem";
   HC.GD = GD;
   function gdMul(a, b) { return ((a & 0xffff) * b + ((((a >>> 16) * b) & 0xffff) << 16)) >>> 0; } // nhân 32 bit chính xác (ES5, không Math.imul)
   function gdHash(s) { var h = 2166136261; s = String(s); for (var i = 0; i < s.length; i++) { h = (h ^ s.charCodeAt(i)) >>> 0; h = gdMul(h, 16777619); } h = (h ^ (h >>> 15)) >>> 0; h = gdMul(h, 2246822519); h = (h ^ (h >>> 13)) >>> 0; return h; }
@@ -2840,27 +2843,59 @@
   function gdDown(n) { return n < 5 ? 0 : n < 8 ? 1 : Math.max(2, Math.round(n * 0.2)); }
   function gdNeed(t) { return GD_MIN * t; } // XP tối thiểu trong tuần để thăng khỏi giải t
   // trạng thái giải của 1 tuần: {k tuần áp dụng, g {mã: giải×100+nhóm}, G {giải: số nhóm}, src tuần chốt (bản c<src>), old = sáng thứ Hai chưa chốt tuần trước}
+  // v2 (g._v = 2): nG số nhóm, R {nhóm: [giải thấp nhất, cao nhất]}; bản cũ: G {giải: số nhóm}
   function gdFrom(c, kNow) {
     if (!c || !c.g || typeof c.g !== "object") return null;
-    var G = {}; Object.keys(c.g).forEach(function (u) { var v = +c.g[u] || 0, t = Math.floor(v / 100), n = v % 100; if (t >= 1 && t <= GD_N && n > (G[t] || 0)) G[t] = n; });
+    var v2 = +c.g._v === 2, G = {}, R = {}, nG = 0;
+    Object.keys(c.g).forEach(function (u) {
+      if (u === "_v") return;
+      var v = +c.g[u] || 0, t = Math.floor(v / 100), n = v % 100; if (t < 1 || t > GD_N) return;
+      if (!v2) { if (n > (G[t] || 0)) G[t] = n; return; }
+      if (!n) return; if (n > nG) nG = n;
+      var r = R[n] = R[n] || [t, t]; if (t < r[0]) r[0] = t; if (t > r[1]) r[1] = t;
+    });
     var k = +c.k + 7;
-    return { k: k, g: c.g, G: G, src: +c.k, old: kNow != null && k < kNow };
+    return { k: k, g: c.g, G: G, v: v2 ? 2 : 0, nG: nG, R: R, src: +c.k, old: kNow != null && k < kNow };
   }
   function gdOf(st, uid) { // {t giải, n nhóm} của 1 người theo trạng thái st (null = tuần đầu tiên: mọi người ở Đồng, 1 nhóm)
     var v = st && st.g ? +st.g[uid] || 0 : 0, t = Math.floor(v / 100), n = v % 100;
     if (t < 1 || t > GD_N) { t = 1; n = 0; }
-    if (!n) { var G = (st && st.G && st.G[t]) || 1; n = 1 + gdHash(uid + "|m" + (st ? st.k : 0)) % G; } // mới vào / vừa thôi ẩn → nhóm theo băm mã
+    if (!n) { // mới vào / vừa thôi ẩn → nhóm theo băm mã
+      if (st && st.v === 2) n = gdNear(st, t, uid);
+      else { var G = (st && st.G && st.G[t]) || 1; n = 1 + gdHash(uid + "|m" + (st ? st.k : 0)) % G; }
+    }
     return { t: t, n: n };
+  }
+  function gdNear(st, t, uid) { // v2: nhóm có người cùng giải (nhiều nhóm → theo băm mã); không có → nhóm có giải gần nhất
+    var best = [], bd = 99;
+    for (var n = 1; n <= st.nG; n++) {
+      var r = st.R[n]; if (!r) continue;
+      var d = t < r[0] ? r[0] - t : t > r[1] ? t - r[1] : 0;
+      if (d < bd) { bd = d; best = [n]; } else if (d === bd) best.push(n);
+    }
+    return best.length ? best[gdHash(uid + "|m" + st.k) % best.length] : 1;
+  }
+  function gdGk(st, o, pool) { return st && st.v === 2 ? "n" + o.n : pool ? "all" : o.t + "|" + o.n; } // mã "cùng nhóm"
+  function gdPool(st, T) { // cả lớp chung 1 nhóm? (v2: theo bản chốt; bản cũ / tuần đầu: đếm người trên bảng, trừ người ẩn)
+    if (st && st.v === 2) return st.nG <= 1;
+    var U = (T && T.u) || {}, an = (T && T.an) || {}, N = 0;
+    Object.keys(U).forEach(function (u) { if (U[u] && !an[u]) N++; });
+    return N < GD_POOL;
+  }
+  function gdGroups(N) { // số nhóm cho N người: < 30 → 1; còn lại cỡ nhóm 15–20, gần 17–18 nhất; không chia được (41–44) → ít nhóm hơn
+    if (N < GD_POOL) return 1;
+    var lo = Math.ceil(N / GD_HI), hi = Math.floor(N / GD_LO);
+    return lo > hi ? hi : Math.min(hi, Math.max(lo, Math.round(N * 2 / (GD_LO + GD_HI))));
   }
   // tính g (giải + nhóm TUẦN SAU) khi chốt tuần k: T bảng (dòng + an), e XP tuần k [{u, v}] (bản chốt cúp), st trạng thái tuần k
   function gdCompute(T, k, e, st) {
-    var U = (T && T.u) || {}, an = (T && T.an) || {}, xp = {}, grp = {}, nt = {}, hid = {}, out = {};
+    var U = (T && T.u) || {}, an = (T && T.an) || {}, xp = {}, grp = {}, nt = {}, hid = {}, out = {}, pool = gdPool(st, T);
     (e || []).forEach(function (x) { if (x && x.u) xp[x.u] = +x.v || 0; });
     Object.keys(U).forEach(function (uid) {
       if (!U[uid]) return;
       var o = gdOf(st, uid);
       if (an[uid]) { nt[uid] = o.t; hid[uid] = 1; return; } // đang ẩn: giữ nguyên giải, không thi
-      var key = o.t + "|" + o.n; (grp[key] = grp[key] || []).push({ u: uid, v: xp[uid] || 0, t: o.t });
+      var key = gdGk(st, o, pool); (grp[key] = grp[key] || []).push({ u: uid, v: xp[uid] || 0, t: o.t });
     });
     Object.keys(grp).forEach(function (key) {
       var L = grp[key].sort(function (a, b) { return b.v - a.v || (a.u < b.u ? -1 : 1); }), n = L.length, up = gdUp(n), dn = gdDown(n);
@@ -2872,16 +2907,16 @@
         nt[x.u] = t;
       });
     });
-    var salt = "|g" + (k + 7);
-    for (var t = 1; t <= GD_N; t++) {
-      var ids = Object.keys(nt).filter(function (u) { return nt[u] === t && !hid[u]; }), nG = ids.length <= GD_MAX ? 1 : Math.ceil(ids.length / GD_MAX);
-      ids.sort(function (a, b) { var ha = gdHash(a + salt), hb = gdHash(b + salt); return ha - hb || (a < b ? -1 : 1); });
-      ids.forEach(function (u, i) { out[u] = t * 100 + (i % nG) + 1; });
-    }
+    // chia nhóm tuần sau: giải cao → thấp, cùng giải theo băm (xáo mỗi tuần), cắt liền thành nG nhóm đều nhau (lệch nhau ≤ 1 người)
+    var salt = "|g" + (k + 7), hs = {}, ids = Object.keys(nt).filter(function (u) { return !hid[u]; }), N = ids.length, nG = gdGroups(N), base = Math.floor(N / nG), ex = N % nG, gi = 1, cnt = 0;
+    ids.forEach(function (u) { hs[u] = gdHash(u + salt); });
+    ids.sort(function (a, b) { return nt[b] - nt[a] || hs[a] - hs[b] || (a < b ? -1 : 1); });
+    ids.forEach(function (u) { out[u] = nt[u] * 100 + gi; if (++cnt >= base + (gi <= ex ? 1 : 0)) { gi++; cnt = 0; } });
     Object.keys(hid).forEach(function (u) { out[u] = nt[u] * 100; });
+    out._v = 2;
     return out;
   }
-  HC.gdCompute = gdCompute; HC.gdOf = gdOf; HC.gdFrom = gdFrom; HC.gdUp = gdUp; HC.gdDown = gdDown;
+  HC.gdCompute = gdCompute; HC.gdOf = gdOf; HC.gdFrom = gdFrom; HC.gdUp = gdUp; HC.gdDown = gdDown; HC.gdGroups = gdGroups; HC.gdPool = gdPool;
   // trạng thái giải của tuần k (để chốt tuần k): bản chốt c<k−7> (thiếu g thì bổ sung), không có thì lùi tối đa 3 tuần; không có gì → null
   function gdState(k, depth) {
     var lim = k - 21;
@@ -3054,23 +3089,25 @@
   function gdDraw(box, T, st) {
     var t0 = today(), W = weekStart(t0), me = fb.user ? myKey("bx") : "", an = (T && T.an) || {};
     var rules = '<details class="card gdrule"><summary>Luật giải đấu</summary><ul class="qtls"><li>Có 7 giải: ' + GD.slice(1).map(function (g) { return g.t; }).join(" → ") + ". Ai mới tham gia bắt đầu ở giải Đồng.</li>" +
-      "<li>Mỗi tuần (từ 0 giờ thứ Hai tới hết Chủ nhật) bạn thi XP với những người cùng nhóm, cùng giải. Mỗi nhóm khoảng 5–10 người, đổi nhóm mỗi tuần.</li>" +
-      "<li>Chốt lúc 12 giờ trưa thứ Hai tuần sau. Nhóm 5–7 người: top 1 thăng hạng, 1 người cuối xuống hạng; nhóm 8–10 người: top 2 thăng, 2 người cuối xuống; nhóm dưới 5 người: top 1 thăng, không ai xuống.</li>" +
+      "<li>Mỗi tuần (từ 0 giờ thứ Hai tới hết Chủ nhật) bạn thi XP với những người cùng nhóm. Dưới " + GD_POOL + " người tham gia: cả lớp thi chung 1 nhóm. Từ " + GD_POOL + " người: chia nhóm " + GD_LO + "–" + GD_HI + " người gồm những người cùng giải hoặc giải liền kề, đổi nhóm mỗi tuần.</li>" +
+      "<li>Chốt lúc 12 giờ trưa thứ Hai tuần sau. Nhóm dưới 5 người: top 1 thăng hạng, không ai xuống; 5–7 người: top 1 thăng, 1 người cuối xuống; từ 8 người: khoảng 20% đầu thăng, 20% cuối xuống (vd 15 người: 3 thăng, 3 xuống; 20 người: 4 thăng, 4 xuống). Mỗi người thăng / xuống từ giải của chính mình.</li>" +
       "<li>Muốn thăng hạng còn cần đủ XP tối thiểu trong tuần: " + GD.slice(1, GD_N).map(function (g, i) { return g.t + " " + gdNeed(i + 1); }).join(" · ") + " XP. Cả tuần không có XP thì xuống 1 giải (trừ giải Đồng).</li></ul></details>";
     if (!me) {
       box.innerHTML = '<div class="card"><p class="tkmsg">Bạn đang ẩn khỏi bảng xếp hạng nên không tham gia giải đấu. Giải của bạn được giữ nguyên. <a href="#caidat">Đổi ở Cài đặt → Hai vai của tôi</a>.</p></div>' + rules;
       return [];
     }
-    var mo = gdOf(st, me), t = mo.t, U = Object.assign({}, (T && T.u) || {}), L = [];
+    var pool = gdPool(st, T), mo = gdOf(st, me), t = mo.t, mk = gdGk(st, mo, pool), U = Object.assign({}, (T && T.u) || {}), L = [], ts = {};
     myKeys().forEach(function (k) { if (k !== me) delete U[k]; });
     if (bxhOk()) U[me] = bxhRow();
     Object.keys(U).forEach(function (uid) {
       var r = U[uid]; if (!r || (an[uid] && uid !== me)) return;
-      var o = gdOf(st, uid); if (o.t !== t || o.n !== mo.n) return;
-      L.push({ uid: uid, r: r, v: bxhVal(r, "w", t0), me: uid === me, hid: !!an[uid] });
+      var o = gdOf(st, uid); if (gdGk(st, o, pool) !== mk) return;
+      ts[o.t] = 1;
+      L.push({ uid: uid, r: r, v: bxhVal(r, "w", t0), me: uid === me, hid: !!an[uid], t: o.t });
     });
     L.sort(function (a, b) { return b.v - a.v || String(a.r.ten).localeCompare(String(b.r.ten), "vi"); });
     L.forEach(function (x, i) { x.rank = i && L[i - 1].v === x.v ? L[i - 1].rank : i + 1; });
+    var mix = Object.keys(ts).length > 1; // nhóm có nhiều giải → cạnh tên ghi giải của từng người
     var n = L.length, up = t < GD_N ? gdUp(n) : 0, dn = t > 1 ? gdDown(n) : 0, left = W + 7 - t0, meX = L.filter(function (x) { return x.me; })[0];
     var h = '<div class="card gdhd"><div class="gdrow" role="list" aria-label="Các giải">' + GD.slice(1).map(function (g, i) { var k = i + 1; return '<span role="listitem" class="gdi' + (k === t ? " cur" : k < t ? " qua" : " khoa") + '">' + gdShield(k, k === t ? "gbig" : "") + (k === t ? "" : '<span class="vh">Giải ' + esc(g.t) + "</span>") + "</span>"; }).join("") + "</div>" +
       "<h2>Giải " + esc(GD[t].t) + "</h2>" +
@@ -3083,11 +3120,12 @@
     L.forEach(function (x, i) {
       if (dn && i === n - dn && i > 0) rows += '<li class="gdsep dn" aria-hidden="true"><span>▼ Nhóm xuống hạng ▼</span></li>';
       var z = i < up ? "up" : (dn && i >= n - dn) || (t > 1 && x.v <= 0) ? "dn" : "";
-      rows += bxhLi(x, "XP", "", z);
+      rows += bxhLi(x, "XP", mix ? gdShield(x.t, "xs") + " Giải " + esc(GD[x.t].t) : "", z);
       if (up && i === up - 1 && i < n - 1) rows += '<li class="gdsep up" aria-hidden="true"><span>▲ Nhóm thăng hạng ▲</span></li>';
     });
     h += '<div class="card"><ol class="xhls gdls">' + rows + "</ol>" +
-      '<p class="sub gdft">Nhóm ' + n + " người · tính XP từ 0 giờ thứ Hai · chốt 12 giờ trưa thứ Hai tuần sau.</p></div>" + rules;
+      '<p class="sub gdft">' + (pool ? "Cả lớp " + n + " người thi chung 1 nhóm (dưới " + GD_POOL + " người) · top 3 nhận cúp tuần vàng · bạc · đồng" : "Nhóm " + n + " người") + " · tính XP từ 0 giờ thứ Hai · chốt 12 giờ trưa thứ Hai tuần sau.</p></div>" +
+      (pool ? '<div class="card" id="xhlw"><h2>Cúp tuần trước</h2><p class="sub">Đang tải…</p></div>' : "") + rules;
     box.innerHTML = h;
     return L;
   }
@@ -3095,8 +3133,16 @@
   function vRank(v, args) {
     var sec = args[0] || "", sub = args[1] || "xp", ep = HC.epoch;
     if (XH_TABS.every(function (a) { return a[0] !== sec; })) sec = "";
+    // cả lớp chung 1 nhóm giải đấu (dưới 30 người) → ẩn tab "Tuần" (trùng Giải đấu); #xh-tuan khi đó mở Giải đấu
+    var pool = gdPool(BXH.gd, BXH.d);
+    function navHTML() { return '<nav class="qtnav tabs1" id="xhnav" aria-label="Các bảng xếp hạng">' + XH_TABS.filter(function (a) { return !(pool && a[0] === "tuan"); }).map(function (a) { return '<a class="btn sm" href="#xh' + (a[0] ? "-" + a[0] : "") + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + "</nav>"; }
+    function toPool(st, T) { // sau khi biết trạng thái giải tuần này: cập nhật tab, #xh-tuan → Giải đấu
+      var p = gdPool(st, T); if (p === pool && !(p && sec === "tuan")) return;
+      pool = p; if (pool && sec === "tuan") { sec = ""; try { history.replaceState(null, "", location.pathname + location.search + "#xh"); } catch (e) { } }
+      var nv = $("#xhnav", v); if (nv) nv.outerHTML = navHTML();
+    }
     v.innerHTML = '<div class="row"><h1 style="margin:0">Xếp hạng</h1><span class="spacer"></span>' + (sec === "toi" ? "" : '<button class="btn sm ghost" type="button" id="xhre">Tải lại</button>') + "</div>" +
-      '<nav class="qtnav tabs1" aria-label="Các bảng xếp hạng">' + XH_TABS.map(function (a) { return '<a class="btn sm" href="#xh' + (a[0] ? "-" + a[0] : "") + '"' + (a[0] === sec ? ' aria-current="page"' : "") + ">" + a[1] + "</a>"; }).join("") + '</nav><div id="xhb"></div>';
+      navHTML() + '<div id="xhb"></div>';
     var box = $("#xhb", v);
     checkBadges();
     if (sec === "toi") { xhMe(box); return; }
@@ -3107,6 +3153,7 @@
         var GL = gdDraw(box, T, BXH.gd);
         avFill(box);
         $$("[data-pf]", box).forEach(function (b) { b.onclick = function () { bxhProfile(b.getAttribute("data-pf"), GL); }; });
+        if ($("#xhlw", box)) xhLastWeek($("#xhlw", box), T, ep);
         gdSeen(BXH.gd && BXH.gd.g && !BXH.gd.first ? BXH.gd : null);
         return;
       }
@@ -3142,8 +3189,8 @@
       box.innerHTML = '<p class="sub">Đang tải…</p>';
       bxhLoad(force).then(function (T) {
         if (!T) return fail();
-        if (sec !== "") { draw(T); bxhSend(false); bxhCupCheck(); return; }
-        return (force || !BXH.gd || BXH.gd.k !== weekStart(today()) || BXH.gd.old ? gdNow() : Promise.resolve(BXH.gd)).then(null, function () { return BXH.gd || { k: weekStart(today()), g: {}, G: {}, src: 0, first: 1 }; }).then(function (st) { BXH.gd = st; draw(BXH.d || T); bxhSend(false); bxhCupCheck(); });
+        if (sec !== "" && sec !== "tuan") { draw(T); bxhSend(false); bxhCupCheck(); return; }
+        return (force || !BXH.gd || BXH.gd.k !== weekStart(today()) || BXH.gd.old ? gdNow() : Promise.resolve(BXH.gd)).then(null, function () { return BXH.gd || { k: weekStart(today()), g: {}, G: {}, src: 0, first: 1 }; }).then(function (st) { if (HC.epoch !== ep) return; BXH.gd = st; toPool(st, BXH.d || T); draw(BXH.d || T); bxhSend(false); bxhCupCheck(); });
       }, fail);
     }
     $("#xhre", v).onclick = function () { load(true); };
