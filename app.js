@@ -2497,7 +2497,10 @@
   function avKnown(uid) { return jget(AV_LS)[uid] != null; }
   function avMyV(uid) { var u = fb.user; return u ? +jget(AV_LS)[uid || u.uid] || 0 : 0; } // uid = một mã của mình (quản trị: mã vai người học)
   function avSetMyV(uid, v) { var o = jget(AV_LS); o[uid] = v; lsSet(AV_LS, JSON.stringify(o)); }
-  function avMyTen() { var u = fb.user; if (!u) return ""; if (isAdmin()) return vaiGet().tq; var p = tk.prof || tkCache() || {}; return String(p.ten || u.displayName || (u.email || "").split("@")[0] || ""); }
+  // Thẻ tài khoản / menu ảnh (người dùng yêu cầu 29/11/2026): quản trị hiện ĐÚNG vai đang dùng ở "Cách nhớ chung" (qt → vai quản trị, hv → vai người học);
+  // bảng xếp hạng luôn là vai người học hoặc ẩn nên không tính. avShowId = mã nhận ảnh của vai đó (qt = uid, hv = mã vai người học).
+  function avMyTen() { var u = fb.user; if (!u) return ""; if (isAdmin()) return myName("me"); var p = tk.prof || tkCache() || {}; return String(p.ten || u.displayName || (u.email || "").split("@")[0] || ""); }
+  function avShowId() { var u = fb.user; return u ? myKey("me") || u.uid : ""; }
   function avVer(uid) { // phiên bản ảnh của một người: của mình = bản trên máy; người khác = cột a trên bảng xếp hạng (đã tải)
     var r = BXH.d && BXH.d.u && BXH.d.u[uid], b = r ? +r.a || 0 : 0;
     return isMine(uid) ? Math.max(avMyV(uid), b) : b;
@@ -2714,9 +2717,10 @@
   // nút ảnh trên thanh trên cùng / thanh dọc → menu tài khoản (theo mẫu người dùng gửi; KHÔNG có "Gỡ ảnh")
   function avTopHTML() {
     var u = fb.user; if (!u) return "";
-    avMineCheck();
+    var id = avShowId(), ten = avMyTen();
+    avMineCheck(); if (id !== u.uid) avMineCheck(id); // quản trị đang hiện vai người học: máy chưa biết vai đó có ảnh chưa → đọc 1 lần
     try { avmBoot(); } catch (e) { } // chưa có ảnh mặc định / hình đã bị xóa → nhận hình (máy đã có hình hợp lệ thì không làm gì)
-    return '<button type="button" class="avtop" id="avbtn" aria-haspopup="menu" aria-expanded="false" aria-label="Tài khoản: ' + esc(avMyTen()) + '" title="Tài khoản">' + avHTML(u.uid, avMyTen(), avMyV(), "", false) + "</button>";
+    return '<button type="button" class="avtop" id="avbtn" aria-haspopup="menu" aria-expanded="false" aria-label="Tài khoản: ' + esc(ten) + '" title="Tài khoản">' + avHTML(id, ten, avMyV(id), "", false) + "</button>";
   }
   var avMenuOff = null;
   function avMenuClose() {
@@ -2727,9 +2731,9 @@
   function avMenu(btn) {
     if (document.getElementById("avmenu")) return avMenuClose();
     var u = fb.user; if (!u) return;
-    var v = avMyV(), ten = avMyTen(), mk = myKey("bx") || u.uid, ms = avmState(mk).s && avMyV(mk) > 0;
+    var sid = avShowId(), v = avMyV(sid), ten = avMyTen(), mk = myKey("bx") || u.uid, ms = avmState(mk).s && avMyV(mk) > 0;
     var el = document.createElement("div"); el.id = "avmenu"; el.className = "avmenu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "Tài khoản");
-    el.innerHTML = '<div class="avm-hd">' + avHTML(u.uid, ten, v, "lg", true) + '<div class="avm-t"><small class="muted">Đang đăng nhập</small><b>' + esc(ten) + "</b>" + (u.email ? '<span class="muted">' + esc(u.email) + "</span>" : "") + "</div></div>" +
+    el.innerHTML = '<div class="avm-hd">' + avHTML(sid, ten, v, "lg", true) + '<div class="avm-t"><small class="muted">Đang đăng nhập</small><b>' + esc(ten) + "</b>" + (u.email ? '<span class="muted">' + esc(u.email) + "</span>" : "") + "</div></div>" +
       (v > 0 && !ms ? '<button type="button" role="menuitem" data-avm="xem"><span class="avm-ic" aria-hidden="true">◉</span>Xem ảnh đại diện</button>' : "") +
       '<button type="button" role="menuitem" data-avm="chon"><span class="avm-ic" aria-hidden="true">▦</span>Chọn ảnh có sẵn</button>' +
       (ms ? '<button type="button" role="menuitem" data-avm="cu"><span class="avm-ic" aria-hidden="true">↺</span>Dùng lại ảnh đã tải lên</button>' : "") +
@@ -2748,8 +2752,8 @@
     el.addEventListener("click", function (e) {
       var b = e.target.closest("[data-avm]"); if (!b) return;
       var k = b.getAttribute("data-avm"); avMenuClose();
-      if (k === "xem") avView(u.uid, ten);
-      else if (k === "doi") avPick();
+      if (k === "xem") avView(sid, ten);
+      else if (k === "doi") avPick(sid);
       else if (k === "chon") avmPick();
       else if (k === "cu") avmUseOwn(mk);
       else if (k === "tk") HC.go("caidat");
